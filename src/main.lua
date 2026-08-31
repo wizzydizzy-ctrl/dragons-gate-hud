@@ -13,6 +13,11 @@ function Main.installChatApi(namespace)
       if not chat then return nil,"chatbox is not running" end
       return chat:setFilter(filter)
     end,
+    status=function()
+      local active=rawget(_G,"DGHUD"); local controller=active and active.controller
+      if not controller then return nil,"HUD is not running" end
+      return controller:chatStatus()
+    end,
   }
   return namespace.chat
 end
@@ -20,6 +25,7 @@ function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),
 function Main:characterName() return self.last_state and self.last_state.character and self.last_state.character.full_name or nil end
 function Main:startChat()
   local settings=self.settings.chat or {}
+  if settings.enabled==false then return true end
   local storage=self.adapter:createChatStorage(settings.visible_limit or 1000)
   self.chat=ChatController.new(self.adapter,ChatParser,ChatHistory.new(settings.visible_limit or 1000,settings.dedupe_seconds or 3),storage,function(entries,categories,filter)
     if self.view and self.view.renderChat then self.view:renderChat(entries,categories,filter) end
@@ -32,6 +38,19 @@ function Main:startChat()
     end)
   end
   return self.chat:start()
+end
+function Main:chatStatus()
+  if not self.chat then return {active_filter="OFF",visible_count=0,storage_key=nil,last_storage_error=nil} end
+  return self.chat:status()
+end
+function Main:reportChatStatus()
+  local status=self:chatStatus()
+  local reporter=self.adapter and self.adapter.reportChatStatus
+  if type(reporter)=="function" then
+    local ok,result=pcall(reporter,self.adapter,status)
+    if ok then return result end
+  end
+  return status
 end
 function Main:scheduleRoundtimeTick()
   if self.roundtime_timer or self.roundtime_display<=0 then return end
@@ -55,7 +74,7 @@ function Main:start()
   if self.adapter.isCharacterActive and self.adapter:isCharacterActive() then self.collector:refresh() end
   for _,name in ipairs(Events.gmcp) do self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(name,function() self:refresh() end) end
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent("sysWindowResizeEvent",function() self:applyResponsiveLayout() end)
-  local commands={function() if self.updater then self.updater:check() end end,function() if self.updater then self.updater:update() end end,function() self:reload() end,function() if self.adapter.openSettings then self.adapter:openSettings() end end,function() if self.adapter.requestPurge then self.adapter:requestPurge() end end}
+  local commands={function() if self.updater then self.updater:check() end end,function() if self.updater then self.updater:update() end end,function() self:reload() end,function() if self.adapter.openSettings then self.adapter:openSettings() end end,function() if self.adapter.requestPurge then self.adapter:requestPurge() end end,function() return self:reportChatStatus() end}
   for i,pattern in ipairs(Events.aliases) do self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias(pattern,commands[i]) end
   self.started=true; local ok,err=pcall(function() self:refresh() end); if not ok then self:shutdown(); return nil,err end
   local chatStarted,chatErr=self:startChat(); if not chatStarted then self:shutdown(); return nil,chatErr end; return true
@@ -70,5 +89,9 @@ function Main:shutdown()
   self.started=false; return true
 end
 function Main:reload() self:shutdown(); return self:start() end
-function Main:healthCheck() if not self.started or not self.view or not self.collector or not self.collector.started or not self.chat or not self.chat.started or not self.chat.trigger or #self.runtime.events~=(#Events.gmcp+1) then return nil,"HUD is not healthy" end; local ok=pcall(function() self:refresh() end); if not ok then return nil,"state refresh failed" end; return true end
+function Main:healthCheck()
+  local chatEnabled=not (self.settings.chat and self.settings.chat.enabled==false)
+  if not self.started or not self.view or not self.collector or not self.collector.started or (chatEnabled and (not self.chat or not self.chat.started or not self.chat.trigger)) or #self.runtime.events~=(#Events.gmcp+1) then return nil,"HUD is not healthy" end
+  local ok=pcall(function() self:refresh() end); if not ok then return nil,"state refresh failed" end; return true
+end
 return Main

@@ -13,4 +13,8 @@ function Settings.migrate(input)
   if schema<1 then result.update=result.update or {}; result.update.auto_apply=false; result.auto_update=nil; result.schema=1; changed=true end
   return result,changed
 end
+function Settings.resolve(defaults,input)
+  local migrated,changed=Settings.migrate(input)
+  return Settings.merge(defaults,migrated),migrated,changed
+end
 return Settings

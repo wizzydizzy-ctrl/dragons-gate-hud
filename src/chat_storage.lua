@@ -46,18 +46,31 @@ function Storage.new(api,basePath,visibleLimit)
   return setmetatable({api=api,basePath=tostring(basePath or ""),visibleLimit=math.max(1,math.floor(tonumber(visibleLimit) or 1000)),reportedMalformed=false},Storage)
 end
 
+function Storage:characterKey(character)
+  return Storage.safeCharacter(character)
+end
+
+function Storage:recordError(message)
+  self.lastStorageError=tostring(message or "could not access chat log")
+  return self.lastStorageError
+end
+
+function Storage:lastError()
+  return self.lastStorageError
+end
+
 function Storage:append(entry)
-  if type(entry)~="table" then return nil,"chat entry is required" end
+  if type(entry)~="table" then return nil,self:recordError("chat entry is required") end
   local character=Storage.safeCharacter(entry.character)
   local directory=path(self.basePath,character)
   local ok,err=call(self.api,"mkdir",self.basePath)
-  if not ok then return nil,err or "could not create chat storage" end
+  if not ok then return nil,self:recordError(err or "could not create chat storage") end
   ok,err=call(self.api,"mkdir",directory)
-  if not ok then return nil,err or "could not create character storage" end
+  if not ok then return nil,self:recordError(err or "could not create character storage") end
   local encoded=call(self.api,"encode",entry)
-  if type(encoded)~="string" then return nil,"could not encode chat entry" end
+  if type(encoded)~="string" then return nil,self:recordError("could not encode chat entry") end
   local appended,appendErr=call(self.api,"append",path(directory,date(entry.timestamp)..".jsonl"),encoded.."\n")
-  if not appended then return nil,appendErr or "could not append chat log" end
+  if not appended then return nil,self:recordError(appendErr or "could not append chat log") end
   return appended
 end
 
@@ -68,9 +81,10 @@ function Storage:reportMalformed()
 end
 
 function Storage:reportFailure(message)
+  self:recordError(message)
   if self.reportedFailure then return end
   self.reportedFailure=true
-  if type(self.api.report)=="function" then pcall(self.api.report,tostring(message)) end
+  if type(self.api.report)=="function" then pcall(self.api.report,self.lastStorageError) end
 end
 
 function Storage:loadRecent(character)

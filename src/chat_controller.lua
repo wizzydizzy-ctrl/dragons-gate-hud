@@ -26,9 +26,16 @@ function Controller:entries()
 end
 
 function Controller:reportStorageError(message)
+  self.lastStorageError=tostring(message or "could not access chat log")
   if self.reportedStorageError then return end
   self.reportedStorageError=true
-  call(self.adapter,"reportChatErrorOnce",message or "could not access chat log")
+  call(self.adapter,"reportChatErrorOnce",self.lastStorageError)
+end
+
+function Controller:status()
+  local storageKey=call(self.storage,"characterKey",self:character())
+  local storageError=call(self.storage,"lastError")
+  return {active_filter=self.filter,visible_count=#self:entries(),storage_key=storageKey,last_storage_error=storageError or self.lastStorageError}
 end
 
 function Controller:accept(entry)

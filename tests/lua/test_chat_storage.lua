@@ -121,6 +121,14 @@ test("contains list errors and recovers after a read error",function()
   eq(entries[1].message,"older")
 end)
 
+test("exposes the latest internal storage failure for diagnostics",function()
+  local api=fakeStorageApi()
+  api.list=function() error("directory unavailable") end
+  local storage=Storage.new(api,"/chat",1000)
+  eq(#storage:loadRecent("Dace"),0)
+  eq(storage:lastError():find("directory unavailable",1,true)~=nil,true)
+end)
+
 test("Mudlet storage factory confines file access beneath its chat root",function()
   local originalLfs,originalIo,originalYajl=lfs,io,yajl
   local made={}

@@ -17,6 +17,12 @@ function Adapter:killTrigger(id) return killTrigger(id) end
 function Adapter:epoch() return os.time() end
 function Adapter:timestamp() return os.date("%Y-%m-%dT%H:%M:%S%z") end
 function Adapter:reportChatErrorOnce(message) cecho("\n<red>[DGHUD Chat]</red> "..tostring(message).."\n") end
+function Adapter:reportChatStatus(status)
+  status=type(status)=="table" and status or {}
+  local storage=status.storage_key or "unknown"; local error=status.last_storage_error or "none"
+  cecho("\n<gold>[DGHUD Chat]</gold> filter="..tostring(status.active_filter or "OFF").." visible="..tostring(status.visible_count or 0).." storage="..tostring(storage).." last storage error="..tostring(error).."\n")
+  return status
+end
 function Adapter:schedule(seconds,fn) return tempTimer(seconds,fn) end
 function Adapter:cancelTimer(id) return killTimer(id) end
 function Adapter:sendCommand(command) return send(command) end

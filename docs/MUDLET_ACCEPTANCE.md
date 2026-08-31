@@ -1,14 +1,20 @@
-# Hybrid HUD acceptance
+# Hybrid HUD and persistent chat acceptance
 
-Use only the disposable `Dragons Gate HUD` profile.
+Use only the disposable `Dragons Gate HUD` profile. Do not send representational game messages solely to create test traffic: use already-observed output or synthetic local lines in the disposable profile.
 
-1. Install the package and confirm Identity and Character/Combat are left, Vitals/Location are lower-left, and Equipment/Wealth/Inventory are right.
-2. Enter a character and confirm exactly one sequential `inventory`, `stat`, `info` refresh.
-3. Compare inventory, exact readied equipment, attributes, physical details, armor, OR/DR, movement, damage bonus, stance, and novice protection with command output.
-4. Run each command manually and confirm its HUD section refreshes.
-5. Confirm available compass directions are bright and clickable; unavailable directions are dim and inert.
-6. In a safe test room, verify `GO PORTAL`, `GO DOOR`, `GO GATE`, and `GO ARCH` send their exact commands.
-7. Resize through wide, medium, compact, high-resolution, and back. Confirm text remains readable, no card clips a complete row, and the main console retains at least 64% width.
-8. Run `dghud reload` repeatedly and confirm panels and handlers do not duplicate.
-9. Run `lua display({version=DGHUD.settings.version,healthy=DGHUD.healthCheck()})` and confirm the installed version and `healthy=true`.
-10. Confirm unrelated packages, scripts, triggers, aliases, and profile settings remain unchanged after install, reload, update failure, and removal.
+1. Build the unreleased package locally and install it only into the disposable profile. Record the profile's existing personal triggers, aliases, scripts, packages, map data, and settings before installation.
+2. Confirm Identity and Character/Combat are left, Vitals/Location are lower-left, and Equipment/Wealth/Inventory are right. Enter a character and confirm exactly one sequential `inventory`, `stat`, `info` refresh.
+3. Compare inventory, exact readied equipment, attributes, physical details, armor, OR/DR, movement, damage bonus, stance, and novice protection with command output. Run each command manually and confirm its HUD section refreshes.
+4. Confirm available compass directions are bright and clickable; unavailable directions are dim and inert. In a safe test room, verify `GO PORTAL`, `GO DOOR`, `GO GATE`, and `GO ARCH` send their exact commands.
+5. Confirm the chatbox is always visible directly above the center console, precisely matches the console's left edge and width, and does not change normal game output.
+6. Feed the approved ROOM, OWN, WHISPER, ESP, DRAGON, CONTACT, and STAFF examples through the real line-capture path. Verify each is retained under its exact category and appears through the appropriate `ALL`, `ROOM`, `PRIVATE`, or exact-category filter.
+7. Feed misleading NPC/system narration containing words such as `says`, `asks`, `exclaims`, or `whispers`. Confirm it is not captured and remains unmodified in the main console.
+8. Feed the same ESP entry twice adjacently within three seconds. Confirm it appears once. Feed a later, non-adjacent, or different-speaker equivalent and confirm it remains.
+9. Create one temporary personal trigger that calls `DGHUD.chat.capture("QUEST", line)`. Trigger it with a synthetic local line, confirm a `QUEST` filter becomes available, then retain the trigger for the reload checks below.
+10. Run `dghud chatstatus`. Confirm it reports the active filter, visible count, sanitized active-character storage key, and `last storage error=none` unless you intentionally created a local storage failure.
+11. Inspect `<Mudlet home>/DragonsGateHUD/chat/<safe-character-name>/YYYY-MM-DD.jsonl`. Confirm one valid JSON object per captured entry, append-only behavior, no path traversal components, and that private entries are treated as locally sensitive data.
+12. Run `dghud reload` repeatedly. Confirm exactly one owned chat capture trigger remains, old chat entries reload, `DGHUD.chat.capture("QUEST", line)` still works, and the temporary personal trigger is neither modified nor removed.
+13. Disconnect and reconnect, then restart Mudlet in the disposable profile. Confirm the latest entries reload while older JSONL files remain on disk and unrelated personal runtime remains unchanged.
+14. Resize through approximately `2560x1400`, `1920x1080`, `1200x800`, `1000x650`, compact width, full-screen, and restored-window sizes. Confirm the chatbox remains top-center, readable, non-overlapping, and above a usable console. Check a long entry narrows/widens with the center display without clipping, losing its selected filter, or jumping the reading position.
+15. Run `lua display({version=DGHUD.settings.version,healthy=DGHUD.healthCheck()})` and confirm the installed version and `healthy=true`. Recompare the pre-install inventory of unrelated triggers, aliases, scripts, packages, map data, and settings.
+16. Only after independent review and release authorization: complete the updater/published-artifact acceptance separately. Install the published release in a safe live moment, run `dghud update`, verify checksum/health, then repeat the chat capture, persistence, custom-trigger, and resize checks. Do not treat this source-worktree checklist as permission to publish or update a live profile.

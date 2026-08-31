@@ -295,17 +295,46 @@ function View:renderChat(entries,categories,activeFilter,savedScroll)
   restoreChatScroll(self.chat_output,state,self.chat_line_ranges)
   return true
 end
+local function chatFontWidth(output)
+  if type(output.calcFontSize)=="function" then
+    local ok,width=pcall(output.calcFontSize,output)
+    width=ok and tonumber(width) or nil
+    if width and width>0 then return width end
+  end
+  local calculator=rawget(_G,"calcFontSize")
+  if type(calculator)=="function" and output.name then
+    local ok,width=pcall(calculator,output.name)
+    width=ok and tonumber(width) or nil
+    if width and width>0 then return width end
+  end
+end
+local function chatConsoleWidth(output,layout)
+  if type(output.get_width)=="function" then
+    local ok,width=pcall(output.get_width,output)
+    width=ok and tonumber(width) or nil
+    if width and width>0 then return width end
+  end
+  return math.max(1,(tonumber(layout.chat_width) or 1)-(2*(tonumber(layout.chat_padding) or 0)))
+end
+local function liveChatColumns(output,layout)
+  local fontWidth=chatFontWidth(output)
+  if not fontWidth then return math.max(30,math.floor(tonumber(layout.chat_wrap_columns) or 30)) end
+  local allowance=output.scrollBar==false and 0 or (tonumber(layout.chat_scrollbar_allowance) or 15)
+  local width=math.max(1,chatConsoleWidth(output,layout)-allowance)
+  return math.max(1,math.floor(width/fontWidth)),fontWidth
+end
 function View:applyChatWrap(layout)
   layout=layout or self.layout or {}; local output=self.chat_output
-  local columns=math.max(30,math.floor(tonumber(layout.chat_wrap_columns) or 30))
   local font=math.max(1,math.floor(tonumber(layout.chat_font) or 13))
-  local changed=self.chat_wrap_columns~=columns or self.chat_font~=font
-  local state=changed and chatScroll(output,self.chat_line_ranges) or nil
+  local previousState=chatScroll(output,self.chat_line_ranges)
   pcall(function() output:setFontSize(font) end)
+  local columns,fontWidth=liveChatColumns(output,layout)
+  local changed=self.chat_wrap_columns~=columns or self.chat_font~=font
+  local state=changed and previousState or nil
   local ok,applied,why=pcall(function() return output:setWrap(columns) end)
   if not ok then return nil,tostring(applied) end
   if applied==false or (applied==nil and why~=nil) then return nil,tostring(why or "could not apply chat wrap") end
-  self.chat_wrap_columns=columns; self.chat_font=font
+  self.chat_wrap_columns=columns; self.chat_font=font; self.chat_character_width=fontWidth
   if changed then
     if self.chat_entries then self:renderChat(self.chat_entries,self.chat_categories,self.chat_active_filter,state)
     else restoreChatScroll(output,state,self.chat_line_ranges) end

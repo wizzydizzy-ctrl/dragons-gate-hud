@@ -3,7 +3,7 @@ local Parser=require("chat_parser")
 local History=require("chat_history")
 
 local function fake(entries)
-  local f={next=0,triggers={},storageAppends=0,storageEntries=entries or {},storedCharacters={},errors=0,epochValue=100,timestampValue="2026-08-31T13:00:00-04:00",character="Dace Alterac",loadRecentCalls=0}
+  local f={next=0,triggers={},storageAppends=0,storageEntries=entries or {},storedCharacters={},errors=0,epochValue=100,timestampValue="2026-08-31T13:00:00-04:00",character="Dace Alterac",loadRecentCalls=0,loadedCharacterKeys={}}
   function f:addLineTrigger(fn) if self.triggerFailure then error(self.triggerFailure) end; self.next=self.next+1; local id="trigger-"..self.next; self.triggers[id]=fn; return id end
   function f:killTrigger(id) self.triggers[id]=nil end
   function f:line(value) for _,fn in pairs(self.triggers) do fn(value) end end
@@ -12,7 +12,17 @@ local function fake(entries)
   function f:timestamp() return self.timestampValue end
   function f:reportChatErrorOnce() self.errors=self.errors+1 end
   f.storage={}
-  function f.storage:loadRecent() f.loadRecentCalls=f.loadRecentCalls+1; if f.loadFailure then error(f.loadFailure) end; return f.storageEntries end
+  function f.storage:characterKey(character)
+    local key=tostring(character or ""):lower():gsub("[^a-z0-9_-]+","_"):gsub("_+","_"):gsub("^_+",""):gsub("_+$","")
+    return key~="" and key or "unknown"
+  end
+  function f.storage:loadRecent(character)
+    f.loadRecentCalls=f.loadRecentCalls+1
+    local key=self:characterKey(character); f.loadedCharacterKeys[#f.loadedCharacterKeys+1]=key
+    if f.loadFailure then error(f.loadFailure) end
+    if f.storageEntriesByKey then return f.storageEntriesByKey[key] or {} end
+    return f.storageEntries
+  end
   function f.storage:append(entry)
     f.storageAppends=f.storageAppends+1
     f.storedCharacters[#f.storedCharacters+1]=entry.character
@@ -64,6 +74,23 @@ test("loads recent entries once and rotates later captures to the active charact
   controller:start(); eq(controller:entries()[1].message,"earlier")
   assert(controller:capture("QUEST","for Dace")); f.character="Gia"; f.epochValue=104; assert(controller:capture("QUEST","for Gia"))
   eq(f.storedCharacters[1],"Dace Alterac"); eq(f.storedCharacters[2],"Gia")
+end)
+
+test("sanitized character transition hydrates history once without re-persisting",function()
+  local f=fake(); f.character=nil
+  f.storageEntriesByKey={
+    unknown={{schema=1,timestamp="2026-08-31T12:00:00-04:00",character="Unknown",category="ROOM",message="unknown recent",line="unknown recent",source="builtin"}},
+    dace_alterac={{schema=1,timestamp="2026-08-31T11:00:00-04:00",character="Dace Alterac",category="ESP",message="persisted Dace",line="persisted Dace",source="builtin"}},
+  }
+  local controller=makeController(f); controller:start(); assert(controller:capture("QUEST","live unknown"))
+  eq(f.storageAppends,1); eq(table.concat(f.loadedCharacterKeys,","),"unknown")
+  f.character="Dace/Alterac"; assert(controller:syncCharacter())
+  local entries=controller:entries()
+  eq(table.concat(f.loadedCharacterKeys,","),"unknown,dace_alterac")
+  eq(#entries,3); eq(entries[1].message,"persisted Dace"); eq(entries[2].message,"unknown recent"); eq(entries[3].message,"live unknown")
+  eq(f.storageAppends,1)
+  f.character="Dace Alterac"; assert(controller:syncCharacter())
+  eq(table.concat(f.loadedCharacterKeys,","),"unknown,dace_alterac")
 end)
 
 test("filter changes notify with only matching entries and shutdown removes its trigger",function()

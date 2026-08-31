@@ -2,32 +2,33 @@ local State=require("state"); local Events=require("events"); local Layout=requi
 local Main={}; Main.__index=Main
 function Main.new(adapter,settings) return setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=0},Main) end
 function Main.installChatApi(namespace)
-  namespace.chat={
-    capture=function(category,text,metadata)
+  local chat=type(namespace.chat)=="table" and namespace.chat or {}
+  namespace.chat=chat
+  chat.capture=function(category,text,metadata)
       local active=rawget(_G,"DGHUD"); local controller=active and active.controller; local chat=controller and controller.chat
       if not chat then return nil,"chatbox is not running" end
       return chat:capture(category,text,metadata)
-    end,
-    setFilter=function(filter)
+    end
+  chat.setFilter=function(filter)
       local active=rawget(_G,"DGHUD"); local controller=active and active.controller; local chat=controller and controller.chat
       if not chat then return nil,"chatbox is not running" end
       return chat:setFilter(filter)
-    end,
-    status=function()
+    end
+  chat.status=function()
       local active=rawget(_G,"DGHUD"); local controller=active and active.controller
       if not controller then return nil,"HUD is not running" end
       return controller:chatStatus()
-    end,
-  }
-  return namespace.chat
+    end
+  return chat
 end
-function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {}); normalized.vitals.roundtime=self.roundtime_display or normalized.vitals.roundtime; self.view:update(normalized); self.last_state=normalized; return true end
+function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {}); normalized.vitals.roundtime=self.roundtime_display or normalized.vitals.roundtime; self.view:update(normalized); self.last_state=normalized; if self.chat then self.chat:syncCharacter() end; return true end
 function Main:characterName() return self.last_state and self.last_state.character and self.last_state.character.full_name or nil end
 function Main:startChat()
   local settings=self.settings.chat or {}
   if settings.enabled==false then return true end
-  local storage=self.adapter:createChatStorage(settings.visible_limit or 1000)
-  self.chat=ChatController.new(self.adapter,ChatParser,ChatHistory.new(settings.visible_limit or 1000,settings.dedupe_seconds or 3),storage,function(entries,categories,filter)
+  local visibleLimit=ChatHistory.visibleLimit(settings.visible_limit)
+  local storage=self.adapter:createChatStorage(visibleLimit)
+  self.chat=ChatController.new(self.adapter,ChatParser,ChatHistory.new(visibleLimit,settings.dedupe_seconds or 3),storage,function(entries,categories,filter)
     if self.view and self.view.renderChat then self.view:renderChat(entries,categories,filter) end
   end,function() return self:characterName() end)
   if self.view and self.view.setChatFilterCallback then

@@ -39,6 +39,32 @@ test("retains only the newest visible limit",function()
   eq(history:entries("ALL")[1].message,"two")
 end)
 
+test("hard caps an oversized visible limit at the newest thousand",function()
+  local history=History.new(1500,3)
+  for index=1,1501 do history:append({category="ROOM",message="line-"..index},index) end
+  local entries=history:entries("ALL")
+  eq(#entries,1000)
+  eq(entries[1].message,"line-502")
+  eq(entries[1000].message,"line-1501")
+end)
+
+test("hydrates older entries without duplicating overlap or disturbing live order",function()
+  local history=History.new(4,3)
+  local overlap={schema=1,timestamp="2026-08-31T12:00:00-04:00",character="Dace Alterac",category="ESP",speaker="Tekk",message="overlap",line='Tekk (ESP): "overlap"',source="builtin"}
+  history:append(overlap,100)
+  history:append({schema=1,timestamp="2026-08-31T13:00:00-04:00",character="Unknown",category="QUEST",message="live",line="live",source="custom"},104)
+  history:hydrate({
+    {schema=1,timestamp="2026-08-31T11:00:00-04:00",character="Dace Alterac",category="ROOM",speaker="Gia",message="older",line='Gia says, "older"',source="builtin"},
+    overlap,
+  })
+  local entries=history:entries("ALL")
+  eq(#entries,3)
+  eq(entries[1].message,"older")
+  eq(entries[2].message,"overlap")
+  eq(entries[3].message,"live")
+  eq(table.concat(history:categories(),","),"ROOM,ESP,QUEST")
+end)
+
 test("filters private categories and preserves category insertion order",function()
   local history=History.new(10,3)
   history:append({category="ROOM",message="room"},1)

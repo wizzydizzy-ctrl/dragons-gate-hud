@@ -1,5 +1,6 @@
 local History={}
 History.__index=History
+History.MAX_ENTRIES=1000
 
 local private={WHISPER=true,ESP=true,DRAGON=true,CONTACT=true}
 
@@ -11,8 +12,31 @@ local function key(entry)
   return table.concat({normalized(entry.category),normalized(entry.speaker),normalized(entry.target),normalized(entry.message)},"\0")
 end
 
+local function identity(entry)
+  local fields={"schema","timestamp","character","category","speaker","target","language","message","line","source"}
+  local values={}
+  for index,name in ipairs(fields) do values[index]=tostring(entry[name] or "") end
+  return table.concat(values,"\0")
+end
+
+local function rebuildCategories(history)
+  history.categoryOrder={}
+  history.knownCategories={}
+  for _,entry in ipairs(history.items) do
+    local category=tostring(entry.category or ""):upper()
+    if category~="" and not history.knownCategories[category] then
+      history.knownCategories[category]=true
+      history.categoryOrder[#history.categoryOrder+1]=category
+    end
+  end
+end
+
+function History.visibleLimit(limit)
+  return math.min(History.MAX_ENTRIES,math.max(1,math.floor(tonumber(limit) or History.MAX_ENTRIES)))
+end
+
 function History.new(limit,dedupeSeconds)
-  return setmetatable({limit=math.max(1,math.floor(tonumber(limit) or 1000)),dedupeSeconds=math.max(0,tonumber(dedupeSeconds) or 3),items={},categoryOrder={},knownCategories={}},History)
+  return setmetatable({limit=History.visibleLimit(limit),dedupeSeconds=math.max(0,tonumber(dedupeSeconds) or 3),items={},categoryOrder={},knownCategories={}},History)
 end
 
 function History:append(entry,epoch)
@@ -30,6 +54,24 @@ function History:append(entry,epoch)
     self.knownCategories[category]=true
     self.categoryOrder[#self.categoryOrder+1]=category
   end
+  return true
+end
+
+function History:hydrate(entries)
+  local combined,seen={},{}
+  local function include(entry)
+    if type(entry)~="table" then return end
+    local entryIdentity=identity(entry)
+    if seen[entryIdentity] then return end
+    seen[entryIdentity]=true
+    combined[#combined+1]=entry
+  end
+  for _,entry in ipairs(type(entries)=="table" and entries or {}) do include(entry) end
+  for _,entry in ipairs(self.items) do include(entry) end
+  local first=math.max(1,#combined-self.limit+1)
+  self.items={}
+  for index=first,#combined do self.items[#self.items+1]=combined[index] end
+  rebuildCategories(self)
   return true
 end
 

@@ -165,6 +165,26 @@ test("chat reflow keeps the same wrapped entry visible while narrowing and widen
   eq(view.chat_output.currentScroll>=widened.first and view.chat_output.currentScroll<=widened.last,true)
 end)
 
+test("chat wrap uses live MiniConsole metrics after resize and font application",function()
+  local layout=require("layout").compute(1000,700); local view=chatView(); local output=view.chat_output
+  output.metricWidth=12
+  function output:calcFontSize() self.metricFontSeen=self.fontSize; return self.metricWidth,18 end
+  function output:get_width() return layout.chat_width-(2*layout.chat_padding) end
+  view:applyLayout(layout)
+  eq(layout.chat_wrap_columns==52,false)
+  eq(output.metricFontSeen,layout.chat_font)
+  eq(output.wrap,52)
+
+  local entries={}
+  for index=1,20 do entries[index]={category="ESP",timestamp="2026-08-31T13:00:00-04:00",line=string.rep("entry-"..index.." ",40)} end
+  view:renderChat(entries,{"ESP"},"ESP"); output.currentScroll=output.renderedEntries[10].first+1
+  output.metricWidth=16; view:applyLayout(layout)
+  local anchored=output.renderedEntries[10]
+  eq(output.wrap,39); eq(output.currentScroll>=anchored.first and output.currentScroll<=anchored.last,true)
+  output.currentScroll=output.lastLine; output.metricWidth=10; view:applyLayout(layout)
+  eq(output.wrap,62); eq(output.scrollCalls[#output.scrollCalls],"bottom")
+end)
+
 test("chat wrap accepts legacy Geyser setters that return no value",function()
   local layout=require("layout").compute(1920,1080); local view=chatView()
   function view.chat_output:setWrap(value) self.wrap=value end

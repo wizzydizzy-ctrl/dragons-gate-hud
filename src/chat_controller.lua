@@ -9,7 +9,7 @@ local function call(object,name,...)
 end
 
 function Controller.new(adapter,parser,history,storage,onChange,characterProvider)
-  return setmetatable({adapter=adapter,parser=parser,history=history,storage=storage,onChange=onChange or function() end,characterProvider=characterProvider or function() end,filter="ALL",started=false},Controller)
+  return setmetatable({adapter=adapter,parser=parser,history=history,storage=storage,onChange=onChange or function() end,characterProvider=characterProvider or function() end,filter="ALL",started=false,loadedCharacterKeys={}},Controller)
 end
 
 function Controller:character()
@@ -47,11 +47,24 @@ function Controller:accept(entry)
   return true
 end
 
+function Controller:syncCharacter()
+  local character=self:character()
+  local storageKey=call(self.storage,"characterKey",character) or "unknown"
+  storageKey=tostring(storageKey)
+  if self.currentCharacterKey==storageKey then return true end
+  self.currentCharacterKey=storageKey
+  if self.loadedCharacterKeys[storageKey] then return true end
+  self.loadedCharacterKeys[storageKey]=true
+  local recent,loadErr=call(self.storage,"loadRecent",character)
+  if loadErr then self:reportStorageError(loadErr) end
+  self.history:hydrate(type(recent)=="table" and recent or {})
+  if self.started then self:notify() end
+  return true
+end
+
 function Controller:start()
   if self.started then return true end
-  local recent,loadErr=call(self.storage,"loadRecent",self:character())
-  if loadErr then self:reportStorageError(loadErr) end
-  for _,entry in ipairs(type(recent)=="table" and recent or {}) do self.history:append(entry,-math.huge) end
+  self:syncCharacter()
   local trigger,triggerErr=call(self.adapter,"addLineTrigger",function(line) self:onLine(line) end)
   if not trigger then return nil,triggerErr or "could not register chat trigger" end
   self.trigger=trigger

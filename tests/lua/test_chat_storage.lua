@@ -104,6 +104,19 @@ test("returns the newest N entries in chronological order across dated files",fu
   eq(entries[4].message,"new-three")
 end)
 
+test("hard caps oversized storage reads at the newest thousand",function()
+  local api=fakeStorageApi(); local source={}
+  api.listed={"2026-08-31.jsonl"}; api.decoded={}
+  for index=1,1501 do
+    local line="line-"..index; source[index]=line; api.decoded[line]={message=line}
+  end
+  api.files["/chat/dace/2026-08-31.jsonl"]=table.concat(source,"\n").."\n"
+  local entries=Storage.new(api,"/chat",1500):loadRecent("Dace")
+  eq(#entries,1000)
+  eq(entries[1].message,"line-502")
+  eq(entries[1000].message,"line-1501")
+end)
+
 test("contains list errors and recovers after a read error",function()
   local unavailable=fakeStorageApi()
   unavailable.list=function() error("directory unavailable") end

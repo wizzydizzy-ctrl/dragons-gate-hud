@@ -15,7 +15,7 @@ local function fake()
   function f:addAlias() self.next=self.next+1; local id="alias-"..self.next; self.aliases[id]=true; return id end
   function f:killEvent(id) self.killed[id]=true; self.events[id]=nil end
   function f:killAlias(id) self.killed[id]=true; self.aliases[id]=nil end
-  function f:getGMCP() return {Char={Vitals={hp=1,hp_max=1}}} end
+  function f:getGMCP() return self.gmcp or {Char={Vitals={hp=1,hp_max=1}}} end
   function f:isCharacterActive() return self.character_active==true end
   function f:addLineTrigger(fn)
     self.lineTriggerCalls=(self.lineTriggerCalls or 0)+1
@@ -26,10 +26,20 @@ local function fake()
   function f:epoch() return self.epochValue or 100 end
   function f:timestamp() return self.timestampValue or "2026-08-31T13:00:00-04:00" end
   function f:reportChatErrorOnce() self.chatErrors=(self.chatErrors or 0)+1 end
-  function f:createChatStorage()
+  function f:createChatStorage(visibleLimit)
+    f.chatVisibleLimit=visibleLimit
     f.chatEntries=f.chatEntries or {}; local storage={entries=f.chatEntries}
-    function storage:loadRecent() f.loadRecentCalls=(f.loadRecentCalls or 0)+1; return self.entries end
-    function storage:append(entry) self.entries[#self.entries+1]=entry; return true end
+    function storage:characterKey(character)
+      local key=tostring(character or ""):lower():gsub("[^a-z0-9_-]+","_"):gsub("_+","_"):gsub("^_+",""):gsub("_+$","")
+      return key~="" and key or "unknown"
+    end
+    function storage:loadRecent(character)
+      f.loadRecentCalls=(f.loadRecentCalls or 0)+1
+      local key=self:characterKey(character); f.loadedCharacterKeys=f.loadedCharacterKeys or {}; f.loadedCharacterKeys[#f.loadedCharacterKeys+1]=key
+      if f.chatEntriesByKey then return f.chatEntriesByKey[key] or {} end
+      return self.entries
+    end
+    function storage:append(entry) f.chatStorageAppends=(f.chatStorageAppends or 0)+1; self.entries[#self.entries+1]=entry; return true end
     function storage:close() if f.onStorageClose then f.onStorageClose() end; return true end
     return storage
   end
@@ -64,6 +74,29 @@ test("resize preserves chat controller history and trigger ownership",function()
 end)
 test("controller merges collector snapshots and removes collector runtime",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud.collector.snapshot.info={attributes={STR="Good"}}; hud:refresh(); eq(hud.last_state.attributes.STR,"Good"); eq(f:count(f.triggers),2); hud:shutdown(); eq(f:count(f.triggers),0); eq(f:count(f.timers),0)
+end)
+test("GMCP identity arrival hydrates persisted character history without appending it",function()
+  local f=fake()
+  f.chatEntriesByKey={
+    unknown={},
+    dace_alterac={{schema=1,timestamp="2026-08-31T12:00:00-04:00",character="Dace Alterac",category="ESP",message="persisted after login",line="persisted after login",source="builtin"}},
+  }
+  local hud=Main.new(f,{layout={},chat={visible_limit=1000,dedupe_seconds=3}}); assert(hud:start())
+  eq(table.concat(f.loadedCharacterKeys,","),"unknown"); eq(#hud.chat:entries(),0)
+  f.gmcp={Char={Status={name="Dace",surname="Alterac"},Vitals={hp=1,hp_max=1}}}; hud:refresh()
+  eq(table.concat(f.loadedCharacterKeys,","),"unknown,dace_alterac")
+  eq(#hud.chat:entries(),1); eq(hud.chat:entries()[1].message,"persisted after login"); eq(f.chatStorageAppends or 0,0)
+end)
+test("controller status and storage use the effective bounded visible limit",function()
+  local oversized=fake(); oversized.chatEntries={}
+  for index=1,1001 do oversized.chatEntries[index]={category="ROOM",message="line-"..index} end
+  local hud=Main.new(oversized,{layout={},chat={visible_limit=1500,dedupe_seconds=3}}); assert(hud:start())
+  local status=hud:chatStatus(); eq(oversized.chatVisibleLimit,1000); eq(status.visible_count,1000)
+  eq(hud.chat:entries()[1].message,"line-2"); eq(hud.chat:entries()[1000].message,"line-1001")
+
+  local lower=fake(); lower.chatEntries={{category="ROOM",message="one"},{category="ROOM",message="two"},{category="ROOM",message="three"}}
+  local lowerHud=Main.new(lower,{layout={},chat={visible_limit=2,dedupe_seconds=3}}); assert(lowerHud:start())
+  eq(lower.chatVisibleLimit,2); eq(lowerHud:chatStatus().visible_count,2); eq(lowerHud.chat:entries()[1].message,"two")
 end)
 test("startup refreshes command data when installed at an in-game prompt",function()
   local f=fake(); f.character_active=true

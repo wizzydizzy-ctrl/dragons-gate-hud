@@ -1,5 +1,6 @@
 local Storage={}
 Storage.__index=Storage
+Storage.MAX_ENTRIES=1000
 
 local function trim(value)
   return tostring(value or ""):match("^%s*(.-)%s*$")
@@ -43,7 +44,8 @@ end
 
 function Storage.new(api,basePath,visibleLimit)
   assert(type(api)=="table","storage api is required")
-  return setmetatable({api=api,basePath=tostring(basePath or ""),visibleLimit=math.max(1,math.floor(tonumber(visibleLimit) or 1000)),reportedMalformed=false},Storage)
+  visibleLimit=math.min(Storage.MAX_ENTRIES,math.max(1,math.floor(tonumber(visibleLimit) or Storage.MAX_ENTRIES)))
+  return setmetatable({api=api,basePath=tostring(basePath or ""),visibleLimit=visibleLimit,reportedMalformed=false},Storage)
 end
 
 function Storage:characterKey(character)

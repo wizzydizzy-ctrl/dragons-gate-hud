@@ -75,3 +75,30 @@ test("failed entry replacement preserves settings for rollback before module loa
     eq(DGHUD.settings.personal,"untouched")
   end)
 end)
+
+test("failed entry replacement preserves a direct capture wrapper for rollback",function()
+  withEntryStubs(function(context)
+    local oldChat={}
+    function oldChat.capture()
+      local active=rawget(_G,"DGHUD")
+      if not (active and active.controller) then return nil,"chatbox is not running" end
+      return true
+    end
+    DGHUD={user_settings={},chat=oldChat,shutdown=function() return true end}
+    context.install("defaults",function() error("replacement require failed") end)
+    eq(pcall(dofile,"src/entry.lua"),false)
+    eq(DGHUD.chat,oldChat)
+    local called,result,err=pcall(function() return DGHUD.chat.capture("QUEST","during rollback") end)
+    eq(called,true); eq(result,nil); eq(err,"chatbox is not running")
+  end)
+end)
+
+test("failed first entry load creates a fail-safe direct capture API",function()
+  withEntryStubs(function(context)
+    DGHUD={user_settings={},shutdown=function() return true end}
+    context.install("defaults",function() error("initial require failed") end)
+    eq(pcall(dofile,"src/entry.lua"),false)
+    local called,result,err=pcall(function() return DGHUD.chat.capture("QUEST","during failure") end)
+    eq(called,true); eq(result,nil); eq(err,"chatbox is not running")
+  end)
+end)

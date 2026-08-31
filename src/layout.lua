@@ -26,7 +26,7 @@ local function metrics(width,height,layout)
 end
 function Layout.compute(width,height)
   width=tonumber(width) or 1200; height=tonumber(height) or 800
-  local rail=math.floor(width*.20)
+  local rail=math.floor(width*.17)
   if width>=1400 then return metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=38,show_character_rail=true,show_room_compass=height>=700,vitals_side="left"}) end
   if width>=1000 then return metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=36,show_character_rail=true,show_room_compass=height>=650,vitals_side="left"}) end
   return metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=58,show_character_rail=false,show_room_compass=false,vitals_side="compact"})

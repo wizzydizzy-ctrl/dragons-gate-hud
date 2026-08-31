@@ -14,6 +14,8 @@ The existing single `top` layout value is split conceptually into header height 
 
 The chatbox is always visible. It has no collapse control.
 
+Chat text wraps to the live inner width of the center column after panel padding and scrollbar allowance. The wrap width is recomputed whenever the Mudlet window or resolution changes. Wrapped entries grow downward by the required number of visual lines; they are never horizontally clipped, allowed to draw behind the HUD rails, or truncated merely because the window became narrower. Widening the window reflows entries onto fewer visual lines. Scroll position is preserved during reflow unless the user was already at the bottom, in which case the view remains pinned to the newest entry.
+
 ## Built-in Capture Categories
 
 The built-in categories are:
@@ -91,6 +93,7 @@ The chatbox uses an owned Geyser container with:
 - timestamps that can be displayed without dominating message text;
 - an active-filter indicator;
 - automatic scrolling only when the user is already at the bottom.
+- responsive word wrapping that follows the main-display width on every resize.
 
 Default visible filters are ALL, ROOM, PRIVATE, ESP, DRAGON, CONTACT, and STAFF. OWN and WHISPER remain independently stored and can be included through ALL, ROOM, and PRIVATE. Custom category tabs appear in deterministic insertion order and must not overflow the panel; overflow categories use a compact selector or horizontal scroll behavior.
 
@@ -143,7 +146,7 @@ Responsive computation uses the percentage and clamps, with the target height se
 
 ## Testing and Acceptance
 
-Pure Lua tests cover every supplied message format, optional targets and languages, rejection of misleading NPC/system narration, ANSI removal, metadata extraction, custom category validation, adjacent deduplication, bounded history, safe character paths, JSONL encoding, malformed-line recovery, and permanent append behavior.
+Pure Lua tests cover every supplied message format, optional targets and languages, rejection of misleading NPC/system narration, ANSI removal, metadata extraction, custom category validation, adjacent deduplication, bounded history, safe character paths, JSONL encoding, malformed-line recovery, permanent append behavior, and deterministic wrap-column calculation.
 
 Runtime tests verify one owned line trigger, API availability, update/reload idempotence, file-handle cleanup, and preservation of unrelated Mudlet content. Layout tests cover reference 240-pixel sizing, percentage scaling, min/max clamps, exact center-column alignment, and non-overlap at wide, medium, compact, full-screen, restored, and short-height resolutions.
 
@@ -157,6 +160,7 @@ Live acceptance in the disposable `Dragons Gate HUD` profile must demonstrate:
 6. captured entries persist across reload, reconnect, update, and Mudlet restart;
 7. resizing preserves the always-visible top-center chatbox and usable console;
 8. unrelated personal triggers, aliases, scripts, packages, map data, and settings remain unchanged.
+9. narrowing and widening the window reflows long chat messages to the main-display width without clipping or losing the current scroll position.
 
 ## Delivery Sequence
 

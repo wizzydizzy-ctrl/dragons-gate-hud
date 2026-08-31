@@ -13,6 +13,7 @@
 ## Global Constraints
 
 - Chatbox is always visible at the top center and exactly matches main-console width.
+- Chat text word-wraps to the live inner center-column width and reflows on every resize.
 - Target height is 240 px, percentage-scaled and clamped between configured minimum and maximum.
 - Original game output remains visible in the main console.
 - Captured history is retained indefinitely in per-character, per-date JSONL files.
@@ -251,7 +252,7 @@ git commit -m "feat: expose persistent chat capture API"
 
 **Interfaces:**
 - Layout produces `header_height`, `chat_height`, `console_top`, `chat_x`, and `chat_width`.
-- View produces `chat_container`, `chat_tabs`, `chat_output`, `:renderChat(entries,categories,activeFilter)`, and `:setChatFilterCallback(fn)`.
+- View produces `chat_container`, `chat_tabs`, `chat_output`, `:renderChat(entries,categories,activeFilter)`, `:applyChatWrap(layout)`, and `:setChatFilterCallback(fn)`.
 
 - [ ] **Step 1: Write failing geometry tests**
 
@@ -264,6 +265,10 @@ end)
 test("chat height scales and clamps",function()
   eq(Layout.compute(1200,650).chat_height>=160,true)
   eq(Layout.compute(3840,2160).chat_height<=320,true)
+end)
+test("chat wrap columns follow the center display width",function()
+  local narrow=Layout.compute(1000,700); local wide=Layout.compute(1920,1080)
+  eq(narrow.chat_wrap_columns<wide.chat_wrap_columns,true); eq(narrow.chat_wrap_columns>=30,true)
 end)
 ```
 
@@ -288,6 +293,8 @@ self.chat_output=Geyser.MiniConsole:new({name="DGHUD.Chat.Output",x=8,y=36,width
 
 Place the container at `chat_x,header_height,chat_width,chat_height`. Render compact category buttons with deterministic custom-category overflow. Apply channel colors and responsive fonts. Keep timestamps visually muted. Preserve scroll position unless already at the bottom.
 
+Compute `chat_inner_width=chat_width-(2*chat_padding)-scrollbar_allowance` and derive `chat_wrap_columns=floor(chat_inner_width/chat_character_width)`, clamped to at least 30. `View:applyChatWrap(layout)` applies that value through the Mudlet mini-console wrap API after every layout pass. Re-render or reflow visible entries when the value changes. Wrapped rows expand downward naturally; no entry is horizontally clipped or truncated. Capture whether the user is at the bottom before reflow and restore the prior scroll position otherwise.
+
 - [ ] **Step 5: Wire controller rendering and tab callbacks**
 
 Controller `onChange` calls `View:renderChat`. Tab callbacks call `controller:setFilter(category)` and rerender. Main refreshes chat layout on every window resize without recreating controller history or triggers.
@@ -296,7 +303,7 @@ Controller `onChange` calls `View:renderChat`. Tab callbacks call `controller:se
 
 Run: `lua tests/run.lua`.
 
-Live-resize the disposable profile through approximately `2560x1400`, `1920x1080`, `1200x800`, `1000x650`, and compact width. Confirm the chatbox remains visible, center-aligned, non-overlapping, and the game console remains usable.
+Live-resize the disposable profile through approximately `2560x1400`, `1920x1080`, `1200x800`, `1000x650`, and compact width. Confirm the chatbox remains visible, center-aligned, non-overlapping, and the game console remains usable. Feed a message longer than 200 characters and verify it wraps to progressively more or fewer lines as the window narrows and widens without clipping or changing the selected filter.
 
 - [ ] **Step 7: Commit**
 
@@ -381,6 +388,7 @@ git commit -m "docs: finish persistent chatbox acceptance"
 - [ ] Only the newest 1,000 valid entries load into memory.
 - [ ] Normal game output remains untouched.
 - [ ] Chatbox remains always visible, responsive, and exactly center-aligned.
+- [ ] Long entries word-wrap and reflow with the main-display width without clipping or scroll jumps.
 - [ ] Full-screen/restored/compact resizing produces no overlap or black gaps.
 - [ ] Unrelated Mudlet triggers, aliases, scripts, packages, maps, and settings remain unchanged.
 - [ ] Published release, checksum, health check, and live acceptance all pass.

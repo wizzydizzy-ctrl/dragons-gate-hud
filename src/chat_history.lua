@@ -19,7 +19,8 @@ function History:append(entry,epoch)
   if type(entry)~="table" then return false end
   epoch=tonumber(epoch) or os.time()
   local entryKey=key(entry)
-  if self.lastKey==entryKey and epoch-self.lastEpoch<=self.dedupeSeconds then return false end
+  local elapsed=epoch-(self.lastEpoch or epoch)
+  if self.lastKey==entryKey and elapsed>=0 and elapsed<=self.dedupeSeconds then return false end
   self.lastKey=entryKey
   self.lastEpoch=epoch
   self.items[#self.items+1]=entry

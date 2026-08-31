@@ -35,6 +35,12 @@ local function lines(text)
   return result
 end
 
+local function call(api,name,...)
+  local ok,result,err=pcall(api[name],...)
+  if not ok then return nil,tostring(result) end
+  return result,err
+end
+
 function Storage.new(api,basePath,visibleLimit)
   assert(type(api)=="table","storage api is required")
   return setmetatable({api=api,basePath=tostring(basePath or ""),visibleLimit=math.max(1,math.floor(tonumber(visibleLimit) or 1000)),reportedMalformed=false},Storage)
@@ -44,13 +50,15 @@ function Storage:append(entry)
   if type(entry)~="table" then return nil,"chat entry is required" end
   local character=Storage.safeCharacter(entry.character)
   local directory=path(self.basePath,character)
-  local ok,err=self.api.mkdir(self.basePath)
+  local ok,err=call(self.api,"mkdir",self.basePath)
   if not ok then return nil,err or "could not create chat storage" end
-  ok,err=self.api.mkdir(directory)
+  ok,err=call(self.api,"mkdir",directory)
   if not ok then return nil,err or "could not create character storage" end
-  local encoded=self.api.encode(entry)
+  local encoded=call(self.api,"encode",entry)
   if type(encoded)~="string" then return nil,"could not encode chat entry" end
-  return self.api.append(path(directory,date(entry.timestamp)..".jsonl"),encoded.."\n")
+  local appended,appendErr=call(self.api,"append",path(directory,date(entry.timestamp)..".jsonl"),encoded.."\n")
+  if not appended then return nil,appendErr or "could not append chat log" end
+  return appended
 end
 
 function Storage:reportMalformed()
@@ -59,12 +67,23 @@ function Storage:reportMalformed()
   if type(self.api.report)=="function" then pcall(self.api.report,"skipped malformed chat log entry") end
 end
 
+function Storage:reportFailure(message)
+  if self.reportedFailure then return end
+  self.reportedFailure=true
+  if type(self.api.report)=="function" then pcall(self.api.report,tostring(message)) end
+end
+
 function Storage:loadRecent(character)
   local directory=path(self.basePath,Storage.safeCharacter(character))
-  local files=self.api.list(directory)
+  local files,listErr=call(self.api,"list",directory)
+  if type(files)~="table" then
+    if listErr then self:reportFailure(listErr) end
+    return {}
+  end
   local newestFirst={}
   for _,file in ipairs(datedFiles(files)) do
-    local content=self.api.read(path(directory,file))
+    local content,readErr=call(self.api,"read",path(directory,file))
+    if readErr then self:reportFailure(readErr) end
     local fileLines=lines(content)
     for index=#fileLines,1,-1 do
       local ok,entry=pcall(self.api.decode,fileLines[index])

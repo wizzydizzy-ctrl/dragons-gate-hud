@@ -1,6 +1,8 @@
 local Layout={}
-function Layout.detailsPlacement(available_height,line_height)
-  return (tonumber(available_height) or 0)>=(tonumber(line_height) or 0)*8 and "left" or "right"
+function Layout.detailsPlacement(available_height,line_height,left_width)
+  local enough_height=(tonumber(available_height) or 0)>=(tonumber(line_height) or 0)*8
+  local enough_width=left_width==nil or (tonumber(left_width) or 0)>=420
+  return enough_height and enough_width and "left" or "right"
 end
 function Layout.detailsCardRows(columns) return tonumber(columns)==2 and 11 or 7 end
 local function clamp(value,minimum,maximum) return math.max(minimum,math.min(maximum,math.floor(value+0.5))) end

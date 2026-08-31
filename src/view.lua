@@ -104,7 +104,7 @@ function View:applyLayout(layout)
     local panel_height=math.min(available,layout.lower_title_height+(3+optional)*(layout.lower_gauge_height+layout.lower_row_gap)+layout.lower_status_height+layout.lower_room_height+navigation_height+layout.lower_section_gap)
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
     local details_y=top+layout.identity_height+12; local vitals_y=(layout.window_height or 800)-bottom-panel_height; local details_h=vitals_y-details_y-12
-    local details_placement=Layout.detailsPlacement(details_h,layout.details_line_height)
+    local details_placement=Layout.detailsPlacement(details_h,layout.details_line_height,layout.left)
     layout.details_columns=details_placement=="right" and 2 or 4
     if details_placement=="left" then place(self.details,0,details_y,layout.left,details_h) else self.details:hide() end
     local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=math.max(2,math.min(#((self.last_state and self.last_state.equipment.items) or {}),6))

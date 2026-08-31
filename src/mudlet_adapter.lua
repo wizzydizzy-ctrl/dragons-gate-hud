@@ -1,4 +1,4 @@
-local View=require("view")
+local View=require("view"); local Storage=require("chat_storage")
 local Adapter={}; Adapter.__index=Adapter
 function Adapter.updateBase(home) return home.."/DGHUDUpdater" end
 function Adapter.updateArchivePath(home) return Adapter.updateBase(home).."/staging/DragonsGateHUD.mpackage" end
@@ -7,12 +7,16 @@ function Adapter:getBorders() return getBorderLeft(),getBorderTop(),getBorderRig
 function Adapter:getWindowSize() return getMainWindowSize() end
 function Adapter:setBorders(l,t,r,b) setBorderLeft(l);setBorderTop(t);setBorderRight(r);setBorderBottom(b) end
 function Adapter:createView(settings) return View.new(settings) end
+function Adapter:createChatStorage(visibleLimit) return Storage.new(Storage.mudletApi(),getMudletHomeDir().."/DragonsGateHUD/chat",visibleLimit) end
 function Adapter:addEvent(name,fn) return registerAnonymousEventHandler(name,fn) end
 function Adapter:killEvent(id) return killAnonymousEventHandler(id) end
 function Adapter:addAlias(pattern,fn) return tempAlias(pattern,fn) end
 function Adapter:killAlias(id) return killAlias(id) end
 function Adapter:addLineTrigger(fn) return tempRegexTrigger("^.*$",function() fn(line or "") end) end
 function Adapter:killTrigger(id) return killTrigger(id) end
+function Adapter:epoch() return os.time() end
+function Adapter:timestamp() return os.date("%Y-%m-%dT%H:%M:%S%z") end
+function Adapter:reportChatErrorOnce(message) cecho("\n<red>[DGHUD Chat]</red> "..tostring(message).."\n") end
 function Adapter:schedule(seconds,fn) return tempTimer(seconds,fn) end
 function Adapter:cancelTimer(id) return killTimer(id) end
 function Adapter:sendCommand(command) return send(command) end

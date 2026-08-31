@@ -25,6 +25,7 @@ dofile(root .. "/tests/lua/test_view.lua")
 dofile(root .. "/tests/lua/test_chat_parser.lua")
 dofile(root .. "/tests/lua/test_chat_history.lua")
 dofile(root .. "/tests/lua/test_chat_storage.lua")
+dofile(root .. "/tests/lua/test_chat_controller.lua")
 
 print(string.format("%d tests, %d failures", total, failed))
 os.exit(failed == 0 and 0 or 1)

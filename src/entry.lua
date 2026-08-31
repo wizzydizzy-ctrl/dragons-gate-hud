@@ -1,5 +1,5 @@
 if DGHUD and DGHUD.shutdown then pcall(DGHUD.shutdown) end
-local moduleNames={"defaults","command_parser","command_collector","chat_parser","chat_history","chat_storage","navigation","state","settings","sha256","release","events","layout","view","mudlet_adapter","main","updater"}
+local moduleNames={"defaults","command_parser","command_collector","chat_parser","chat_history","chat_storage","chat_controller","navigation","state","settings","sha256","release","events","layout","view","mudlet_adapter","main","updater"}
 for _,name in ipairs(moduleNames) do package.loaded[name]=nil end
 DGHUD = {}
 local defaults=require("defaults")
@@ -13,6 +13,7 @@ DGHUD.chatStorageApi=Storage.mudletApi()
 DGHUD.controller=Main.new(Adapter.new(),DGHUD.settings)
 DGHUD.updater=Updater.new(DGHUD.controller.adapter,DGHUD.settings)
 DGHUD.controller.updater=DGHUD.updater
+Main.installChatApi(DGHUD)
 function DGHUD.start() return DGHUD.controller:start() end
 function DGHUD.shutdown() return DGHUD.controller:shutdown() end
 function DGHUD.reload() return DGHUD.controller:reload() end

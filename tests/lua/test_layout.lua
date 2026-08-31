@@ -38,3 +38,7 @@ test("new cards derive dimensions from responsive fonts",function()
     local r=Layout.compute(size[1],size[2]); eq(r.inventory_row_height>=r.inventory_font+8,true); eq(r.details_line_height>=r.body_font+4,true); eq(r.compass_cell>=r.compass_font+10,true); eq(r.utility_height>=r.utility_font+10,true); eq((size[1]-r.left-r.right)>=size[1]*.64,true)
   end
 end)
+test("character details move to the roomier rail when the left stack is short",function()
+  eq(Layout.detailsPlacement(180,26),"left")
+  eq(Layout.detailsPlacement(120,26),"right")
+end)

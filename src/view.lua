@@ -1,4 +1,5 @@
 local Navigation=require("navigation")
+local Layout=require("layout")
 local View={}; View.__index=View
 function View.withFont(text,size) return "<span style='font-size:"..tonumber(size).."px'>"..text.."</span>" end
 local function esc(v) return tostring(v or ""):gsub("&","&amp;"):gsub("<","&lt;"):gsub(">","&gt;") end
@@ -95,11 +96,18 @@ function View:applyLayout(layout)
     local panel_height=math.min(available,layout.title_height+(3+optional)*(layout.gauge_height+layout.row_gap)+layout.status_height+layout.room_height+navigation_height+44)
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
     local details_y=top+layout.identity_height+12; local vitals_y=(layout.window_height or 800)-bottom-panel_height; local details_h=vitals_y-details_y-12
-    if details_h>=layout.details_line_height*3 then place(self.details,0,details_y,layout.left,details_h) else self.details:hide() end
+    local details_placement=Layout.detailsPlacement(details_h,layout.details_line_height)
+    if details_placement=="left" then place(self.details,0,details_y,layout.left,details_h) else self.details:hide() end
     local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=math.max(2,math.min(#((self.last_state and self.last_state.equipment.items) or {}),6))
     local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18; local wealth_h=layout.heading_font+layout.details_line_height*2+p*2+18
     place(self.equipment,card_x,top+p,card_w,equipment_h); place(self.wealth,card_x,top+p+equipment_h+12,card_w,wealth_h)
-    local inventory_y=top+p+equipment_h+wealth_h+24; local inventory_h=(layout.window_height or 800)-bottom-p-inventory_y
+    local inventory_y=top+p+equipment_h+wealth_h+24; local rail_bottom=(layout.window_height or 800)-bottom-p
+    if details_placement=="right" then
+      local right_details_h=layout.details_line_height*7+p*2+18
+      place(self.details,card_x,rail_bottom-right_details_h,card_w,right_details_h)
+      rail_bottom=rail_bottom-right_details_h-12
+    end
+    local inventory_h=rail_bottom-inventory_y
     if inventory_h>=layout.inventory_row_height*2 then place(self.inventory,card_x,inventory_y,card_w,inventory_h); self.inventory_capacity=math.max(1,math.floor((inventory_h-layout.heading_font-p*2-30)/layout.inventory_row_height)) else self.inventory:hide(); self.inventory_capacity=0 end
   else
     self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.wealth:hide(); self.inventory:hide(); self.right:hide(); place(self.compact,0,62,"100%",top-62)

@@ -25,24 +25,30 @@ function Controller:entries()
   return self.history:entries(self.filter)
 end
 
+function Controller:reportStorageError(message)
+  if self.reportedStorageError then return end
+  self.reportedStorageError=true
+  call(self.adapter,"reportChatErrorOnce",message or "could not access chat log")
+end
+
 function Controller:accept(entry)
   local added=self.history:append(entry,call(self.adapter,"epoch"))
   if not added then return false end
   local ok,err=call(self.storage,"append",entry)
-  if not ok and not self.reportedStorageError then
-    self.reportedStorageError=true
-    call(self.adapter,"reportChatErrorOnce",err or "could not append chat log")
-  end
+  if not ok then self:reportStorageError(err or "could not append chat log") end
   self:notify()
   return true
 end
 
 function Controller:start()
   if self.started then return true end
-  self.started=true
-  local recent=call(self.storage,"loadRecent",self:character())
+  local recent,loadErr=call(self.storage,"loadRecent",self:character())
+  if loadErr then self:reportStorageError(loadErr) end
   for _,entry in ipairs(type(recent)=="table" and recent or {}) do self.history:append(entry,-math.huge) end
-  self.trigger=call(self.adapter,"addLineTrigger",function(line) self:onLine(line) end)
+  local trigger,triggerErr=call(self.adapter,"addLineTrigger",function(line) self:onLine(line) end)
+  if not trigger then return nil,triggerErr or "could not register chat trigger" end
+  self.trigger=trigger
+  self.started=true
   self:notify()
   return true
 end
@@ -72,9 +78,10 @@ function Controller:setFilter(filter)
 end
 
 function Controller:shutdown()
-  if self.trigger then call(self.adapter,"killTrigger",self.trigger); self.trigger=nil end
-  if self.storage then call(self.storage,"close") end
   self.started=false
+  local trigger=self.trigger; self.trigger=nil; local storage=self.storage
+  if trigger then call(self.adapter,"killTrigger",trigger) end
+  if storage then call(storage,"close") end
   return true
 end
 

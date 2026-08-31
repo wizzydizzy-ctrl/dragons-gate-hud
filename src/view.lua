@@ -105,6 +105,7 @@ function View:applyLayout(layout)
     if details_placement=="right" then
       local right_details_h=layout.details_line_height*7+p*2+18
       place(self.details,card_x,rail_bottom-right_details_h,card_w,right_details_h)
+      if self.details.raise then self.details:raise() end
       rail_bottom=rail_bottom-right_details_h-12
     end
     local inventory_h=rail_bottom-inventory_y

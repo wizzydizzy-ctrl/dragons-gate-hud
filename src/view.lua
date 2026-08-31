@@ -21,10 +21,13 @@ function View.inventoryRows(items,capacity)
   return rows
 end
 function View.detailsContent(combat,attributes,t,layout)
-  combat=combat or {}; attributes=attributes or {}; local parts={}
-  if combat.body_armor then parts[#parts+1]="Armor <b>"..combat.body_armor.."%</b> &nbsp; OR <b>"..esc(combat.or_rating or "—").."</b> &nbsp; DR <b>"..esc(combat.dr or "—").."</b>"..(combat.stance and " &nbsp; <b>"..esc(combat.stance).."</b>" or "") elseif combat.stance then parts[#parts+1]="Stance <b>"..esc(combat.stance).."</b>" end
+  combat=combat or {}; attributes=attributes or {}; local parts={}; local columns=layout.details_columns or 4
+  if combat.body_armor then
+    parts[#parts+1]="Armor <b>"..combat.body_armor.."%</b> &nbsp; OR <b>"..esc(combat.or_rating or "—").."</b> &nbsp; DR <b>"..esc(combat.dr or "—").."</b>"
+    if combat.stance then if columns<=2 then parts[#parts+1]="Stance <b>"..esc(combat.stance).."</b>" else parts[#parts]=parts[#parts].." &nbsp; <b>"..esc(combat.stance).."</b>" end end
+  elseif combat.stance then parts[#parts+1]="Stance <b>"..esc(combat.stance).."</b>" end
   local stats={}; for _,key in ipairs({"STR","INT","WIS","DEX","AGI","CON","CHA","WIL","VOI","PER","APP"}) do if attributes[key] then stats[#stats+1]=key.." <b>"..esc(attributes[key]).."</b>" end end
-  for i=1,#stats,4 do local row={}; for n=i,math.min(i+3,#stats) do row[#row+1]=stats[n] end; parts[#parts+1]=table.concat(row," &nbsp; ") end
+  for i=1,#stats,columns do local row={}; for n=i,math.min(i+columns-1,#stats) do row[#row+1]=stats[n] end; parts[#parts+1]=table.concat(row," &nbsp; ") end
   return View.withFont("<span style='color:"..t.accent.."'><b>CHARACTER &amp; COMBAT</b></span><br><br>"..table.concat(parts,"<br>"),layout.inventory_font or layout.body_font)
 end
 function View.equipmentContent(v,items,t,layout)
@@ -97,6 +100,7 @@ function View:applyLayout(layout)
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
     local details_y=top+layout.identity_height+12; local vitals_y=(layout.window_height or 800)-bottom-panel_height; local details_h=vitals_y-details_y-12
     local details_placement=Layout.detailsPlacement(details_h,layout.details_line_height)
+    layout.details_columns=details_placement=="right" and 2 or 4
     if details_placement=="left" then place(self.details,0,details_y,layout.left,details_h) else self.details:hide() end
     local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=math.max(2,math.min(#((self.last_state and self.last_state.equipment.items) or {}),6))
     local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18; local wealth_h=layout.heading_font+layout.details_line_height*2+p*2+18
@@ -144,7 +148,6 @@ function View:update(s)
   self.last_state=s; local t=self.settings.theme; local v=s.vitals; local layout=self.layout or {mode="wide",heading_font=20}; local ready=function(x) return x and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:"..t.hp.."'><b>NOT READY</b></span>" end
   self.header:echo(View.headerContent(layout,t,s.character.full_name))
   self.identity:echo(View.identityContent(s.character,t,layout))
-  self.details:echo(View.detailsContent(s.combat,s.attributes,t,layout))
   self.equipment:echo(View.equipmentContent(v,s.equipment.items,t,layout)); self.wealth:echo(View.wealthContent(v,t,layout))
   self.right_title:echo(View.withFont("<b>VITALS &amp; LOCATION</b>",layout.body_font))
   self.hp:setValue(v.hp.current,math.max(v.hp.maximum,1),"Health  "..v.hp.current.." / "..v.hp.maximum); self.fatigue:setValue(v.fatigue.current,math.max(v.fatigue.maximum,1),"Fatigue  "..v.fatigue.current.." / "..v.fatigue.maximum); self.carry:setValue(v.carry.current,math.max(v.carry.maximum,1),"Carry  "..v.carry.current.." / "..v.carry.maximum)
@@ -153,7 +156,7 @@ function View:update(s)
   self.room:echo(View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>"..esc(s.room.name).."</b></span><br><span style='color:"..t.muted.."'>Room "..esc(s.room.num or "—").." · Area "..esc(s.room.area or "—").."</span><br><br>"..esc(s.room.environment).."<br>Players &nbsp; <b>"..#s.room.players.."</b><br>Flags &nbsp; "..esc(table.concat(s.room.flags,", ")),layout.body_font))
   self.compact:echo(View.withFont("<b>HP "..v.hp.current.."/"..v.hp.maximum.."</b> &nbsp; FAT "..v.fatigue.current.."/"..v.fatigue.maximum.." &nbsp; WPN "..(v.weapon_readied and "✓" or "×").." &nbsp; SHD "..(v.shield_readied and "✓" or "×").." &nbsp; <span style='color:"..t.accent.."'>"..esc(s.room.name).."</span>",layout.body_font))
   self.bottom:echo(View.withFont("EXITS &nbsp; <b>"..esc(table.concat(s.room.exits,", ")).."</b> &nbsp;&nbsp; | &nbsp;&nbsp; CARRY &nbsp; <b>"..v.carry.current.." / "..v.carry.maximum.."</b> &nbsp;&nbsp; | &nbsp;&nbsp; ROUND &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b>",layout.small_font))
-  if self.layout then self:applyLayout(self.layout); self:renderInventory(s); self:renderNavigation(s.room.exits) end
+  if self.layout then self:applyLayout(self.layout); self.details:echo(View.detailsContent(s.combat,s.attributes,t,self.layout)); self:renderInventory(s); self:renderNavigation(s.room.exits) end
 end
 function View:delete() if self.root then self.root:delete(); self.root=nil end end
 return View

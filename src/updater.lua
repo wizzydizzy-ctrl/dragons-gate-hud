@@ -2,7 +2,7 @@ local SHA256=require("sha256"); local Release=require("release")
 local Updater={}; Updater.__index=Updater
 function Updater.new(adapter,settings) return setmetatable({adapter=adapter,settings=settings or {},lock=nil,expected_path=nil},Updater) end
 function Updater:acquire(operation) if self.lock then return nil,self.lock.." already in progress" end; self.lock=operation; return true end
-function Updater:release() self.lock=nil; self.expected_path=nil end
+function Updater:release() self.lock=nil; self.expected_path=nil; self.refresh_after_install=nil end
 function Updater:acceptDownload(path) return type(path)=="string" and path==self.expected_path end
 function Updater:installVerified(payload,expected)
   if type(payload)~="string" or SHA256.hex(payload)~=tostring(expected):lower() then return nil,"package checksum mismatch" end
@@ -26,6 +26,7 @@ function Updater:installVerifiedAsync(payload,expected,done)
         return
       end
     end
+    if self.refresh_after_install and self.adapter.refreshCharacterData then self.adapter:refreshCharacterData() end
     done(true)
   end)
   return true
@@ -42,6 +43,7 @@ end
 function Updater:update()
   local ok,err=self:acquire("update"); if not ok then return nil,err end
   if not self.adapter.startUpdate then self:release(); return nil,"update adapter unavailable" end
+  self.refresh_after_install=self.adapter.isCharacterActive and self.adapter:isCharacterActive() or false
   local success,result,message=pcall(self.adapter.startUpdate,self.adapter,self); if not success then self:release(); return nil,result end
   if result==nil then self:release(); return nil,message end; return true
 end

@@ -27,6 +27,13 @@ test("async install verifies before replacement and completes after health check
   eq(order[2],"health")
   eq(result[1],true)
 end)
+test("successful in-session update refreshes command-backed character data",function()
+  local refreshed=false
+  local adapter={replacePackageAsync=function(_,_,_,done) done(true) end,healthCheck=function() return true end,refreshCharacterData=function() refreshed=true; return true end}
+  local u=Updater.new(adapter,{}); u.refresh_after_install=true
+  u:installVerifiedAsync("payload",SHA.hex("payload"),function() end)
+  eq(refreshed,true)
+end)
 test("async checksum mismatch never starts replacement",function()
   local called=false
   local u=Updater.new({replacePackageAsync=function() called=true end},{})

@@ -18,6 +18,7 @@ function Adapter:cancelTimer(id) return killTimer(id) end
 function Adapter:sendCommand(command) return send(command) end
 function Adapter:getGMCP() return gmcp or {} end
 function Adapter:isCharacterActive() return tostring(getCurrentLine and getCurrentLine() or ""):match("^>%s*$")~=nil end
+function Adapter:refreshCharacterData() return DGHUD and DGHUD.controller and DGHUD.controller.collector and DGHUD.controller.collector:refresh() end
 function Adapter:openSettings() cecho("\n<gold>[DGHUD]</gold> Settings: "..getMudletHomeDir().."/DragonsGateHUD/settings.lua\n") end
 local function readFile(path) local f=io.open(path,"rb"); if not f then return nil end; local data=f:read("*a"); f:close(); return data end
 local function writeFile(path,data) local f=assert(io.open(path,"wb")); f:write(data); f:close() end

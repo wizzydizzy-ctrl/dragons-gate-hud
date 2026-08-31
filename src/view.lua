@@ -1,6 +1,13 @@
 local View={}; View.__index=View
 function View.withFont(text,size) return "<span style='font-size:"..tonumber(size).."px'>"..text.."</span>" end
 local function esc(v) return tostring(v or ""):gsub("&","&amp;"):gsub("<","&lt;"):gsub(">","&gt;") end
+function View.identityContent(character,t,layout)
+  return View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>"..esc(character.full_name).."</b></span><br><span style='color:"..t.jade.."'><b>"..esc(character.race).." · "..esc(character.class).."</b></span><br><span style='color:"..t.muted.."'>"..esc(character.alignment).."</span>",layout.body_font)
+end
+function View.equipmentContent(v,t,layout)
+  local function ready(value) return value and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:#c85b4b'><b>NOT READY</b></span>" end
+  return View.withFont("<span style='color:"..t.accent.."'><b>EQUIPMENT</b></span><br><br>Weapon<br>"..ready(v.weapon_readied).."<br><br>Shield<br>"..ready(v.shield_readied).."<br><br><hr><br><span style='color:"..t.accent.."'><b>WEALTH</b></span><br><br>Gold &nbsp; <b>"..v.gold.."</b><br>Silver &nbsp; <b>"..v.silver.."</b>",layout.body_font)
+end
 local function label(name,parent,style)
   local item=Geyser.Label:new({name=name,x=0,y=0,width=10,height=10},parent); item:setStyleSheet(style or "background:transparent;"); return item
 end
@@ -14,6 +21,7 @@ function View.new(settings)
   local self=setmetatable({settings=settings,exit_buttons={}},View); local t=settings.theme
   self.root=Geyser.Container:new({name="DGHUD.Root",x=0,y=0,width="100%",height="100%"})
   self.header=label("DGHUD.Header",self.root,"background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px 18px;")
+  self.identity=label("DGHUD.Identity",self.root,"background:"..t.panel..";border-right:1px solid "..t.border..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:18px;")
   self.left=label("DGHUD.LeftRail",self.root,"background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:18px;")
   self.right=Geyser.Container:new({name="DGHUD.RightRail",x=0,y=0,width=300,height=500},self.root)
   self.right_bg=label("DGHUD.RightBackground",self.right,"background:"..t.panel..";border-right:1px solid "..t.border..";")
@@ -29,6 +37,7 @@ end
 function View:applyLayout(layout)
   self.layout=layout; local top,bottom=layout.top,layout.bottom; local t=self.settings.theme; local p=layout.panel_padding
   self.header:setStyleSheet("background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
+  self.identity:setStyleSheet("background:"..t.panel..";border-right:1px solid "..t.border..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.left:setStyleSheet("background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.right_title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.body_font.."px;font-weight:700;padding:12px "..p.."px;")
   self.readiness:setStyleSheet("background:#131a16;border:1px solid #2b3731;border-radius:7px;color:"..t.text..";padding:12px "..p.."px;font-size:"..layout.body_font.."px;")
@@ -39,13 +48,14 @@ function View:applyLayout(layout)
   place(self.header,0,0,"100%",top); place(self.bottom,0,"100%-"..bottom,"100%",bottom)
   if layout.mode=="wide" or layout.mode=="medium" then
     self.compact:hide()
+    place(self.identity,0,top,layout.left,layout.identity_height)
     place(self.left,"100%-"..layout.right,top,layout.right,"100%-"..(top+bottom))
     local available=math.max(100,(layout.window_height or 800)-top-bottom)
     local optional=(self.last_state and self.last_state.vitals.psi.visible and 1 or 0)+(self.last_state and self.last_state.vitals.web.visible and 1 or 0)
     local panel_height=math.min(available,layout.title_height+(3+optional)*(layout.gauge_height+layout.row_gap)+layout.status_height+layout.room_height+layout.exit_height+44)
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
   else
-    self.left:hide(); self.right:hide(); place(self.compact,0,62,"100%",top-62)
+    self.identity:hide(); self.left:hide(); self.right:hide(); place(self.compact,0,62,"100%",top-62)
   end
   if layout.mode~="compact" then
     place(self.right_bg,0,0,"100%","100%"); place(self.right_title,0,0,"100%",layout.title_height)
@@ -65,9 +75,10 @@ function View:buildExits(exits)
 end
 function View:update(s)
   self.last_state=s; local t=self.settings.theme; local v=s.vitals; local layout=self.layout or {mode="wide",heading_font=20}; local ready=function(x) return x and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:"..t.hp.."'><b>NOT READY</b></span>" end
-  local header_detail=layout.mode=="wide" and "" or " &nbsp; <span style='color:"..t.text.."'><b>"..esc(s.character.full_name).."</b></span>"
+  local header_detail=layout.mode=="compact" and " &nbsp; <span style='color:"..t.text.."'><b>"..esc(s.character.full_name).."</b></span>" or ""
   self.header:echo(View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>DRAGONS GATE</b></span>"..header_detail.."<br><span style='color:"..t.jade.."'><b>● GMCP LIVE</b></span>",layout.body_font))
-  self.left:echo(View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>"..esc(s.character.full_name).."</b></span><br><span style='color:"..t.jade.."'><b>"..esc(s.character.race).." · "..esc(s.character.class).."</b></span><br><span style='color:"..t.muted.."'>"..esc(s.character.alignment).."</span><br><br><span style='color:"..t.accent.."'><b>EQUIPMENT</b></span><br><br>Weapon<br>"..ready(v.weapon_readied).."<br><br>Shield<br>"..ready(v.shield_readied).."<br><br><hr><br><span style='color:"..t.accent.."'><b>WEALTH</b></span><br><br>Gold &nbsp; <b>"..v.gold.."</b><br>Silver &nbsp; <b>"..v.silver.."</b>",layout.body_font))
+  self.identity:echo(View.identityContent(s.character,t,layout))
+  self.left:echo(View.equipmentContent(v,t,layout))
   self.right_title:echo(View.withFont("<b>VITALS &amp; LOCATION</b>",layout.body_font))
   self.hp:setValue(v.hp.current,math.max(v.hp.maximum,1),"Health  "..v.hp.current.." / "..v.hp.maximum); self.fatigue:setValue(v.fatigue.current,math.max(v.fatigue.maximum,1),"Fatigue  "..v.fatigue.current.." / "..v.fatigue.maximum); self.carry:setValue(v.carry.current,math.max(v.carry.maximum,1),"Carry  "..v.carry.current.." / "..v.carry.maximum)
   if v.psi.visible then self.psi:setValue(v.psi.current,v.psi.maximum,"PSI  "..v.psi.current.." / "..v.psi.maximum) end; if v.web.visible then self.web:setValue(v.web.current,v.web.maximum,"Web  "..v.web.current.." / "..v.web.maximum) end

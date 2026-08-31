@@ -5,6 +5,7 @@ local function metrics(width,height,layout)
   layout.panel_padding=clamp(width/120,12,22); layout.gauge_height=clamp(layout.small_font+10,38,50); layout.row_gap=clamp(layout.body_font*.7,11,15)
   layout.title_height=layout.heading_font+30; layout.status_height=layout.body_font*4+40
   layout.room_height=layout.heading_font+layout.body_font*6+54; layout.exit_height=layout.small_font+16
+  layout.identity_height=layout.heading_font+layout.body_font*3+48
   layout.bottom=math.max(layout.bottom,layout.small_font+16); layout.window_height=height
   return layout
 end

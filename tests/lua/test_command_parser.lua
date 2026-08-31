@@ -14,6 +14,10 @@ end)
 test("parses info physical data and all attributes",function()
   local r=assert(Parser.parseInfo(info)); eq(r.physical.age,28); eq(r.physical.sex,"Male"); eq(r.physical.height,"6'10\""); eq(r.physical.weight,309); eq(r.attributes.STR,"Good"); eq(r.attributes.APP,"Fair")
 end)
+test("info completes from its data rows without relying on a trailing prompt",function()
+  local without_prompt={}; for i=1,#info-1 do without_prompt[i]=info[i] end
+  local r=assert(Parser.parseInfo(without_prompt)); eq(r.attributes.STR,"Good"); eq(Parser.isComplete("info",without_prompt),true)
+end)
 test("detects completed command responses",function() eq(Parser.isComplete("inventory",inventory),true); eq(Parser.isComplete("inventory",{"Items carried:","Your inventory totals 0 lbs."}),false); eq(Parser.isComplete("stat",stat),true); eq(Parser.isComplete("info",info),true); eq(Parser.isComplete("info",{"You are Test"}),false) end)
 
 return {inventory=inventory,stat=stat,info=info}

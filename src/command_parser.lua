@@ -34,7 +34,6 @@ function Parser.parseStat(lines)
 end
 
 function Parser.parseInfo(lines)
-  if not hasPrompt(lines) then return nil,"incomplete info response" end
   local result={physical={},attributes={}}
   for i,raw in ipairs(lines or {}) do
     local line=clean(raw)
@@ -51,6 +50,6 @@ end
 
 function Parser.isComplete(command,lines)
   local fn={inventory=Parser.parseInventory,stat=Parser.parseStat,info=Parser.parseInfo}
-  return hasPrompt(lines) and fn[command] and fn[command](lines)~=nil or false
+  return fn[command] and (command=="info" or hasPrompt(lines)) and fn[command](lines)~=nil or false
 end
 return Parser

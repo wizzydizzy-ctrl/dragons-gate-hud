@@ -169,19 +169,21 @@ function Storage.mudletApi(home)
       return true
     end,
     list=function(directory)
-      if safeRelative(directory,root,false)==nil then return {} end
-      if not lfs or type(lfs.dir)~="function" then return {} end
+      if safeRelative(directory,root,false)==nil then return nil,"unsafe chat storage path" end
+      if not lfs or type(lfs.dir)~="function" then return nil,"filesystem is unavailable" end
       local ok,iterator,state=pcall(lfs.dir,directory)
-      if not ok then return {} end
+      if not ok then return nil,tostring(iterator) end
+      if type(iterator)~="function" then return nil,tostring(state or "could not list chat storage") end
       local files={}
       for name in iterator,state do if name~="." and name~=".." then files[#files+1]=name end end
       return files
     end,
     read=function(pathname)
-      local file=open(pathname,"rb")
-      if not file then return nil end
-      local content=file:read("*a")
+      local file,err=open(pathname,"rb")
+      if not file then return nil,err or "could not open chat log" end
+      local content,readErr=file:read("*a")
       file:close()
+      if content==nil then return nil,readErr or "could not read chat log" end
       return content
     end,
     encode=function(entry) return yajl.to_string(entry) end,

@@ -50,7 +50,9 @@ chat = {
 User overrides merge into these defaults, including nested `chat` overrides, without discarding unknown personal settings. For example, from the Mudlet command line, set an override and reload:
 
 ```lua
-DGHUD.user_settings.chat = { height_percent = 0.25, timestamps = false }
+DGHUD.user_settings.chat = DGHUD.user_settings.chat or {}
+DGHUD.user_settings.chat.height_percent = 0.25
+DGHUD.user_settings.chat.timestamps = false
 DGHUD.reload()
 ```
 

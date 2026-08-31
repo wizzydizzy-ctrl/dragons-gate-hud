@@ -1,18 +1,26 @@
 local previous=rawget(_G,"DGHUD")
 local userSettings=previous and previous.user_settings
 if previous and previous.shutdown then pcall(previous.shutdown) end
+DGHUD = {user_settings=userSettings}
 local moduleNames={"defaults","command_parser","command_collector","chat_parser","chat_history","chat_storage","chat_controller","navigation","state","settings","sha256","release","events","layout","view","mudlet_adapter","main","updater"}
 for _,name in ipairs(moduleNames) do package.loaded[name]=nil end
-DGHUD = {}
 local defaults=require("defaults")
 local Settings=require("settings")
 local Adapter=require("mudlet_adapter")
 local Main=require("main")
 local Updater=require("updater")
 local Storage=require("chat_storage")
-local resolvedSettings,migratedSettings=Settings.resolve(defaults,userSettings or {})
-DGHUD.user_settings=migratedSettings
-DGHUD.settings=resolvedSettings
+local function applyUserSettings()
+  local ok,resolvedSettings,migratedSettings=pcall(Settings.resolve,defaults,DGHUD.user_settings or {})
+  if not ok then return nil,resolvedSettings end
+  DGHUD.user_settings=migratedSettings
+  DGHUD.settings=resolvedSettings
+  if DGHUD.controller then DGHUD.controller.settings=resolvedSettings end
+  if DGHUD.updater then DGHUD.updater.settings=resolvedSettings end
+  return true
+end
+local applied,applyErr=applyUserSettings()
+if not applied then error(applyErr) end
 DGHUD.chatStorageApi=Storage.mudletApi()
 DGHUD.controller=Main.new(Adapter.new(),DGHUD.settings)
 DGHUD.updater=Updater.new(DGHUD.controller.adapter,DGHUD.settings)
@@ -20,6 +28,10 @@ DGHUD.controller.updater=DGHUD.updater
 Main.installChatApi(DGHUD)
 function DGHUD.start() return DGHUD.controller:start() end
 function DGHUD.shutdown() return DGHUD.controller:shutdown() end
-function DGHUD.reload() return DGHUD.controller:reload() end
+function DGHUD.reload()
+  local applied,err=applyUserSettings()
+  if not applied then return nil,err end
+  return DGHUD.controller:reload()
+end
 function DGHUD.healthCheck() return DGHUD.controller:healthCheck() end
 DGHUD.start()

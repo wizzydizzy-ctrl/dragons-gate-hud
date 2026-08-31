@@ -103,3 +103,9 @@ test("public capture fails while storage cleanup is re-entrant",function()
   f.onStorageClose=function() f.reentrantResult,f.reentrantError=capture("QUEST","during close") end
   hud:shutdown(); eq(f.reentrantResult,nil); eq(f.reentrantError,"chatbox is not running"); eq(#f.chatEntries,0); DGHUD=nil
 end)
+
+test("reload and shutdown retain unrelated aliases events and timers",function()
+  local f=fake(); local personalAlias=f:addAlias(); local personalEvent=f:addEvent("personal",function() end); local personalTimer=f:schedule(1,function() end)
+  local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); hud:shutdown()
+  eq(f.aliases[personalAlias]~=nil,true); eq(f.events[personalEvent]~=nil,true); eq(f.timers[personalTimer]~=nil,true)
+end)

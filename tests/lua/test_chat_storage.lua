@@ -1,4 +1,6 @@
 local Storage=require("chat_storage")
+local Controller=require("chat_controller")
+local History=require("chat_history")
 
 local function fakeStorageApi()
   local api={directories={},appends={},files={}}
@@ -127,6 +129,35 @@ test("exposes the latest internal storage failure for diagnostics",function()
   local storage=Storage.new(api,"/chat",1000)
   eq(#storage:loadRecent("Dace"),0)
   eq(storage:lastError():find("directory unavailable",1,true)~=nil,true)
+end)
+
+test("Mudlet storage facade exposes list and read failures to diagnostics",function()
+  local originalLfs,originalIo=lfs,io
+  local ok,err=pcall(function()
+    lfs=nil
+    local unavailable=Storage.new(Storage.mudletApi("/profile"),"/profile/DragonsGateHUD/chat",1000)
+    eq(#unavailable:loadRecent("Dace"),0)
+    eq(unavailable:lastError(),"filesystem is unavailable")
+    local controller=Controller.new({addLineTrigger=function() return "chat-trigger" end,killTrigger=function() end},nil,History.new(1000,3),unavailable,function() end,function() return "Dace" end)
+    eq(controller:start(),true)
+    eq(controller:status().last_storage_error,"filesystem is unavailable")
+    lfs={dir=function()
+      local sent=false
+      return function() if sent then return nil end; sent=true; return "2026-08-31.jsonl" end
+    end}
+    io={open=function(_,mode) if mode=="rb" then return nil,"permission denied" end end}
+    local unreadable=Storage.new(Storage.mudletApi("/profile"),"/profile/DragonsGateHUD/chat",1000)
+    eq(#unreadable:loadRecent("Dace"),0)
+    eq(unreadable:lastError(),"permission denied")
+    io={open=function(_,mode)
+      if mode=="rb" then return {read=function() return nil,"read denied" end,close=function() return true end} end
+    end}
+    local readFailure=Storage.new(Storage.mudletApi("/profile"),"/profile/DragonsGateHUD/chat",1000)
+    eq(#readFailure:loadRecent("Dace"),0)
+    eq(readFailure:lastError(),"read denied")
+  end)
+  lfs,io=originalLfs,originalIo
+  if not ok then error(err,0) end
 end)
 
 test("Mudlet storage factory confines file access beneath its chat root",function()

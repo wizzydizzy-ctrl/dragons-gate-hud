@@ -20,7 +20,7 @@ local function metrics(width,height,layout)
   layout.lower_scale=.8
   layout.lower_body_font=scaled(layout.body_font); layout.lower_small_font=layout.lower_body_font; layout.lower_heading_font=scaled(layout.heading_font)
   layout.lower_panel_padding=scaled(layout.panel_padding); layout.lower_gauge_height=layout.lower_small_font+14; layout.lower_row_gap=scaled(layout.row_gap)
-  layout.lower_title_height=scaled(layout.title_height); layout.lower_status_height=scaled(layout.status_height); layout.lower_room_height=scaled(layout.room_height)
+  layout.lower_title_height=0; layout.lower_status_height=scaled(layout.status_height); layout.lower_room_height=scaled(layout.room_height)
   layout.lower_compass_font=scaled(layout.compass_font); layout.lower_compass_cell=scaled(layout.compass_cell)
   layout.lower_utility_font=scaled(layout.utility_font); layout.lower_utility_height=scaled(layout.utility_height); layout.lower_section_gap=scaled(44)
   layout.bottom=0; layout.window_height=height

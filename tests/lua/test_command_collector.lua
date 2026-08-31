@@ -11,7 +11,7 @@ local function fake()
   function f:killTrigger(key) self.triggers[key]=nil end
   function f:addEvent(name,fn) local key=id(self,"e"); self.events[key]={name=name,fn=fn}; return key end
   function f:killEvent(key) self.events[key]=nil end
-  function f:schedule(_,fn) local key=id(self,"m"); self.timers[key]=fn; return key end
+  function f:schedule(delay,fn) self.last_delay=delay; local key=id(self,"m"); self.timers[key]=fn; return key end
   function f:cancelTimer(key) self.timers[key]=nil end
   function f:sendCommand(command) self.sent[#self.sent+1]=command end
   function f:line(value) for _,fn in pairs(self.triggers) do fn(value) end end
@@ -31,7 +31,7 @@ test("collector runs one sequential refresh after character entry",function()
 end)
 test("collector can refresh after an in-session package install",function()
   local f=fake(); local c=Collector.new(f,Parser,function() end); c:start()
-  eq(c:refresh(),true); eq(f.sent[1],"inventory"); eq(c.refreshed,true)
+  eq(c:refresh(),true); eq(f.sent[1],"inventory"); eq(c.refreshed,true); eq(f.last_delay>=20,true)
   eq(c:refresh(),false); eq(#f.sent,1)
 end)
 test("collector captures manual info religion commands",function()

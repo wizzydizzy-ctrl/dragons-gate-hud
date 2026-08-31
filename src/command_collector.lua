@@ -10,7 +10,7 @@ end
 function Collector:begin(command,startup)
   if self.active then return false end
   self.active={command=command,lines={},startup=startup==true}
-  self.timeout=self.adapter:schedule(5,function() self.timeout=nil; self:finish(nil) end)
+  self.timeout=self.adapter:schedule(30,function() self.timeout=nil; self:finish(nil) end)
   if startup then self.adapter:sendCommand(command) end
   return true
 end

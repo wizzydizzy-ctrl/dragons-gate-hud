@@ -54,6 +54,7 @@ end)
 test("lower-left vitals stack uses compact readable gauge typography",function()
   local r=Layout.compute(1920,1080)
   eq(r.lower_scale,.8)
+  eq(r.lower_title_height,0)
   eq(r.lower_small_font<=r.lower_body_font+1,true)
   eq(r.lower_gauge_height>=r.lower_small_font+12,true)
   for _,pair in ipairs({

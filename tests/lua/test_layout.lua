@@ -1,15 +1,15 @@
 local Layout=require("layout")
-test("wide screens reserve full command deck rails",function()
-  local r=Layout.compute(1920,1080); eq(r.mode,"wide"); eq(r.left,326); eq(r.right,288); eq(r.top,74); eq(r.show_character_rail,true); eq(r.vitals_side,"left")
+test("wide screens reserve twenty percent for each HUD rail",function()
+  local r=Layout.compute(1920,1080); eq(r.mode,"wide"); eq(r.left,384); eq(r.right,384); eq(r.console_width,1152); eq(r.top,74); eq(r.show_character_rail,true); eq(r.vitals_side,"left")
 end)
-test("medium screens preserve console by folding character rail",function()
-  local r=Layout.compute(1200,800); eq(r.mode,"medium"); eq(r.left,228); eq(r.right,203); eq(r.top,66); eq(r.show_character_rail,true); eq(r.show_room_compass,true); eq(r.vitals_side,"left")
+test("medium screens preserve the twenty sixty twenty split",function()
+  local r=Layout.compute(1200,800); eq(r.mode,"medium"); eq(r.left,240); eq(r.right,240); eq(r.console_width,720); eq(r.top,66); eq(r.show_character_rail,true); eq(r.show_room_compass,true); eq(r.vitals_side,"left")
 end)
 test("compact screens move all status out of side rails",function()
   local r=Layout.compute(760,700); eq(r.mode,"compact"); eq(r.left,0); eq(r.right,0); eq(r.top,116); eq(r.bottom,58); eq(r.show_room_compass,false)
 end)
-test("layout always leaves most of the window for the main console",function()
-  for _,w in ipairs({1000,1024,1366,1400,1600,1920,2056,2560,3840}) do local r=Layout.compute(w,900); eq((w-r.left-r.right)>=w*.64,true) end
+test("layout leaves sixty percent of rail layouts for the main console",function()
+  for _,w in ipairs({1000,1024,1366,1400,1600,1920,2056,2560,3840}) do local r=Layout.compute(w,900); eq(r.console_width>=w*.60,true) end
 end)
 test("responsive typography remains readable at every breakpoint",function()
   local compact=Layout.compute(760,700); local medium=Layout.compute(1200,800); local wide=Layout.compute(2056,1177); local ultra=Layout.compute(3840,2160)
@@ -35,7 +35,7 @@ end)
 
 test("new cards derive dimensions from responsive fonts",function()
   for _,size in ipairs({{760,700},{1200,800},{2056,1177},{3840,2160}}) do
-    local r=Layout.compute(size[1],size[2]); eq(r.inventory_row_height>=r.inventory_font+8,true); eq(r.details_line_height>=r.body_font+4,true); eq(r.compass_cell>=r.compass_font+10,true); eq(r.utility_height>=r.utility_font+10,true); eq((size[1]-r.left-r.right)>=size[1]*.64,true)
+    local r=Layout.compute(size[1],size[2]); eq(r.inventory_row_height>=r.inventory_font+8,true); eq(r.details_line_height>=r.body_font+4,true); eq(r.compass_cell>=r.compass_font+10,true); eq(r.utility_height>=r.utility_font+10,true); eq(r.console_width>=size[1]*.60,true)
   end
 end)
 test("character details move to the roomier rail when the left stack is short",function()

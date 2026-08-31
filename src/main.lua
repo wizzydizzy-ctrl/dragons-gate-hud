@@ -13,6 +13,7 @@ function Main:start()
   self.view=self.adapter:createView(self.settings)
   self:applyResponsiveLayout()
   self.collector=Collector.new(self.adapter,Parser,function() self:refresh() end); self.collector:start()
+  if self.adapter.isCharacterActive and self.adapter:isCharacterActive() then self.collector:refresh() end
   for _,name in ipairs(Events.gmcp) do self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(name,function() self:refresh() end) end
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent("sysWindowResizeEvent",function() self:applyResponsiveLayout() end)
   local commands={function() if self.updater then self.updater:check() end end,function() if self.updater then self.updater:update() end end,function() self:reload() end,function() if self.adapter.openSettings then self.adapter:openSettings() end end,function() if self.adapter.requestPurge then self.adapter:requestPurge() end end}

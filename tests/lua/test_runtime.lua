@@ -10,6 +10,7 @@ local function fake()
   function f:killEvent(id) self.killed[id]=true; self.events[id]=nil end
   function f:killAlias(id) self.killed[id]=true; self.aliases[id]=nil end
   function f:getGMCP() return {Char={Vitals={hp=1,hp_max=1}}} end
+  function f:isCharacterActive() return self.character_active==true end
   function f:addLineTrigger(fn) self.next=self.next+1; local id="trigger-"..self.next; self.triggers[id]=fn; return id end
   function f:killTrigger(id) self.killed[id]=true; self.triggers[id]=nil end
   function f:schedule(_,fn) self.next=self.next+1; local id="timer-"..self.next; self.timers[id]=fn; return id end
@@ -27,6 +28,10 @@ test("window resize recomputes absolute borders and view layout",function()
 end)
 test("controller merges collector snapshots and removes collector runtime",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud.collector.snapshot.info={attributes={STR="Good"}}; hud:refresh(); eq(hud.last_state.attributes.STR,"Good"); eq(f:count(f.triggers),1); hud:shutdown(); eq(f:count(f.triggers),0); eq(f:count(f.timers),0)
+end)
+test("startup refreshes command data when installed at an in-game prompt",function()
+  local f=fake(); f.character_active=true
+  local hud=Main.new(f,{layout={}}); hud:start(); eq(f.sent,"inventory")
 end)
 test("reload leaves one command collector",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); eq(f:count(f.triggers),1); local outgoing=0; for _,name in pairs(f.events) do if name=="sysDataSendRequest" then outgoing=outgoing+1 end end; eq(outgoing,1)

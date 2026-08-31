@@ -14,6 +14,11 @@ function Collector:begin(command,startup)
   if startup then self.adapter:sendCommand(command) end
   return true
 end
+function Collector:refresh()
+  if self.active or self.refreshed then return false end
+  self.refreshed=true; self.sequence_index=1
+  return self:begin(self.sequence[1],true)
+end
 function Collector:finish(lines)
   local active=self.active; if not active then return end
   if self.timeout then self.adapter:cancelTimer(self.timeout); self.timeout=nil end
@@ -30,7 +35,7 @@ function Collector:finish(lines)
 end
 function Collector:onLine(value)
   value=tostring(value or "")
-  if value:match("^Welcome to Dragon's Gate, .+!%s*$") and not self.refreshed then self.refreshed=true; self.sequence_index=1; self:begin(self.sequence[1],true); return end
+  if value:match("^Welcome to Dragon's Gate, .+!%s*$") and not self.refreshed then self:refresh(); return end
   if not self.active then return end
   self.active.lines[#self.active.lines+1]=value
   if self.parser.isComplete(self.active.command,self.active.lines) then self:finish(self.active.lines) end

@@ -55,3 +55,12 @@ The first implementer left a scoped uncommitted layout/view/test diff and became
 - Threshold regressions cover one pixel above, at, and below the 44px-chat/120px-console boundary for both medium and compact layouts, asserting non-negative output body and positive console space.
 - RED: `lua tests/run.lua` — 126 tests, 2 expected failures before the layout change (the exact short-height allocation and functional-floor boundary regressions).
 - GREEN: `lua tests/run.lua` — 126 tests, 0 failures after the layout change.
+
+## Fix round 3 evidence
+
+- Left the approved wrapped-entry anchor implementation unchanged.
+- Replaced the 44px chrome-only floor with a 60px functional chat minimum: 44px fixed tab/output chrome plus a 16px visible message row. `chat_output_height` now measures body height after the fixed 44px chrome, so every supported short-height regression requires a positive body.
+- At 1200x200 and 760x240, chat is 60px with a 16px body and positive 74px/64px console remainder. At 760x150, compact header allocation compresses from 116px to 89px before pane allocation; chat retains its 16px body, console retains 1px, and `console_top` is 149px within the 150px window.
+- Exact-size tests assert positive chat body and console remainder, no console-top overrun, and unchanged 760x700, 1200x800, and 1920x1080 breakpoint geometry. Boundary tests cover the functional-floor transition for medium and compact modes.
+- RED: `lua tests/run.lua` — 128 tests, 3 expected failures before the layout change (two supported short-height cases and 760x150 header compression).
+- GREEN: `lua tests/run.lua` — 128 tests, 0 failures after the layout change.

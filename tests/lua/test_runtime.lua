@@ -15,6 +15,7 @@ local function fake()
   function f:killTrigger(id) self.killed[id]=true; self.triggers[id]=nil end
   function f:schedule(_,fn) self.next=self.next+1; local id="timer-"..self.next; self.timers[id]=fn; return id end
   function f:cancelTimer(id) self.timers[id]=nil end
+  function f:fireTimer() local id,fn=next(self.timers); if id then self.timers[id]=nil; fn() end end
   function f:sendCommand(command) self.sent=command end
   function f:count(tableValue) local n=0; for _ in pairs(tableValue) do n=n+1 end; return n end
   return f
@@ -35,6 +36,10 @@ test("startup refreshes command data when installed at an in-game prompt",functi
 end)
 test("reload leaves one command collector",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); eq(f:count(f.triggers),1); local outgoing=0; for _,name in pairs(f.events) do if name=="sysDataSendRequest" then outgoing=outgoing+1 end end; eq(outgoing,1)
+end)
+test("roundtime counts down once per second and becomes ready",function()
+  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:onRoundtime(2); eq(hud.last_state.vitals.roundtime,2)
+  f:fireTimer(); eq(hud.last_state.vitals.roundtime,1); f:fireTimer(); eq(hud.last_state.vitals.roundtime,0); eq(f:count(f.timers),0)
 end)
 test("repeated resize changes typography without growing runtime",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); local runtime=f:count(f.events)+f:count(f.triggers)+f:count(f.aliases)

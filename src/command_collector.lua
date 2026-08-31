@@ -1,7 +1,7 @@
 local Collector={}; Collector.__index=Collector
 local SPECS={inventory={parser="parseInventory",snapshot="inventory"},stat={parser="parseStat",snapshot="stat"},info={parser="parseInfo",snapshot="info"},["info religion"]={parser="parseReligion",snapshot="religion"}}
-function Collector.new(adapter,parser,onChange)
-  return setmetatable({adapter=adapter,parser=parser,onChange=onChange,snapshot={},sequence={"inventory","stat","info","info religion"},runtime={triggers={},events={}},started=false,refreshed=false},Collector)
+function Collector.new(adapter,parser,onChange,onRoundtime)
+  return setmetatable({adapter=adapter,parser=parser,onChange=onChange,onRoundtime=onRoundtime,snapshot={},sequence={"inventory","stat","info","info religion"},runtime={triggers={},events={}},started=false,refreshed=false},Collector)
 end
 function Collector:cancelActive()
   if self.timeout then self.adapter:cancelTimer(self.timeout); self.timeout=nil end
@@ -35,6 +35,7 @@ function Collector:finish(lines)
 end
 function Collector:onLine(value)
   value=tostring(value or "")
+  local delay=tonumber(value:match("%[(%d+)%s+sec%.%s+delay%]")); if delay and self.onRoundtime then self.onRoundtime(delay) end
   if value:match("^Welcome to Dragon's Gate, .+!%s*$") and not self.refreshed then self:refresh(); return end
   if not self.active then return end
   self.active.lines[#self.active.lines+1]=value

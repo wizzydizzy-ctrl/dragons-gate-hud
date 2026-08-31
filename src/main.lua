@@ -1,7 +1,15 @@
 local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector")
 local Main={}; Main.__index=Main
-function Main.new(adapter,settings) return setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false},Main) end
-function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {}); self.view:update(normalized); self.last_state=normalized; return true end
+function Main.new(adapter,settings) return setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=0},Main) end
+function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {}); normalized.vitals.roundtime=self.roundtime_display or normalized.vitals.roundtime; self.view:update(normalized); self.last_state=normalized; return true end
+function Main:scheduleRoundtimeTick()
+  if self.roundtime_timer or self.roundtime_display<=0 then return end
+  self.roundtime_timer=self.adapter:schedule(1,function() self.roundtime_timer=nil; self.roundtime_display=math.max(0,self.roundtime_display-1); self:refresh(); self:scheduleRoundtimeTick() end)
+end
+function Main:onRoundtime(value)
+  value=math.max(0,math.floor(tonumber(value) or 0)); if self.roundtime_timer then self.adapter:cancelTimer(self.roundtime_timer); self.roundtime_timer=nil end
+  self.roundtime_display=value; self:refresh(); self:scheduleRoundtimeTick(); return true
+end
 function Main:applyResponsiveLayout()
   local width,height=self.adapter:getWindowSize(); local layout=Layout.compute(width,height); self.current_layout=layout
   self.adapter:setBorders(layout.left,layout.top,layout.right,layout.bottom)
@@ -12,7 +20,7 @@ function Main:start()
   self.original_borders={0,0,0,0}
   self.view=self.adapter:createView(self.settings)
   self:applyResponsiveLayout()
-  self.collector=Collector.new(self.adapter,Parser,function() self:refresh() end); self.collector:start()
+  self.collector=Collector.new(self.adapter,Parser,function() self:refresh() end,function(value) self:onRoundtime(value) end); self.collector:start()
   if self.adapter.isCharacterActive and self.adapter:isCharacterActive() then self.collector:refresh() end
   for _,name in ipairs(Events.gmcp) do self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(name,function() self:refresh() end) end
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent("sysWindowResizeEvent",function() self:applyResponsiveLayout() end)
@@ -21,6 +29,7 @@ function Main:start()
   self.started=true; local ok,err=pcall(function() self:refresh() end); if not ok then self:shutdown(); return nil,err end; return true
 end
 function Main:shutdown()
+  if self.roundtime_timer then self.adapter:cancelTimer(self.roundtime_timer); self.roundtime_timer=nil end
   if self.collector then self.collector:shutdown(); self.collector=nil end
   for _,id in ipairs(self.runtime.events) do self.adapter:killEvent(id) end; for _,id in ipairs(self.runtime.aliases) do self.adapter:killAlias(id) end
   self.runtime={events={},aliases={}}; if self.view then self.view:delete(); self.view=nil end

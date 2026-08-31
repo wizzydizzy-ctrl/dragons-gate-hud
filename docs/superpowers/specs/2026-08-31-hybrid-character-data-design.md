@@ -140,6 +140,12 @@ On wide layouts this card occupies available left-side space between Identity an
 
 All new card heights, row heights, padding, and truncation capacity derive from responsive layout metrics. No new fixed text heights will be introduced.
 
+### Responsive typography and resize behavior
+
+The HUD will recompute typography and box geometry on every `sysWindowResizeEvent`, not only when it starts. Body, secondary, heading, gauge, compass, utility-button, and inventory-row font sizes will scale within explicit readable minimum and maximum bounds. Line height, padding, card height, gauge height, and row capacity will be derived from the selected font metrics in the same layout pass.
+
+When a window becomes too small for all content at the minimum readable font size, the HUD will reduce information density through the defined medium and compact fallbacks rather than shrinking text below the minimum or clipping it. When a window grows, typography and spacing may increase up to their maximum bounds while preserving at least 64 percent of the window width for the main console. Repeated resizing must not accumulate borders, create duplicate widgets, or leave stale geometry.
+
 ## Error handling and compatibility
 
 - Unknown or changed server wording leaves the last valid snapshot intact.
@@ -158,7 +164,7 @@ Implementation will follow test-driven development with these layers:
 1. Parser tests using captured Classic output for normal inventory, duplicate items, empty inventory, incomplete output, stat values, readied equipment, info description, and all eleven attributes
 2. State tests proving GMCP precedence, parser fallback, absent-value handling, and preservation of existing normalized fields
 3. Collector tests proving character-entry detection, one sequence per play session, sequential command advancement, manual-command refresh, timeout behavior, disconnect reset, and complete lifecycle cleanup
-4. Layout and view tests proving responsive card metrics, inventory row capacity, deterministic `+N more` truncation, separate Identity/Equipment/Wealth/Inventory content, compass placement, full/abbreviated direction normalization, disabled unavailable directions, exact utility-button commands, compact fallback, and absence of visible `GMCP` text
+4. Layout and view tests proving responsive font bounds, resize-derived line and card heights, minimum 64-percent console width, inventory row capacity, deterministic `+N more` truncation, separate Identity/Equipment/Wealth/Inventory content, compass placement, full/abbreviated direction normalization, disabled unavailable directions, exact utility-button commands, compact fallback, and absence of visible `GMCP` text
 5. Runtime tests proving update/reload idempotence and no leaked triggers or timers
 6. Package build verification and live Mudlet acceptance at wide, medium, and compact widths
 

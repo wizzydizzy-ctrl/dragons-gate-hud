@@ -32,3 +32,9 @@ test("content boxes scale with typography instead of clipping",function()
   eq(wide.status_height>compact.status_height,true)
   eq(wide.identity_height>=wide.heading_font+wide.body_font*3+40,true)
 end)
+
+test("new cards derive dimensions from responsive fonts",function()
+  for _,size in ipairs({{760,700},{1200,800},{2056,1177},{3840,2160}}) do
+    local r=Layout.compute(size[1],size[2]); eq(r.inventory_row_height>=r.inventory_font+8,true); eq(r.details_line_height>=r.body_font+4,true); eq(r.compass_cell>=r.compass_font+10,true); eq(r.utility_height>=r.utility_font+10,true); eq((size[1]-r.left-r.right)>=size[1]*.64,true)
+  end
+end)

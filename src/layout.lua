@@ -6,6 +6,9 @@ local function metrics(width,height,layout)
   layout.title_height=layout.heading_font+30; layout.status_height=layout.body_font*4+40
   layout.room_height=layout.heading_font+layout.body_font*6+54; layout.exit_height=layout.small_font+16
   layout.identity_height=layout.heading_font+layout.body_font*3+48
+  layout.inventory_font=clamp(layout.body_font-2,14,20); layout.inventory_row_height=layout.inventory_font+10
+  layout.details_line_height=layout.body_font+6; layout.compass_font=clamp(layout.body_font,16,22); layout.compass_cell=layout.compass_font+14
+  layout.utility_font=clamp(layout.body_font-4,12,18); layout.utility_height=layout.utility_font+12
   layout.bottom=math.max(layout.bottom,layout.small_font+16); layout.window_height=height
   return layout
 end

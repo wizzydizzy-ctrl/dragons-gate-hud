@@ -11,3 +11,13 @@ end)
 test("layout always leaves most of the window for the main console",function()
   for _,w in ipairs({900,1024,1366,1400,1600,1920,2056,2560,3840}) do local r=Layout.compute(w,900); eq((w-r.left-r.right)>=w*.64,true) end
 end)
+test("responsive typography remains readable at every breakpoint",function()
+  local compact=Layout.compute(760,700); local medium=Layout.compute(1200,800); local wide=Layout.compute(2056,1177); local ultra=Layout.compute(3840,2160)
+  eq(compact.body_font>=13,true); eq(medium.body_font>=13,true); eq(wide.body_font>=14,true); eq(ultra.body_font>=16,true)
+  eq(wide.heading_font>wide.body_font,true); eq(wide.gauge_height>=26,true); eq(wide.panel_padding>=16,true)
+end)
+test("component metrics grow without overflowing narrow layouts",function()
+  for _,size in ipairs({{760,700},{900,650},{1200,800},{2056,1177},{3840,2160}}) do
+    local r=Layout.compute(size[1],size[2]); eq(r.body_font<=18,true); eq(r.heading_font<=24,true); eq(r.panel_padding<=24,true); eq(r.gauge_height<=34,true)
+  end
+end)

@@ -26,7 +26,15 @@ function View.new(settings)
   return self
 end
 function View:applyLayout(layout)
-  self.layout=layout; local top,bottom=layout.top,layout.bottom
+  self.layout=layout; local top,bottom=layout.top,layout.bottom; local t=self.settings.theme; local p=layout.panel_padding
+  self.header:setStyleSheet("background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
+  self.left:setStyleSheet("background:"..t.panel..";border-right:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
+  self.right_title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.body_font.."px;font-weight:700;padding:12px "..p.."px;")
+  self.readiness:setStyleSheet("background:#131a16;border:1px solid #2b3731;border-radius:7px;color:"..t.text..";padding:12px "..p.."px;font-size:"..layout.body_font.."px;")
+  self.room:setStyleSheet("background:#101a16;border:1px solid #385044;border-radius:7px;color:"..t.text..";padding:12px "..p.."px;font-size:"..layout.body_font.."px;")
+  self.bottom:setStyleSheet("background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px "..p.."px;font-size:"..layout.small_font.."px;")
+  self.compact:setStyleSheet("background:"..t.panel..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
+  for _,g in ipairs({self.hp,self.fatigue,self.carry,self.psi,self.web}) do g.text:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.small_font.."px;font-weight:700;") end
   place(self.header,0,0,"100%",top); place(self.bottom,0,"100%-"..bottom,"100%",bottom)
   if layout.mode=="wide" then
     self.compact:hide(); place(self.left,0,top,layout.left,"100%-"..(top+bottom)); place(self.right,"100%-"..layout.right,top,layout.right,"100%-"..(top+bottom))
@@ -36,11 +44,12 @@ function View:applyLayout(layout)
     self.left:hide(); self.right:hide(); place(self.compact,0,62,"100%",top-62)
   end
   if layout.mode~="compact" then
-    place(self.right_bg,0,0,"100%","100%"); place(self.right_title,0,0,"100%",42)
-    local y=48; for _,g in ipairs({self.hp,self.fatigue,self.carry}) do place(g,14,y,"100%-28",22); y=y+32 end
-    if self.last_state and self.last_state.vitals.psi.visible then place(self.psi,14,y,"100%-28",22); y=y+32 else self.psi:hide() end
-    if self.last_state and self.last_state.vitals.web.visible then place(self.web,14,y,"100%-28",22); y=y+32 else self.web:hide() end
-    place(self.readiness,14,y+4,"100%-28",82); place(self.room,14,y+96,"100%-28",layout.show_room_compass and 150 or 112); place(self.exit_area,14,y+(layout.show_room_compass and 252 or 214),"100%-28",42)
+    place(self.right_bg,0,0,"100%","100%"); place(self.right_title,0,0,"100%",46)
+    local inset=p; local y=52; for _,g in ipairs({self.hp,self.fatigue,self.carry}) do place(g,inset,y,"100%-"..(inset*2),layout.gauge_height); y=y+layout.gauge_height+layout.row_gap end
+    if self.last_state and self.last_state.vitals.psi.visible then place(self.psi,inset,y,"100%-"..(inset*2),layout.gauge_height); y=y+layout.gauge_height+layout.row_gap else self.psi:hide() end
+    if self.last_state and self.last_state.vitals.web.visible then place(self.web,inset,y,"100%-"..(inset*2),layout.gauge_height); y=y+layout.gauge_height+layout.row_gap else self.web:hide() end
+    local readiness_height=layout.mode=="wide" and 82 or 112; local room_height=layout.show_room_compass and 164 or 126
+    place(self.readiness,inset,y+4,"100%-"..(inset*2),readiness_height); place(self.room,inset,y+readiness_height+16,"100%-"..(inset*2),room_height); place(self.exit_area,inset,y+readiness_height+room_height+28,"100%-"..(inset*2),44)
   end
 end
 function View:clearExits() for _,button in ipairs(self.exit_buttons) do button:delete() end; self.exit_buttons={} end
@@ -50,17 +59,18 @@ function View:buildExits(exits)
   for i,direction in ipairs(exits) do local b=label("DGHUD.Exit."..i,self.exit_area,"background:#193024;border:1px solid #39614a;border-radius:4px;color:#91d9a2;font-size:10px;font-weight:700;"); place(b,(i-1)*width.."%",0,(width-2).."%",30); b:echo("<center>"..esc(direction):upper().."</center>"); b:setClickCallback(function() send(direction) end); self.exit_buttons[#self.exit_buttons+1]=b end
 end
 function View:update(s)
-  self.last_state=s; local t=self.settings.theme; local v=s.vitals; local ready=function(x) return x and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:"..t.hp.."'><b>NOT READY</b></span>" end
-  local identity="<span style='color:"..t.accent..";font-size:19px'><b>DRAGONS GATE</b></span> &nbsp; <span style='color:"..t.jade.."'><b>"..esc(s.character.full_name).."</b></span><br><span style='color:"..t.muted.."'>"..esc(s.character.race).." · "..esc(s.character.class).." · "..esc(s.character.alignment).." &nbsp; | &nbsp; GMCP LIVE</span>"
-  self.header:echo(identity)
-  self.left:echo("<center><span style='color:"..t.accent..";font-size:22px'><b>"..esc(s.character.full_name).."</b></span><br><span style='color:"..t.jade.."'>"..esc(s.character.race).." · "..esc(s.character.class).."</span><br><span style='color:"..t.muted.."'>Alignment: "..esc(s.character.alignment).."</span></center><br><br><span style='color:"..t.accent.."'><b>READIED</b></span><br><br>Weapon &nbsp; "..ready(v.weapon_readied).."<br><br>Shield &nbsp;&nbsp; "..ready(v.shield_readied).."<br><br><hr><br><span style='color:"..t.accent.."'><b>CURRENCY</b></span><br><br>Gold: <b>"..v.gold.."</b><br>Silver: <b>"..v.silver.."</b><br><br><span style='color:"..t.accent.."'><b>POSITION</b></span><br><br>"..v.position)
-  self.right_title:echo("GMCP STATUS")
+  self.last_state=s; local t=self.settings.theme; local v=s.vitals; local layout=self.layout or {mode="wide",heading_font=20}; local ready=function(x) return x and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:"..t.hp.."'><b>NOT READY</b></span>" end
+  local header_detail=layout.mode=="wide" and "" or " &nbsp; <span style='color:"..t.text.."'><b>"..esc(s.character.full_name).."</b></span>"
+  self.header:echo("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>DRAGONS GATE</b></span>"..header_detail.."<br><span style='color:"..t.jade.."'><b>● GMCP LIVE</b></span>")
+  self.left:echo("<center><span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>"..esc(s.character.full_name).."</b></span><br><span style='color:"..t.jade.."'><b>"..esc(s.character.race).." · "..esc(s.character.class).."</b></span><br><span style='color:"..t.muted.."'>"..esc(s.character.alignment).."</span></center><br><br><span style='color:"..t.accent.."'><b>READINESS</b></span><br><br>Weapon &nbsp; "..ready(v.weapon_readied).."<br><br>Shield &nbsp;&nbsp; "..ready(v.shield_readied).."<br><br><hr><br><span style='color:"..t.accent.."'><b>WEALTH</b></span><br><br>Gold &nbsp; <b>"..v.gold.."</b><br>Silver &nbsp; <b>"..v.silver.."</b><br><br><span style='color:"..t.accent.."'><b>POSITION</b></span><br><br>"..v.position)
+  self.right_title:echo("VITALS &amp; LOCATION")
   self.hp:setValue(v.hp.current,math.max(v.hp.maximum,1),"Health  "..v.hp.current.." / "..v.hp.maximum); self.fatigue:setValue(v.fatigue.current,math.max(v.fatigue.maximum,1),"Fatigue  "..v.fatigue.current.." / "..v.fatigue.maximum); self.carry:setValue(v.carry.current,math.max(v.carry.maximum,1),"Carry  "..v.carry.current.." / "..v.carry.maximum)
   if v.psi.visible then self.psi:setValue(v.psi.current,v.psi.maximum,"PSI  "..v.psi.current.." / "..v.psi.maximum) end; if v.web.visible then self.web:setValue(v.web.current,v.web.maximum,"Web  "..v.web.current.." / "..v.web.maximum) end
-  self.readiness:echo("<span style='color:"..t.muted.."'>EQUIPMENT</span><br>Weapon &nbsp; "..ready(v.weapon_readied).."<br>Shield &nbsp;&nbsp; "..ready(v.shield_readied).."<br><span style='color:"..t.muted.."'>Roundtime:</span> <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b>")
-  self.room:echo("<span style='color:"..t.accent..";font-size:15px'><b>"..esc(s.room.name).."</b></span><br><span style='color:"..t.muted.."'>Room "..esc(s.room.num or "—").." · Area "..esc(s.room.area or "—").."</span><br>"..esc(s.room.environment).."<br>Players here: <b>"..#s.room.players.."</b><br>Flags: "..esc(table.concat(s.room.flags,", ")))
+  if layout.mode=="wide" then self.readiness:echo("<span style='color:"..t.accent.."'><b>COMBAT STATE</b></span><br><br>Roundtime &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b><br>Position &nbsp; <b>"..v.position.."</b>")
+  else self.readiness:echo("<span style='color:"..t.accent.."'><b>READINESS</b></span><br><br>Weapon &nbsp; "..ready(v.weapon_readied).."<br>Shield &nbsp;&nbsp; "..ready(v.shield_readied).."<br>Roundtime &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b>") end
+  self.room:echo("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>"..esc(s.room.name).."</b></span><br><span style='color:"..t.muted.."'>Room "..esc(s.room.num or "—").." · Area "..esc(s.room.area or "—").."</span><br><br>"..esc(s.room.environment).."<br>Players &nbsp; <b>"..#s.room.players.."</b><br>Flags &nbsp; "..esc(table.concat(s.room.flags,", ")))
   self.compact:echo("<b>HP "..v.hp.current.."/"..v.hp.maximum.."</b> &nbsp; FAT "..v.fatigue.current.."/"..v.fatigue.maximum.." &nbsp; WPN "..(v.weapon_readied and "✓" or "×").." &nbsp; SHD "..(v.shield_readied and "✓" or "×").." &nbsp; <span style='color:"..t.accent.."'>"..esc(s.room.name).."</span>")
-  self.bottom:echo("WEAPON <b>"..(v.weapon_readied and "READY" or "NOT READY").."</b> &nbsp; | &nbsp; SHIELD <b>"..(v.shield_readied and "READY" or "NOT READY").."</b> &nbsp; | &nbsp; EXITS <b>"..esc(table.concat(s.room.exits,", ")).."</b> &nbsp; | &nbsp; NETWORK <span style='color:"..t.jade.."'><b>GMCP LIVE</b></span>")
+  self.bottom:echo("EXITS &nbsp; <b>"..esc(table.concat(s.room.exits,", ")).."</b> &nbsp;&nbsp; | &nbsp;&nbsp; CARRY &nbsp; <b>"..v.carry.current.." / "..v.carry.maximum.."</b> &nbsp;&nbsp; | &nbsp;&nbsp; ROUND &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b>")
   self:buildExits(s.room.exits); if self.layout then self:applyLayout(self.layout) end
 end
 function View:delete() self:clearExits(); if self.root then self.root:delete(); self.root=nil end end

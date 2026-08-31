@@ -1,6 +1,7 @@
 local Collector={}; Collector.__index=Collector
+local SPECS={inventory={parser="parseInventory",snapshot="inventory"},stat={parser="parseStat",snapshot="stat"},info={parser="parseInfo",snapshot="info"},["info religion"]={parser="parseReligion",snapshot="religion"}}
 function Collector.new(adapter,parser,onChange)
-  return setmetatable({adapter=adapter,parser=parser,onChange=onChange,snapshot={},sequence={"inventory","stat","info"},runtime={triggers={},events={}},started=false,refreshed=false},Collector)
+  return setmetatable({adapter=adapter,parser=parser,onChange=onChange,snapshot={},sequence={"inventory","stat","info","info religion"},runtime={triggers={},events={}},started=false,refreshed=false},Collector)
 end
 function Collector:cancelActive()
   if self.timeout then self.adapter:cancelTimer(self.timeout); self.timeout=nil end
@@ -18,9 +19,9 @@ function Collector:finish(lines)
   if self.timeout then self.adapter:cancelTimer(self.timeout); self.timeout=nil end
   self.active=nil
   if lines then
-    local fn=self.parser["parse"..active.command:sub(1,1):upper()..active.command:sub(2)]
+    local spec=SPECS[active.command]; local fn=spec and self.parser[spec.parser]
     local ok,result=pcall(fn,lines)
-    if ok and result then self.snapshot[active.command]=result; self.onChange(self.snapshot,active.command) end
+    if ok and result then self.snapshot[spec.snapshot]=result; self.onChange(self.snapshot,spec.snapshot) end
   end
   if active.startup then
     self.sequence_index=(self.sequence_index or 1)+1; local command=self.sequence[self.sequence_index]
@@ -36,7 +37,7 @@ function Collector:onLine(value)
 end
 function Collector:onOutgoing(command)
   command=tostring(command or ""):match("^%s*(.-)%s*$"):lower()
-  if not self.active and (command=="inventory" or command=="stat" or command=="info") then self:begin(command,false) end
+  if not self.active and SPECS[command] then self:begin(command,false) end
 end
 function Collector:start()
   if self.started then return true end

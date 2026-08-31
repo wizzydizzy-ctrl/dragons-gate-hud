@@ -3,6 +3,7 @@ local Parser=require("command_parser")
 local inventory={"Items carried:","  A torch [1.0 lb].","Your inventory totals 1.0 lbs.",">"}
 local stat={"Body Armor: 4%.","OR: 18  DR: 70  Move Rate: 6/6 UDs  Dam Bonus: Good/None  Stance: Aggressive","::: Equipment Readied :::","  A spear.",">"}
 local info={"You are Test Tester, a stocky bodied 28 year old Entropic Male young Monitanian.  You are 6'10\" and weigh 309 lbs.","Str Int Wis Dex Agi Con Cha Wil Voi Per App","Good Low Fair Fair Fair Good Good Good Aver Fair Fair",">"}
+local religion={"You are a Novitiate follower of Unknown.","You are Balanced within your Entropic alignment.",">"}
 local function fake()
   local f={next=0,triggers={},events={},timers={},sent={}}
   local function id(self,prefix) self.next=self.next+1; return prefix..self.next end
@@ -25,8 +26,11 @@ end
 test("collector runs one sequential refresh after character entry",function()
   local f=fake(); local changes=0; local c=Collector.new(f,Parser,function() changes=changes+1 end); c:start()
   f:line("Welcome to Dragon's Gate, Test!"); eq(f.sent[1],"inventory"); eq(#f.sent,1)
-  f:lines(inventory); eq(f.sent[2],"stat"); f:lines(stat); eq(f.sent[3],"info"); f:lines(info); eq(changes,3)
-  f:line("Welcome to Dragon's Gate, Test!"); eq(#f.sent,3)
+  f:lines(inventory); eq(f.sent[2],"stat"); f:lines(stat); eq(f.sent[3],"info"); f:lines(info); eq(f.sent[4],"info religion"); f:lines(religion); eq(changes,4); eq(c.snapshot.religion.deity,"Unknown")
+  f:line("Welcome to Dragon's Gate, Test!"); eq(#f.sent,4)
+end)
+test("collector captures manual info religion commands",function()
+  local f=fake(); local c=Collector.new(f,Parser,function() end); c:start(); f:outgoing("info religion"); f:lines(religion); eq(c.snapshot.religion.rank,"Novitiate")
 end)
 test("collector captures manual commands and removes owned runtime",function()
   local f=fake(); local c=Collector.new(f,Parser,function() end); c:start(); f:outgoing("inventory"); f:lines(inventory); eq(c.snapshot.inventory.total_weight,1); c:shutdown(); eq(f:owned(),0)

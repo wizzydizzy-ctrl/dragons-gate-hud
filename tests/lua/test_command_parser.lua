@@ -3,6 +3,7 @@ local Parser=require("command_parser")
 local inventory={"Items carried:","  A wooden torch [1.0 lb].","  A wooden torch [0.1 lbs].","  A simple spear [0.5 lbs].","Your inventory totals 1.6 lbs.",">"}
 local stat={"Body Armor: 4%.","OR:  18  DR: 70  Move Rate: 6/6 UDs  Dam Bonus: Good/None  Stance: Aggressive","You are in the center of the area!","You are still protected by the 80 hour novice protection.","  ::: Equipment Readied :::","  A simple spear.","  A wooden shield.",">"}
 local info={"You are Test Tester, a light boned and stocky bodied 28 year old Entropic Male young Monitanian.  You are 6'10\" and weigh 309 lbs.","HP: 201 of 201  Ftg:  69 of  69  Carry: 15.9 of 380.0 lbs."," Str   Int   Wis   Dex   Agi   Con   Cha   Wil   Voi   Per   App","Good  Low   Fair  Fair  Fair  Good  Good  Good  Aver  Fair  Fair",">"}
+local religion={"You are a Novitiate follower of Unknown.","You are Balanced within your Entropic alignment.",">"}
 
 test("parses inventory items without merging duplicates",function()
   local r=assert(Parser.parseInventory(inventory)); eq(#r.items,3); eq(r.items[1].name,"A wooden torch"); eq(r.items[2].weight,0.1); eq(r.total_weight,1.6)
@@ -24,5 +25,8 @@ test("info tolerates condition text appended to the physical sentence",function(
   local r=assert(Parser.parseInfo(with_conditions)); eq(r.physical.weight,309); eq(r.attributes.APP,"Fair")
 end)
 test("detects completed command responses",function() eq(Parser.isComplete("inventory",inventory),true); eq(Parser.isComplete("inventory",{"Items carried:","Your inventory totals 0 lbs."}),false); eq(Parser.isComplete("stat",stat),true); eq(Parser.isComplete("info",info),true); eq(Parser.isComplete("info",{"You are Test"}),false) end)
+test("parses info religion rank deity balance and alignment",function()
+  local r=assert(Parser.parseReligion(religion)); eq(r.rank,"Novitiate"); eq(r.deity,"Unknown"); eq(r.balance,"Balanced"); eq(r.alignment,"Entropic"); eq(Parser.isComplete("info religion",religion),true)
+end)
 
-return {inventory=inventory,stat=stat,info=info}
+return {inventory=inventory,stat=stat,info=info,religion=religion}

@@ -48,8 +48,22 @@ function Parser.parseInfo(lines)
   return result
 end
 
+function Parser.parseReligion(lines)
+  if not hasPrompt(lines) then return nil,"incomplete religion response" end
+  local result={}
+  for _,raw in ipairs(lines or {}) do
+    local line=clean(raw)
+    local rank,deity=line:match("^You are an? (.-) follower of (.-)%.$")
+    if rank then result.rank=rank; result.deity=deity end
+    local balance,alignment=line:match("^You are (.-) within your (.-) alignment%.$")
+    if balance then result.balance=balance; result.alignment=alignment end
+  end
+  if not result.rank or not result.deity then return nil,"unrecognized religion response" end
+  return result
+end
+
 function Parser.isComplete(command,lines)
-  local fn={inventory=Parser.parseInventory,stat=Parser.parseStat,info=Parser.parseInfo}
+  local fn={inventory=Parser.parseInventory,stat=Parser.parseStat,info=Parser.parseInfo,["info religion"]=Parser.parseReligion}
   return fn[command] and (command=="info" or hasPrompt(lines)) and fn[command](lines)~=nil or false
 end
 return Parser

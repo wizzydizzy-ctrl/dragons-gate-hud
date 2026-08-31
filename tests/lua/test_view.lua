@@ -31,6 +31,11 @@ test("identity details and exact equipment expose parsed data",function()
   eq(identity:find("28",1,true)~=nil,true); eq(details:find("Aggressive",1,true)~=nil,true); eq(details:find("STR",1,true)~=nil,true); eq(equipment:find("A spear",1,true)~=nil,true)
   eq(details:find("<br>STR",1,true)~=nil,true)
 end)
+test("identity includes compact religion information",function()
+  local theme={accent="#d8ae53",jade="#72bd82",muted="#91a098"}; local layout={body_font=20,heading_font=25}
+  local identity=View.identityContent({full_name="Test Tester",race="Monitanian",class="Fighter",alignment="entropy",religion="Novitiate",deity="Unknown",religious_balance="Balanced"},theme,layout)
+  eq(identity:find("Novitiate · Unknown · Balanced",1,true)~=nil,true)
+end)
 test("right rail details use short rows",function()
   local theme={accent="#d8ae53",jade="#72bd82",muted="#91a098"}; local layout={body_font=20,heading_font=25,details_columns=2}
   local details=View.detailsContent({body_armor=4,or_rating=18,dr=70,stance="Aggressive"},{STR="Good",INT="Low",WIS="Fair"},theme,layout)

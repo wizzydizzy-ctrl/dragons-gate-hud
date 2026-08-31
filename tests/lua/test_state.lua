@@ -13,8 +13,8 @@ test("clamps percentages and tolerates missing GMCP", function()
 end)
 
 test("GMCP wins while parsed commands fill absent character data",function()
-  local result=State.normalize({Char={Status={name="Live",race="Monitanian"},Vitals={carry=15.9,carry_max=380}}},{info={character={name="Parsed"},physical={age=28,sex="Male"},attributes={STR="Good"}},stat={body_armor=4,stance="Aggressive",equipment={"A simple spear"}},inventory={items={{name="A torch",weight=1}},total_weight=1}})
-  eq(result.character.name,"Live"); eq(result.character.physical.age,28); eq(result.attributes.STR,"Good"); eq(result.combat.stance,"Aggressive"); eq(result.equipment.items[1],"A simple spear"); eq(result.inventory.total_weight,1); eq(result.vitals.carry.current,15.9)
+  local result=State.normalize({Char={Status={name="Live",race="Monitanian"},Vitals={carry=15.9,carry_max=380}}},{info={character={name="Parsed"},physical={age=28,sex="Male"},attributes={STR="Good"}},religion={rank="Novitiate",deity="Unknown",balance="Balanced",alignment="Entropic"},stat={body_armor=4,stance="Aggressive",equipment={"A simple spear"}},inventory={items={{name="A torch",weight=1}},total_weight=1}})
+  eq(result.character.name,"Live"); eq(result.character.physical.age,28); eq(result.character.religion,"Novitiate"); eq(result.character.deity,"Unknown"); eq(result.character.religious_balance,"Balanced"); eq(result.attributes.STR,"Good"); eq(result.combat.stance,"Aggressive"); eq(result.equipment.items[1],"A simple spear"); eq(result.inventory.total_weight,1); eq(result.vitals.carry.current,15.9)
 end)
 
 test("unknown parsed fields remain absent",function()

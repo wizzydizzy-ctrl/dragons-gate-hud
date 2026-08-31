@@ -15,11 +15,11 @@ end
 function State.normalize(source,command_snapshot)
   source=tableAt(source); local char=tableAt(source.Char); local status=tableAt(char.Status); local vitals=tableAt(char.Vitals)
   local roomRoot=tableAt(source.Room); local room=tableAt(roomRoot.Info)
-  local parsed=tableAt(command_snapshot); local info=tableAt(parsed.info); local parsedCharacter=tableAt(info.character); local stat=tableAt(parsed.stat); local inventory=tableAt(parsed.inventory)
+  local parsed=tableAt(command_snapshot); local info=tableAt(parsed.info); local religion=tableAt(parsed.religion); local parsedCharacter=tableAt(info.character); local stat=tableAt(parsed.stat); local inventory=tableAt(parsed.inventory)
   local name=tostring(status.name or parsedCharacter.name or ""); local surname=tostring(status.surname or parsedCharacter.surname or "")
   local full=(name.." "..surname):match("^%s*(.-)%s*$"); if full=="" then full=parsedCharacter.full_name or "Unknown" end
   return {
-    character={name=name,surname=surname,full_name=full,race=status.race or parsedCharacter.race or "Unknown",class=status.class or parsedCharacter.class or "Unknown",alignment=status.alignment or parsedCharacter.alignment or "Unknown",physical=tableAt(info.physical),religion=info.religion,deity=info.deity},
+    character={name=name,surname=surname,full_name=full,race=status.race or parsedCharacter.race or "Unknown",class=status.class or parsedCharacter.class or "Unknown",alignment=status.alignment or parsedCharacter.alignment or "Unknown",physical=tableAt(info.physical),religion=status.religion or religion.rank,deity=status.deity or religion.deity,religious_balance=status.religious_balance or religion.balance,religious_alignment=status.religious_alignment or religion.alignment},
     attributes=tableAt(info.attributes),
     combat={body_armor=stat.body_armor,or_rating=stat.or_rating,dr=stat.dr,move=stat.move,damage_bonus=stat.damage_bonus,stance=stat.stance,area_position=stat.area_position,novice_protected=stat.novice_protected},
     equipment={items=tableAt(stat.equipment)},

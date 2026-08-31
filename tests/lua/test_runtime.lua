@@ -31,3 +31,10 @@ end)
 test("reload leaves one command collector",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); eq(f:count(f.triggers),1); local outgoing=0; for _,name in pairs(f.events) do if name=="sysDataSendRequest" then outgoing=outgoing+1 end end; eq(outgoing,1)
 end)
+test("repeated resize changes typography without growing runtime",function()
+  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); local runtime=f:count(f.events)+f:count(f.triggers)+f:count(f.aliases)
+  for _,size in ipairs({{2056,1177},{1200,800},{760,700},{3840,2160},{1200,800}}) do
+    f.width,f.height=size[1],size[2]; f.callbacks["sysWindowResizeEvent"](); local r=f.layouts[#f.layouts]
+    eq(r.inventory_row_height>=r.inventory_font+8,true); eq(r.details_line_height>=r.body_font+4,true); eq((size[1]-r.left-r.right)>=size[1]*.64,true); eq(f:count(f.events)+f:count(f.triggers)+f:count(f.aliases),runtime)
+  end
+end)

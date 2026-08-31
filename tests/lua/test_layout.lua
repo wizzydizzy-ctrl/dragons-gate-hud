@@ -24,9 +24,19 @@ test("chat allocation preserves a usable console remainder at medium and compact
 end)
 test("short medium and compact layouts keep chat visible above the console remainder",function()
   local medium=Layout.compute(1200,200); local compact=Layout.compute(760,240)
-  eq(medium.chat_height,14); eq(medium.console_remainder,120)
-  eq(compact.chat_height,4); eq(compact.console_remainder,120)
-  eq(medium.console_top<medium.window_height,true); eq(compact.console_top<compact.window_height,true)
+  eq(medium.chat_height,44); eq(medium.chat_output_height,0); eq(medium.console_remainder,90)
+  eq(compact.chat_height,44); eq(compact.chat_output_height,0); eq(compact.console_remainder,80)
+  eq(medium.console_remainder>0,true); eq(compact.console_remainder>0,true)
+end)
+test("functional chat chrome floor adapts the console minimum at medium and compact boundaries",function()
+  for _,case in ipairs({{width=1200,header=66},{width=760,header=116}}) do
+    local threshold=case.header+44+120
+    local above=Layout.compute(case.width,threshold+1); local at=Layout.compute(case.width,threshold); local below=Layout.compute(case.width,threshold-1)
+    eq(at.chat_functional_minimum,44); eq(at.chat_height,44); eq(at.chat_output_height,0); eq(at.console_remainder,120)
+    eq(above.chat_height,45); eq(above.chat_output_height,1); eq(above.console_remainder,120)
+    eq(below.chat_height,44); eq(below.chat_output_height,0); eq(below.console_remainder,119)
+    eq(below.console_remainder>0,true)
+  end
 end)
 test("chat wrap columns follow the center display width",function()
   local narrow=Layout.compute(1000,700); local wide=Layout.compute(1920,1080)

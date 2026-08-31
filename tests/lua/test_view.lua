@@ -41,3 +41,7 @@ test("right rail cards can be raised above their shared background",function()
   local raised=0; local card={raise=function() raised=raised+1 end}
   View.raiseCards({card,card,card}); eq(raised,3)
 end)
+test("compact lower status does not spend a row on blank space",function()
+  local html=View.statusContent({roundtime=0,position=1},{accent="#d8ae53"},{lower_body_font=18})
+  eq(html:find("<br><br>",1,true),nil); eq(html:find("Position",1,true)~=nil,true)
+end)

@@ -1,6 +1,6 @@
 local Layout={}
 function Layout.detailsPlacement(available_height,line_height)
-  return (tonumber(available_height) or 0)>=(tonumber(line_height) or 0)*6 and "left" or "right"
+  return (tonumber(available_height) or 0)>=(tonumber(line_height) or 0)*8 and "left" or "right"
 end
 local function clamp(value,minimum,maximum) return math.max(minimum,math.min(maximum,math.floor(value+0.5))) end
 local function metrics(width,height,layout)

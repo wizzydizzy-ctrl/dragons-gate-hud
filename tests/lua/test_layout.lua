@@ -39,6 +39,7 @@ test("new cards derive dimensions from responsive fonts",function()
   end
 end)
 test("character details move to the roomier rail when the left stack is short",function()
-  eq(Layout.detailsPlacement(180,26),"left")
+  eq(Layout.detailsPlacement(240,26),"left")
+  eq(Layout.detailsPlacement(180,26),"right")
   eq(Layout.detailsPlacement(120,26),"right")
 end)

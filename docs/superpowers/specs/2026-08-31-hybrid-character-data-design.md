@@ -100,7 +100,21 @@ Detailed prose such as body-build wording will be omitted from the always-visibl
 
 ### Lower-left Vitals and Location
 
-Vitals, Status, Location, and Exits remain anchored near the input line. Existing gauges and room data remain GMCP-backed internally. Combat stance may appear in Status when available.
+Vitals, Status, Location, and navigation remain anchored near the input line. Existing gauges and room data remain GMCP-backed internally. Combat stance may appear in Status when available.
+
+The current row of dynamically created exit buttons will be replaced by a fixed eight-direction compass arranged spatially:
+
+```text
+NW   N   NE
+ W   •    E
+SW   S   SE
+```
+
+The HUD will normalize full and abbreviated exit values into `north`, `northeast`, `east`, `southeast`, `south`, `southwest`, `west`, and `northwest`. An available direction uses the accent color, stronger border, and full-opacity text and sends the canonical full direction when clicked. An unavailable direction remains visible at low opacity as spatial context, has no active hover treatment, and does not send a command. The center marker is decorative and never clickable.
+
+Immediately below the compass, four small utility buttons will read `GO PORTAL`, `GO DOOR`, `GO GATE`, and `GO ARCH`. They remain available regardless of the directional exit list and send those exact lowercase commands when clicked. These buttons do not claim that the target is present; game feedback remains authoritative.
+
+Non-compass exits such as `up`, `down`, `in`, or `out` continue to appear in the bottom textual exit summary but do not add ad hoc buttons to the compass.
 
 ### Right rail
 
@@ -122,7 +136,7 @@ A compact details card will show the highest-value parsed information:
 - Eleven attributes in a compact grid
 - Physical build, age, sex, height, and weight when space permits
 
-On wide layouts this card occupies available left-side space between Identity and the lower-left Vitals stack. On medium layouts it uses a shorter summary: armor, OR/DR, stance, and a compact attribute line. Compact mode adds only armor, stance, and inventory count to the existing summary strip; it does not create side rails.
+On wide layouts this card occupies available left-side space between Identity and the lower-left Vitals stack. On medium layouts it uses a shorter summary: armor, OR/DR, stance, and a compact attribute line. Compact mode adds only armor, stance, and inventory count to the existing summary strip; it does not create side rails. Compact navigation retains the textual exit summary and omits the compass and utility buttons so the main console remains usable.
 
 All new card heights, row heights, padding, and truncation capacity derive from responsive layout metrics. No new fixed text heights will be introduced.
 
@@ -144,11 +158,11 @@ Implementation will follow test-driven development with these layers:
 1. Parser tests using captured Classic output for normal inventory, duplicate items, empty inventory, incomplete output, stat values, readied equipment, info description, and all eleven attributes
 2. State tests proving GMCP precedence, parser fallback, absent-value handling, and preservation of existing normalized fields
 3. Collector tests proving character-entry detection, one sequence per play session, sequential command advancement, manual-command refresh, timeout behavior, disconnect reset, and complete lifecycle cleanup
-4. Layout and view tests proving responsive card metrics, inventory row capacity, deterministic `+N more` truncation, separate Identity/Equipment/Wealth/Inventory content, compact fallback, and absence of visible `GMCP` text
+4. Layout and view tests proving responsive card metrics, inventory row capacity, deterministic `+N more` truncation, separate Identity/Equipment/Wealth/Inventory content, compass placement, full/abbreviated direction normalization, disabled unavailable directions, exact utility-button commands, compact fallback, and absence of visible `GMCP` text
 5. Runtime tests proving update/reload idempotence and no leaked triggers or timers
 6. Package build verification and live Mudlet acceptance at wide, medium, and compact widths
 
-Live acceptance will confirm that entering a character runs exactly three startup commands, the captured values match the game output, manual `inventory`, `stat`, and `info` refresh the HUD, no text is clipped, and unrelated Mudlet content remains untouched.
+Live acceptance will confirm that entering a character runs exactly three startup commands, the captured values match the game output, manual `inventory`, `stat`, and `info` refresh the HUD, available compass directions follow room exits, utility buttons send their exact commands, no text is clipped, and unrelated Mudlet content remains untouched.
 
 ## Delivery
 

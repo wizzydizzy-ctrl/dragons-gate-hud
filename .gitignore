@@ -1,3 +1,4 @@
 dist/
 *.bak
 .DS_Store
+.worktrees/

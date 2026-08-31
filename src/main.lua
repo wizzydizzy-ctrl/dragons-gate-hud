@@ -24,6 +24,13 @@ function Main:startChat()
   self.chat=ChatController.new(self.adapter,ChatParser,ChatHistory.new(settings.visible_limit or 1000,settings.dedupe_seconds or 3),storage,function(entries,categories,filter)
     if self.view and self.view.renderChat then self.view:renderChat(entries,categories,filter) end
   end,function() return self:characterName() end)
+  if self.view and self.view.setChatFilterCallback then
+    self.view:setChatFilterCallback(function(category)
+      local chat=self.chat
+      if not chat then return nil,"chatbox is not running" end
+      return chat:setFilter(category)
+    end)
+  end
   return self.chat:start()
 end
 function Main:scheduleRoundtimeTick()
@@ -35,7 +42,7 @@ function Main:onRoundtime(value)
   self.roundtime_display=value; self:refresh(); self:scheduleRoundtimeTick(); return true
 end
 function Main:applyResponsiveLayout()
-  local width,height=self.adapter:getWindowSize(); local layout=Layout.compute(width,height); self.current_layout=layout
+  local width,height=self.adapter:getWindowSize(); local layout=Layout.compute(width,height,self.settings.chat); self.current_layout=layout
   self.adapter:setBorders(layout.left,layout.top,layout.right,layout.bottom)
   if self.view and self.view.applyLayout then self.view:applyLayout(layout) end; return layout
 end

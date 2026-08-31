@@ -4,6 +4,31 @@ local View={}; View.__index=View
 function View.withFont(text,size) return "<span style='font-size:"..tonumber(size).."px'>"..text.."</span>" end
 function View.raiseCards(cards) for _,card in ipairs(cards or {}) do if card and card.raise then card:raise() end end end
 local function esc(v) return tostring(v or ""):gsub("&","&amp;"):gsub("<","&lt;"):gsub(">","&gt;") end
+local function safeText(v) return esc(tostring(v or ""):gsub("%c"," ")) end
+local chat_colors={ROOM="text",OWN="jade",WHISPER="#d49bc8",ESP="#a6a3e8",DRAGON="#d9a869",CONTACT="#8bc6b0",STAFF="#e09672"}
+local function chatScroll(output)
+  local okCurrent,current=pcall(function() return output:getScroll() end)
+  local okLast,last=pcall(function() return output:getLastLineNumber() end)
+  if not okCurrent or not okLast or current==nil or last==nil then return {at_bottom=true,line=0} end
+  return {at_bottom=current>=last,line=current}
+end
+local function restoreChatScroll(output,state)
+  if state.at_bottom then pcall(function() output:scrollTo() end); return end
+  local ok,last=pcall(function() return output:getLastLineNumber() end)
+  pcall(function() output:scrollTo(math.min(state.line,(ok and tonumber(last)) or state.line)) end)
+end
+function View.chatLine(entry,t,timestamps)
+  entry=type(entry)=="table" and entry or {}
+  local category=tostring(entry.category or "CHAT"):upper()
+  local color=chat_colors[category] or t.accent
+  if color=="text" then color=t.text elseif color=="jade" then color=t.jade end
+  local stamp=""
+  if timestamps~=false then
+    local time=tostring(entry.timestamp or ""):match("T(%d%d:%d%d)")
+    if time then stamp="<span style='color:"..t.muted.."'>["..time.."]</span> " end
+  end
+  return stamp.."<span style='color:"..color.."'><b>"..safeText(category).."</b></span> "..safeText(entry.line or entry.message).."\n"
+end
 function View.identityContent(character,t,layout)
   local physical=character.physical or {}; local detail=""
   if physical.age or physical.sex or physical.height then detail="<br><span style='color:"..t.muted.."'>"..esc(physical.age or "")..(physical.age and " · " or "")..esc(physical.sex or "")..(physical.height and " · "..esc(physical.height) or "").."</span>" end
@@ -50,8 +75,8 @@ function View.statusContent(v,t,layout)
   local round=v.roundtime==0 and "READY" or v.roundtime
   return View.withFont("<span style='color:"..t.accent.."'><b>STATUS</b></span><br>Roundtime &nbsp; <b>"..round.."</b><br>Position &nbsp; <b>"..v.position.."</b>",layout.lower_body_font)
 end
-local function label(name,parent,style)
-  local item=Geyser.Label:new({name=name,x=0,y=0,width=10,height=10},parent); item:setStyleSheet(style or "background:transparent;"); return item
+local function label(name,parent,style,geyser)
+  local item=(geyser or Geyser).Label:new({name=name,x=0,y=0,width=10,height=10},parent); item:setStyleSheet(style or "background:transparent;"); return item
 end
 local function gauge(name,parent,color,theme)
   local g=Geyser.Gauge:new({name=name,x=0,y=0,width=100,height=18},parent)
@@ -60,9 +85,16 @@ local function gauge(name,parent,color,theme)
 end
 local function place(item,x,y,w,h) item:move(x,y); item:resize(w,h); item:show() end
 function View.new(settings)
-  local self=setmetatable({settings=settings,direction_buttons={},utility_buttons={},exit_available={}},View); local t=settings.theme
+  local self=setmetatable({settings=settings,geyser=Geyser,direction_buttons={},utility_buttons={},exit_available={}},View); local t=settings.theme
   self.root=Geyser.Container:new({name="DGHUD.Root",x=0,y=0,width="100%",height="100%"})
   self.header=label("DGHUD.Header",self.root,"background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px 18px;")
+  self.chat_container=Geyser.Container:new({name="DGHUD.Chat",x=0,y=0,width=100,height=240},self.root)
+  self.chat=self.chat_container
+  self.chat_bg=label("DGHUD.Chat.Background",self.chat_container,"background:#0d1210;border:1px solid "..t.border..";")
+  self.chat_tabs=Geyser.Container:new({name="DGHUD.Chat.Tabs",x=0,y=0,width="100%",height=32},self.chat_container)
+  self.chat_output=Geyser.MiniConsole:new({name="DGHUD.Chat.Output",x=8,y=36,width="100%-16",height="100%-44"},self.chat_container)
+  self.chat_output:enableScrollBar()
+  self.chat_output:disableHorizontalScrollBar()
   self.left_bg=label("DGHUD.LeftBackground",self.root,"background:"..t.panel..";border-right:1px solid "..t.border..";")
   self.identity=label("DGHUD.Identity",self.root,"background:"..t.panel..";border-right:1px solid "..t.border..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:18px;")
   self.details=label("DGHUD.Details",self.root,"background:"..t.panel..";border:1px solid "..t.border..";color:"..t.text..";padding:18px;")
@@ -85,8 +117,77 @@ function View.new(settings)
   self.compact=label("DGHUD.Compact",self.root,"background:"..t.panel..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:8px 12px;")
   return self
 end
+local default_chat_filters={"ALL","ROOM","PRIVATE","ESP","DRAGON","CONTACT","STAFF"}
+local reserved_chat_filters={ALL=true,ROOM=true,PRIVATE=true,ESP=true,DRAGON=true,CONTACT=true,STAFF=true,OWN=true,WHISPER=true}
+local function chatFilterOrder(categories)
+  local result={}; local seen={}
+  for _,category in ipairs(default_chat_filters) do result[#result+1]=category; seen[category]=true end
+  for _,value in ipairs(categories or {}) do
+    local category=tostring(value or ""):upper()
+    if category~="" and not reserved_chat_filters[category] and not seen[category] then result[#result+1]=category; seen[category]=true end
+  end
+  return result
+end
+local function chatTabWidth(category,font)
+  return math.max(42,math.min(96,math.floor(#tostring(category)*(tonumber(font) or 13)*.55+18)))
+end
+function View:setChatFilterCallback(callback)
+  self.chat_filter_callback=type(callback)=="function" and callback or nil
+  return true
+end
+function View:renderChatTabs(categories,activeFilter)
+  for _,button in ipairs(self.chat_buttons or {}) do if button.delete then button:delete() end end
+  self.chat_buttons={}; self.chat_overflow_button=nil; self.chat_filter_order=chatFilterOrder(categories)
+  local width=math.max(80,tonumber(self.layout and self.layout.chat_width) or 640)
+  local font=tonumber(self.layout and self.layout.chat_font) or 13
+  local gap,padding,overflowWidth=4,8,64
+  local total=padding
+  for _,category in ipairs(self.chat_filter_order) do total=total+chatTabWidth(category,font)+gap end
+  local visible={}; local hidden={}
+  if total+padding-gap<=width then
+    for _,category in ipairs(self.chat_filter_order) do visible[#visible+1]=category end
+  else
+    local room=math.max(42,width-padding*2-overflowWidth-gap)
+    local used=0
+    for _,category in ipairs(self.chat_filter_order) do
+      local needed=chatTabWidth(category,font)+(used>0 and gap or 0)
+      if used+needed<=room or #visible==0 then visible[#visible+1]=category; used=used+needed else hidden[#hidden+1]=category end
+    end
+    local active=tostring(activeFilter or "ALL"):upper(); local activeHidden=false
+    for _,category in ipairs(hidden) do if category==active then activeHidden=true; break end end
+    if activeHidden and #visible>0 then visible[#visible]=active; hidden={}; local selected={}
+      for _,category in ipairs(visible) do selected[category]=true end
+      for _,category in ipairs(self.chat_filter_order) do if not selected[category] then hidden[#hidden+1]=category end end
+    end
+  end
+  self.chat_overflow_categories=hidden
+  local t=self.settings.theme; local x=padding; local active=tostring(activeFilter or "ALL"):upper()
+  local maxNormal=width-padding-(#hidden>0 and overflowWidth+gap or 0)
+  for _,category in ipairs(visible) do
+    local remaining=maxNormal-x; if remaining<=0 then break end
+    local button=label("DGHUD.Chat.Tab."..(#self.chat_buttons+1),self.chat_tabs,nil,self.geyser)
+    local buttonWidth=math.min(chatTabWidth(category,font),remaining)
+    place(button,x,4,buttonWidth,24); x=x+buttonWidth+gap
+    local selected=category
+    button.category=selected
+    button:setStyleSheet("background:"..(selected==active and "#26382d" or "#121a16")..";border:1px solid "..(selected==active and t.jade or t.border)..";border-radius:4px;color:"..(selected==active and t.jade or t.muted)..";font-size:"..font.."px;")
+    button:echo("<center><b>"..safeText(selected).."</b></center>")
+    button:setClickCallback(function() if self.chat_filter_callback then self.chat_filter_callback(selected) end end)
+    self.chat_buttons[#self.chat_buttons+1]=button
+  end
+  if #hidden>0 then
+    local button=label("DGHUD.Chat.Tab.More",self.chat_tabs,nil,self.geyser); place(button,math.max(padding,width-padding-overflowWidth),4,overflowWidth,24)
+    button:setStyleSheet("background:#121a16;border:1px solid "..t.border..";border-radius:4px;color:"..t.muted..";font-size:"..font.."px;")
+    button:echo("<center><b>MORE "..#hidden.."</b></center>")
+    button:setClickCallback(function()
+      self.chat_overflow_cursor=((self.chat_overflow_cursor or 0)%#self.chat_overflow_categories)+1
+      if self.chat_filter_callback then self.chat_filter_callback(self.chat_overflow_categories[self.chat_overflow_cursor]) end
+    end)
+    self.chat_overflow_button=button; self.chat_buttons[#self.chat_buttons+1]=button
+  end
+end
 function View:applyLayout(layout)
-  self.layout=layout; local top,bottom=layout.top,layout.bottom; local t=self.settings.theme; local p=layout.panel_padding; local lp=layout.lower_panel_padding
+  self.layout=layout; local top,bottom=layout.header_height or layout.top,layout.bottom; local t=self.settings.theme; local p=layout.panel_padding; local lp=layout.lower_panel_padding
   self.header:setStyleSheet("background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
   self.identity:setStyleSheet("background:"..t.panel..";border-right:1px solid "..t.border..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.details:setStyleSheet("background:"..t.panel..";border:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
@@ -99,6 +200,10 @@ function View:applyLayout(layout)
   self.compact:setStyleSheet("background:"..t.panel..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
   for _,g in ipairs({self.hp,self.fatigue,self.carry,self.psi,self.web}) do g.text:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.lower_small_font.."px;font-weight:700;"); if g.text.setFontSize then g.text:setFontSize(layout.lower_small_font) end end
   place(self.header,0,0,"100%",top); self.bottom:hide()
+  place(self.chat_container,layout.chat_x or layout.left,top,layout.chat_width or layout.console_width,layout.chat_height or 240)
+  place(self.chat_bg,0,0,"100%","100%")
+  place(self.chat_tabs,0,0,"100%",32)
+  place(self.chat_output,layout.chat_padding or 8,36,"100%-"..((layout.chat_padding or 8)*2),"100%-44")
   if layout.mode=="wide" or layout.mode=="medium" then
     self.compact:hide()
     place(self.left_bg,0,top,layout.left,"100%-"..top)
@@ -141,6 +246,7 @@ function View:applyLayout(layout)
     place(self.utility_area,inset,nav_y+layout.lower_compass_cell*3+6,"100%-"..(inset*2),layout.lower_utility_height*2+5)
     for i,entry in ipairs(self.utility_buttons) do local col=(i-1)%2; local row=math.floor((i-1)/2); place(entry.label,(col*50).."%",row*(layout.lower_utility_height+2),"49%",layout.lower_utility_height) end
   end
+  self:applyChatWrap(layout)
 end
 function View:renderNavigation(exits)
   if not self.layout or self.layout.mode=="compact" then return end
@@ -154,6 +260,36 @@ function View:renderInventory(s)
   for _,item in ipairs(rows) do if item.overflow then lines[#lines+1]="<span style='color:"..t.muted.."'>"..item.label.."</span>" else lines[#lines+1]=esc(item.name).." <span style='color:"..t.muted.."'>"..esc(item.weight or "").." lb</span>" end end
   if s.inventory.total_weight then lines[#lines+1]="<br><b>Total "..esc(s.inventory.total_weight).." lb</b>" end
   self.inventory:echo(View.withFont(table.concat(lines,"<br>"),layout.inventory_font))
+end
+function View:renderChat(entries,categories,activeFilter,savedScroll)
+  entries=type(entries)=="table" and entries or {}; categories=type(categories)=="table" and categories or {}
+  local state=savedScroll or chatScroll(self.chat_output); local first=math.max(1,#entries-999)
+  self.chat_entries={}; for index=first,#entries do self.chat_entries[#self.chat_entries+1]=entries[index] end
+  self.chat_categories={}; for index,value in ipairs(categories) do self.chat_categories[index]=value end
+  self.chat_active_filter=tostring(activeFilter or "ALL"):upper()
+  self:renderChatTabs(self.chat_categories,self.chat_active_filter)
+  self.chat_output:clear()
+  local chatSettings=self.settings.chat or {}
+  for _,entry in ipairs(self.chat_entries) do self.chat_output:echo(View.chatLine(entry,self.settings.theme,chatSettings.timestamps)) end
+  restoreChatScroll(self.chat_output,state)
+  return true
+end
+function View:applyChatWrap(layout)
+  layout=layout or self.layout or {}; local output=self.chat_output
+  local columns=math.max(30,math.floor(tonumber(layout.chat_wrap_columns) or 30))
+  local font=math.max(1,math.floor(tonumber(layout.chat_font) or 13))
+  local changed=self.chat_wrap_columns~=columns or self.chat_font~=font
+  local state=changed and chatScroll(output) or nil
+  pcall(function() output:setFontSize(font) end)
+  local ok,applied,why=pcall(function() return output:setWrap(columns) end)
+  if not ok then return nil,tostring(applied) end
+  if applied==false or (applied==nil and why~=nil) then return nil,tostring(why or "could not apply chat wrap") end
+  self.chat_wrap_columns=columns; self.chat_font=font
+  if changed then
+    if self.chat_entries then self:renderChat(self.chat_entries,self.chat_categories,self.chat_active_filter,state)
+    else restoreChatScroll(output,state) end
+  end
+  return true
 end
 function View:update(s)
   self.last_state=s; local t=self.settings.theme; local v=s.vitals; local layout=self.layout or {mode="wide",heading_font=20}; local ready=function(x) return x and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:"..t.hp.."'><b>NOT READY</b></span>" end

@@ -9,7 +9,29 @@ function Layout.detailsFit(rail_bottom,inventory_y,details_height,minimum_invent
   return (tonumber(rail_bottom) or 0)-(tonumber(details_height) or 0)-12-(tonumber(inventory_y) or 0)>=(tonumber(minimum_inventory_height) or 0)
 end
 local function clamp(value,minimum,maximum) return math.max(minimum,math.min(maximum,math.floor(value+0.5))) end
-local function metrics(width,height,layout)
+local function chatMetrics(width,height,layout,settings)
+  settings=type(settings)=="table" and settings or {}
+  local default_percent=.21
+  local target=tonumber(settings.target_height) or 240
+  local minimum=tonumber(settings.min_height) or 160
+  local maximum=tonumber(settings.max_height) or 320
+  local percent=tonumber(settings.height_percent) or default_percent
+  if maximum<minimum then maximum=minimum end
+  layout.header_height=layout.top
+  layout.chat_height=clamp(height*percent*(target/(1080*default_percent)),minimum,maximum)
+  layout.chat_x=layout.left
+  layout.chat_width=layout.console_width
+  layout.chat_padding=8
+  layout.chat_scrollbar_allowance=18
+  layout.chat_font=clamp(width/120,13,18)
+  layout.chat_character_width=math.max(6,layout.chat_font*.62)
+  layout.chat_inner_width=math.max(1,layout.chat_width-(2*layout.chat_padding)-layout.chat_scrollbar_allowance)
+  layout.chat_wrap_columns=math.max(30,math.floor(layout.chat_inner_width/layout.chat_character_width))
+  layout.console_top=layout.header_height+layout.chat_height
+  layout.top=layout.console_top
+  return layout
+end
+local function metrics(width,height,layout,chatSettings)
   layout.console_width=width-layout.left-layout.right
   layout.body_font=clamp(width/100,16,22); layout.small_font=clamp((layout.body_font-2)*2,28,40); layout.heading_font=clamp(layout.body_font+5,21,27)
   layout.panel_padding=clamp(width/120,12,22); layout.gauge_height=clamp(layout.small_font+10,38,50); layout.row_gap=clamp(layout.body_font*.7,11,15)
@@ -27,13 +49,13 @@ local function metrics(width,height,layout)
   layout.lower_compass_font=scaled(layout.compass_font); layout.lower_compass_cell=scaled(layout.compass_cell)
   layout.lower_utility_font=scaled(layout.utility_font); layout.lower_utility_height=scaled(layout.utility_height); layout.lower_section_gap=scaled(44)
   layout.bottom=0; layout.window_height=height
-  return layout
+  return chatMetrics(width,height,layout,chatSettings)
 end
-function Layout.compute(width,height)
+function Layout.compute(width,height,chatSettings)
   width=tonumber(width) or 1200; height=tonumber(height) or 800
   local rail=math.floor(width*.17)
-  if width>=1400 then return metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=0,show_character_rail=true,show_room_compass=height>=700,vitals_side="left"}) end
-  if width>=1000 then return metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="left"}) end
-  return metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=0,show_character_rail=false,show_room_compass=false,vitals_side="compact"})
+  if width>=1400 then return metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=0,show_character_rail=true,show_room_compass=height>=700,vitals_side="left"},chatSettings) end
+  if width>=1000 then return metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="left"},chatSettings) end
+  return metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=0,show_character_rail=false,show_room_compass=false,vitals_side="compact"},chatSettings)
 end
 return Layout

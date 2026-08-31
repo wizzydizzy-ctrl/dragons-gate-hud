@@ -4,7 +4,13 @@ local function fake()
   function f:getBorders() return self.borders[1],self.borders[2],self.borders[3],self.borders[4] end
   function f:setBorders(a,b,c,d) self.set_borders={a,b,c,d} end
   function f:getWindowSize() return self.width or 1920,self.height or 1080 end
-  function f:createView() return {update=function(self,state) self.state=state end,applyLayout=function(self,layout) f.layouts[#f.layouts+1]=layout end,delete=function() f.deleted=f.deleted+1 end} end
+  function f:createView() return {
+    update=function(self,state) self.state=state end,
+    applyLayout=function(self,layout) f.layouts[#f.layouts+1]=layout end,
+    renderChat=function(self,entries,categories,filter) f.chatRenders=(f.chatRenders or 0)+1; f.renderedChat={entries=entries,categories=categories,filter=filter} end,
+    setChatFilterCallback=function(self,callback) f.chatFilterCallback=callback end,
+    delete=function() f.deleted=f.deleted+1 end,
+  } end
   function f:addEvent(name,fn) self.next=self.next+1; self.callbacks[name]=fn; local id="event-"..self.next; self.events[id]=name; return id end
   function f:addAlias() self.next=self.next+1; local id="alias-"..self.next; self.aliases[id]=true; return id end
   function f:killEvent(id) self.killed[id]=true; self.events[id]=nil end
@@ -41,7 +47,20 @@ test("health check requires root handlers and an owned chat trigger",function()
   local hud=Main.new(fake(),{layout={left_width=190,right_width=270}}); eq(hud:healthCheck(),nil); hud:start(); eq(hud:healthCheck(),true); hud.chat.trigger=nil; eq(hud:healthCheck(),nil)
 end)
 test("window resize recomputes absolute borders and view layout",function()
-  local f=fake(); f.borders={1290,234,1610,120}; local hud=Main.new(f,{layout={}}); hud:start(); eq(f.layouts[#f.layouts].mode,"wide"); eq(f.set_borders[1],326); eq(f.set_borders[2],74); eq(f.set_borders[3],326); f.width=760; f.height=700; f.callbacks["sysWindowResizeEvent"](); eq(f.layouts[#f.layouts].mode,"compact"); eq(f.set_borders[1],0); eq(f.set_borders[2],116); eq(f.set_borders[3],0); eq(f.set_borders[4],0)
+  local f=fake(); f.borders={1290,234,1610,120}; local hud=Main.new(f,{layout={}}); hud:start(); eq(f.layouts[#f.layouts].mode,"wide"); eq(f.set_borders[1],326); eq(f.set_borders[2],314); eq(f.set_borders[3],326); f.width=760; f.height=700; f.callbacks["sysWindowResizeEvent"](); eq(f.layouts[#f.layouts].mode,"compact"); eq(f.set_borders[1],0); eq(f.set_borders[2],276); eq(f.set_borders[3],0); eq(f.set_borders[4],0)
+end)
+test("chat controller renders through the view and tab callbacks select filters",function()
+  local f=fake(); local hud=Main.new(f,{layout={},chat={visible_limit=1000,dedupe_seconds=3}}); hud:start()
+  eq(f.renderedChat.filter,"ALL"); eq(type(f.chatFilterCallback),"function")
+  assert(hud.chat:capture("QUEST","The quest begins.")); f.chatFilterCallback("QUEST")
+  eq(hud.chat.filter,"QUEST"); eq(f.renderedChat.filter,"QUEST"); eq(f.renderedChat.entries[1].message,"The quest begins.")
+end)
+test("resize preserves chat controller history and trigger ownership",function()
+  local f=fake(); local hud=Main.new(f,{layout={},chat={height_percent=.25}}); hud:start(); assert(hud.chat:capture("QUEST","kept"))
+  local controller=hud.chat; local trigger=controller.trigger; local runtime=f:count(f.triggers)
+  f.width,f.height=1000,650; f.callbacks["sysWindowResizeEvent"]()
+  eq(hud.chat,controller); eq(hud.chat.trigger,trigger); eq(f:count(f.triggers),runtime); eq(hud.chat:entries()[1].message,"kept")
+  eq(f.layouts[#f.layouts].chat_height>160,true); eq(f.set_borders[2],f.layouts[#f.layouts].console_top)
 end)
 test("controller merges collector snapshots and removes collector runtime",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud.collector.snapshot.info={attributes={STR="Good"}}; hud:refresh(); eq(hud.last_state.attributes.STR,"Good"); eq(f:count(f.triggers),2); hud:shutdown(); eq(f:count(f.triggers),0); eq(f:count(f.timers),0)

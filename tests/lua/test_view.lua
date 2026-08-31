@@ -50,3 +50,111 @@ test("compact lower status does not spend a row on blank space",function()
   local html=View.statusContent({roundtime=0,position=1},{accent="#d8ae53"},{lower_body_font=18})
   eq(html:find("<br><br>",1,true),nil); eq(html:find("Position",1,true)~=nil,true)
 end)
+
+local function fakeGeyser()
+  local function widget(cons,parent,kind)
+    local item={name=cons.name,parent=parent,kind=kind,visible=true,echoes={},currentScroll=0,lastLine=0}
+    function item:setStyleSheet(value) self.style=value end
+    function item:move(x,y) self.x=x; self.y=y end
+    function item:resize(width,height) self.width=width; self.height=height end
+    function item:show() self.visible=true end
+    function item:hide() self.visible=false end
+    function item:raise() self.raised=true end
+    function item:delete() self.deleted=true end
+    function item:setClickCallback(callback) self.click=callback end
+    function item:echo(value)
+      if self.kind=="console" then self.echoes[#self.echoes+1]=value; self.lastLine=self.lastLine+1 else self.message=value end
+    end
+    function item:clear() self.echoes={}; self.lastLine=0 end
+    function item:setWrap(value) self.wrap=value; return true end
+    function item:setFontSize(value) self.fontSize=value end
+    function item:enableScrollBar() self.scrollBar=true end
+    function item:disableHorizontalScrollBar() self.horizontalScrollBar=false end
+    function item:getScroll() return self.currentScroll end
+    function item:getLastLineNumber() return self.lastLine end
+    function item:scrollTo(line) self.scrollCalls=self.scrollCalls or {}; self.scrollCalls[#self.scrollCalls+1]=line==nil and "bottom" or line; self.currentScroll=line or self.lastLine end
+    function item:setValue(current,maximum,text) self.value={current,maximum,text} end
+    return item
+  end
+  local geyser={}
+  geyser.Container={new=function(_,cons,parent) return widget(cons,parent,"container") end}
+  geyser.Label={new=function(_,cons,parent) return widget(cons,parent,"label") end}
+  geyser.MiniConsole={new=function(_,cons,parent) return widget(cons,parent,"console") end}
+  geyser.Gauge={new=function(_,cons,parent)
+    local item=widget(cons,parent,"gauge"); item.front=widget({},item,"label"); item.back=widget({},item,"label"); item.text=widget({},item,"label"); return item
+  end}
+  return geyser
+end
+
+local function chatView()
+  local original=Geyser; Geyser=fakeGeyser()
+  local view=View.new({theme={background="#080b0a",panel="#0d1210",border="#423825",text="#d7d0bf",muted="#75857c",accent="#e0b56c",jade="#79b386",hp="#ba5147",fatigue="#8bad4e"},chat={timestamps=true}})
+  Geyser=original
+  return view
+end
+
+test("view owns a scrollable chat panel above the main console",function()
+  local view=chatView()
+  eq(view.chat_container~=nil,true); eq(view.chat_tabs~=nil,true); eq(view.chat_output~=nil,true)
+  eq(view.chat_output.parent,view.chat_container); eq(view.chat_output.scrollBar,true); eq(view.chat_output.horizontalScrollBar,false)
+end)
+
+test("chat panel occupies the center while side cards stay at the header",function()
+  local layout=require("layout").compute(1920,1080); local view=chatView(); view:applyLayout(layout)
+  eq(view.header.height,layout.header_height)
+  eq(view.chat_container.x,layout.chat_x); eq(view.chat_container.y,layout.header_height)
+  eq(view.chat_container.width,layout.chat_width); eq(view.chat_container.height,layout.chat_height)
+  eq(view.identity.y,layout.header_height); eq(view.left.y,layout.header_height); eq(view.equipment.y,layout.header_height+layout.panel_padding)
+end)
+
+test("chat rendering keeps only the newest thousand and escapes untrusted text",function()
+  local view=chatView(); view:applyLayout(require("layout").compute(1920,1080)); local entries={}
+  for index=1,1001 do entries[index]={category="ROOM",timestamp="2026-08-31T13:00:00-04:00",line="line-"..index} end
+  entries[1001].line="<b>owned &\n\27[31m"
+  view:renderChat(entries,{"ROOM","QUEST<script>","EVENTS\n"},"ALL")
+  eq(#view.chat_output.echoes,1000); eq(view.chat_output.echoes[1]:find("line-2",1,true)~=nil,true)
+  local last=view.chat_output.echoes[#view.chat_output.echoes]
+  eq(last:find("<b>owned",1,true),nil); eq(last:find("&lt;b&gt;owned &amp;",1,true)~=nil,true)
+  eq(last:find("\n\27",1,true),nil); eq(last:find("color:#75857c",1,true)~=nil,true)
+end)
+
+test("chat tabs stay inside narrow panels and expose deterministic overflow",function()
+  local layout=require("layout").compute(280,700); local view=chatView(); view:applyLayout(layout); local selected
+  view:setChatFilterCallback(function(category) selected=category end)
+  view:renderChat({}, {"QUEST","EVENTS","QUEST<script>","LINE\nBREAK"}, "ALL")
+  eq(table.concat(view.chat_filter_order,","),"ALL,ROOM,PRIVATE,ESP,DRAGON,CONTACT,STAFF,QUEST,EVENTS,QUEST<SCRIPT>,LINE\nBREAK")
+  eq(#view.chat_overflow_categories>0,true)
+  for _,button in ipairs(view.chat_buttons) do
+    eq(button.x+button.width<=layout.chat_width,true); eq(tostring(button.message):find("<script>",1,true),nil)
+  end
+  local first=view.chat_overflow_categories[1]; view.chat_overflow_button.click(); eq(selected,first)
+end)
+
+test("chat wrap reflows on resize while preserving scroll intent and filter",function()
+  local Layout=require("layout"); local wide=Layout.compute(1920,1080); local narrow=Layout.compute(1000,700); local view=chatView()
+  view:applyLayout(wide); view:renderChat({
+    {category="ESP",timestamp="2026-08-31T13:00:00-04:00",line=string.rep("long message ",30)},
+    {category="ESP",timestamp="2026-08-31T13:01:00-04:00",line="newest"},
+  },{"ESP"},"ESP")
+  view.chat_output.currentScroll=0; view:applyLayout(narrow)
+  eq(view.chat_output.wrap,narrow.chat_wrap_columns); eq(view.chat_output.scrollCalls[#view.chat_output.scrollCalls],0)
+  eq(view.chat_active_filter,"ESP"); eq(#view.chat_output.echoes,2)
+  view.chat_output.currentScroll=view.chat_output.lastLine; view:applyLayout(wide)
+  eq(view.chat_output.wrap,wide.chat_wrap_columns); eq(view.chat_output.scrollCalls[#view.chat_output.scrollCalls],"bottom")
+  eq(view.chat_active_filter,"ESP")
+end)
+
+test("chat wrap accepts legacy Geyser setters that return no value",function()
+  local layout=require("layout").compute(1920,1080); local view=chatView()
+  function view.chat_output:setWrap(value) self.wrap=value end
+  local applied,err=view:applyChatWrap(layout)
+  eq(applied,true); eq(err,nil); eq(view.chat_output.wrap,layout.chat_wrap_columns)
+  eq(view.chat_wrap_columns,layout.chat_wrap_columns); eq(view.chat_font,layout.chat_font)
+end)
+
+test("chat wrap reports explicit Geyser setter failures",function()
+  local layout=require("layout").compute(1920,1080); local view=chatView()
+  function view.chat_output:setWrap() return nil,"manual wrap rejected" end
+  local applied,err=view:applyChatWrap(layout)
+  eq(applied,nil); eq(err,"manual wrap rejected")
+end)

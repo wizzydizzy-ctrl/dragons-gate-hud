@@ -15,6 +15,16 @@ test("parses room speech languages and all approved verbs",function()
   end
 end)
 
+test("parses room target then language clauses",function()
+  local e=assert(Parser.parse('Ocinaiya says to Suupidosutaa in Elvish, "Especially you."',"Dace Alterac"))
+  eq(e.category,"ROOM"); eq(e.speaker,"Ocinaiya"); eq(e.target,"Suupidosutaa"); eq(e.language,"Elvish")
+end)
+
+test("parses mixed-case active multi-word language then target clauses",function()
+  local e=assert(Parser.parse('DACE Alterac says in Common to Suupidosutaa, "I am here."',"dace alterac"))
+  eq(e.category,"OWN"); eq(e.speaker,"DACE Alterac"); eq(e.target,"Suupidosutaa"); eq(e.language,"Common")
+end)
+
 test("parses active character speech and unquoted own output",function()
   local spoken=assert(Parser.parse('Dace Alterac says, "I am here."',"Dace Alterac"))
   eq(spoken.category,"OWN"); eq(spoken.speaker,"Dace Alterac"); eq(spoken.message,"I am here.")

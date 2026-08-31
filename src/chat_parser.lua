@@ -1,6 +1,7 @@
 local Parser={}
 
 local name="([%w_%-']+)"
+local activeName="([%w_%-'][%w_%-%' ]*)"
 
 local function trim(value)
   if type(value)~="string" then return nil end
@@ -64,25 +65,20 @@ local function roomCategory(speaker,character)
   return "ROOM"
 end
 
-local function escapePattern(value)
-  return value:gsub("([^%w])","%%%1")
-end
-
 local function parseActiveRoom(line,character,now)
   local active=trim(character)
   if not active then return nil end
-  local speaker=escapePattern(active)
   for _,verb in ipairs({"says","asks","exclaims","shouts","yells"}) do
-    local target,language,message=line:match("^"..speaker.." "..verb.." to "..name.." in (.+), \"(.*)\"$")
-    if target then return builtIn("OWN",message,{speaker=active,target=target,language=language},character,now,line) end
-    language,target,message=line:match("^"..speaker.." "..verb.." in (.+) to "..name..", \"(.*)\"$")
-    if language then return builtIn("OWN",message,{speaker=active,target=target,language=language},character,now,line) end
-    target,message=line:match("^"..speaker.." "..verb.." to "..name..", \"(.*)\"$")
-    if target then return builtIn("OWN",message,{speaker=active,target=target},character,now,line) end
-    language,message=line:match("^"..speaker.." "..verb.." in (.+), \"(.*)\"$")
-    if language then return builtIn("OWN",message,{speaker=active,language=language},character,now,line) end
-    message=line:match("^"..speaker.." "..verb..", \"(.*)\"$")
-    if message then return builtIn("OWN",message,{speaker=active},character,now,line) end
+    local speaker,target,language,message=line:match("^"..activeName.." "..verb.." to "..name.." in (.+), \"(.*)\"$")
+    if speaker and speaker:lower()==active:lower() then return builtIn("OWN",message,{speaker=speaker,target=target,language=language},character,now,line) end
+    speaker,language,target,message=line:match("^"..activeName.." "..verb.." in (.+) to "..name..", \"(.*)\"$")
+    if speaker and speaker:lower()==active:lower() then return builtIn("OWN",message,{speaker=speaker,target=target,language=language},character,now,line) end
+    speaker,target,message=line:match("^"..activeName.." "..verb.." to "..name..", \"(.*)\"$")
+    if speaker and speaker:lower()==active:lower() then return builtIn("OWN",message,{speaker=speaker,target=target},character,now,line) end
+    speaker,language,message=line:match("^"..activeName.." "..verb.." in (.+), \"(.*)\"$")
+    if speaker and speaker:lower()==active:lower() then return builtIn("OWN",message,{speaker=speaker,language=language},character,now,line) end
+    speaker,message=line:match("^"..activeName.." "..verb..", \"(.*)\"$")
+    if speaker and speaker:lower()==active:lower() then return builtIn("OWN",message,{speaker=speaker},character,now,line) end
   end
 end
 

@@ -8,8 +8,9 @@ function View.identityContent(character,t,layout)
   local physical=character.physical or {}; local detail=""
   if physical.age or physical.sex or physical.height then detail="<br><span style='color:"..t.muted.."'>"..esc(physical.age or "")..(physical.age and " · " or "")..esc(physical.sex or "")..(physical.height and " · "..esc(physical.height) or "").."</span>" end
   local faith=""; if character.deity or character.religion then
-    local values={}; for _,value in ipairs({character.religion,character.deity,character.religious_balance}) do if value and value~="" then values[#values+1]=esc(value) end end
+    local values={}; for _,value in ipairs({character.religion,character.deity}) do if value and value~="" then values[#values+1]=esc(value) end end
     faith="<br><span style='color:"..t.muted.."'>"..table.concat(values," · ").."</span>"
+    if character.religious_balance and character.religious_balance~="" then faith=faith.."<br><span style='color:"..t.muted.."'>"..esc(character.religious_balance).."</span>" end
   end
   return View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>"..esc(character.full_name).."</b></span><br><span style='color:"..t.jade.."'><b>"..esc(character.race).." · "..esc(character.class).."</b></span><br><span style='color:"..t.muted.."'>"..esc(character.alignment).."</span>"..detail..faith,layout.body_font)
 end

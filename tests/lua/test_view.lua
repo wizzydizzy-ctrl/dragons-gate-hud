@@ -34,7 +34,7 @@ end)
 test("identity includes compact religion information",function()
   local theme={accent="#d8ae53",jade="#72bd82",muted="#91a098"}; local layout={body_font=20,heading_font=25}
   local identity=View.identityContent({full_name="Test Tester",race="Monitanian",class="Fighter",alignment="entropy",religion="Novitiate",deity="Unknown",religious_balance="Balanced"},theme,layout)
-  eq(identity:find("Novitiate · Unknown · Balanced",1,true)~=nil,true)
+  eq(identity:find("Novitiate · Unknown",1,true)~=nil,true); eq(identity:find(">Balanced</span>",1,true)~=nil,true)
 end)
 test("right rail details use short rows",function()
   local theme={accent="#d8ae53",jade="#72bd82",muted="#91a098"}; local layout={body_font=20,heading_font=25,details_columns=2}

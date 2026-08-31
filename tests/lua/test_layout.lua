@@ -30,7 +30,7 @@ test("content boxes scale with typography instead of clipping",function()
   eq(wide.room_height>=wide.heading_font+wide.body_font*6+44,true)
   eq(wide.exit_height>=wide.small_font+12,true)
   eq(wide.status_height>compact.status_height,true)
-  eq(wide.identity_height>=wide.heading_font+wide.body_font*5+48,true)
+  eq(wide.identity_height>=wide.heading_font+wide.body_font*6+48,true)
 end)
 
 test("new cards derive dimensions from responsive fonts",function()

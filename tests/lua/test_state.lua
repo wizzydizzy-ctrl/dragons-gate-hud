@@ -11,3 +11,12 @@ test("clamps percentages and tolerates missing GMCP", function()
   local result = State.normalize({Char={Vitals={hp=150,hp_max=100,fatigue=-2,fatigue_max=100}}})
   eq(result.vitals.hp.percent, 100); eq(result.vitals.fatigue.percent, 0); eq(result.character.full_name, "Unknown")
 end)
+
+test("GMCP wins while parsed commands fill absent character data",function()
+  local result=State.normalize({Char={Status={name="Live",race="Monitanian"},Vitals={carry=15.9,carry_max=380}}},{info={character={name="Parsed"},physical={age=28,sex="Male"},attributes={STR="Good"}},stat={body_armor=4,stance="Aggressive",equipment={"A simple spear"}},inventory={items={{name="A torch",weight=1}},total_weight=1}})
+  eq(result.character.name,"Live"); eq(result.character.physical.age,28); eq(result.attributes.STR,"Good"); eq(result.combat.stance,"Aggressive"); eq(result.equipment.items[1],"A simple spear"); eq(result.inventory.total_weight,1); eq(result.vitals.carry.current,15.9)
+end)
+
+test("unknown parsed fields remain absent",function()
+  local result=State.normalize({},{}); eq(result.combat.body_armor,nil); eq(result.character.religion,nil); eq(result.character.deity,nil); eq(#result.inventory.items,0)
+end)

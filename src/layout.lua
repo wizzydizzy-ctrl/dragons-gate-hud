@@ -14,6 +14,13 @@ local function metrics(width,height,layout)
   layout.inventory_font=clamp(layout.body_font-2,14,20); layout.inventory_row_height=layout.inventory_font+10
   layout.details_line_height=layout.body_font+6; layout.compass_font=clamp(layout.body_font,16,22); layout.compass_cell=layout.compass_font+14
   layout.utility_font=clamp(layout.body_font-4,12,18); layout.utility_height=layout.utility_font+12
+  local function scaled(value) return math.floor(value*.8+.5) end
+  layout.lower_scale=.8
+  layout.lower_body_font=scaled(layout.body_font); layout.lower_small_font=scaled(layout.small_font); layout.lower_heading_font=scaled(layout.heading_font)
+  layout.lower_panel_padding=scaled(layout.panel_padding); layout.lower_gauge_height=scaled(layout.gauge_height); layout.lower_row_gap=scaled(layout.row_gap)
+  layout.lower_title_height=scaled(layout.title_height); layout.lower_status_height=scaled(layout.status_height); layout.lower_room_height=scaled(layout.room_height)
+  layout.lower_compass_font=scaled(layout.compass_font); layout.lower_compass_cell=scaled(layout.compass_cell)
+  layout.lower_utility_font=scaled(layout.utility_font); layout.lower_utility_height=scaled(layout.utility_height); layout.lower_section_gap=scaled(44)
   layout.bottom=math.max(layout.bottom,layout.small_font+16); layout.window_height=height
   return layout
 end

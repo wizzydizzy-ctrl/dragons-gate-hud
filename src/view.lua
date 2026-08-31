@@ -77,18 +77,18 @@ function View.new(settings)
   return self
 end
 function View:applyLayout(layout)
-  self.layout=layout; local top,bottom=layout.top,layout.bottom; local t=self.settings.theme; local p=layout.panel_padding
+  self.layout=layout; local top,bottom=layout.top,layout.bottom; local t=self.settings.theme; local p=layout.panel_padding; local lp=layout.lower_panel_padding
   self.header:setStyleSheet("background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
   self.identity:setStyleSheet("background:"..t.panel..";border-right:1px solid "..t.border..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.details:setStyleSheet("background:"..t.panel..";border:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.left:setStyleSheet("background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   for _,card in ipairs({self.equipment,self.wealth,self.inventory}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
-  self.right_title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.body_font.."px;font-weight:700;padding:12px "..p.."px;")
-  self.readiness:setStyleSheet("background:#131a16;border:1px solid #2b3731;border-radius:7px;color:"..t.text..";padding:12px "..p.."px;font-size:"..layout.body_font.."px;")
-  self.room:setStyleSheet("background:#101a16;border:1px solid #385044;border-radius:7px;color:"..t.text..";padding:12px "..p.."px;font-size:"..layout.body_font.."px;")
+  self.right_title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.lower_body_font.."px;font-weight:700;padding:"..lp.."px;")
+  self.readiness:setStyleSheet("background:#131a16;border:1px solid #2b3731;border-radius:7px;color:"..t.text..";padding:"..lp.."px;font-size:"..layout.lower_body_font.."px;")
+  self.room:setStyleSheet("background:#101a16;border:1px solid #385044;border-radius:7px;color:"..t.text..";padding:"..lp.."px;font-size:"..layout.lower_body_font.."px;")
   self.bottom:setStyleSheet("background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px "..p.."px;font-size:"..layout.small_font.."px;")
   self.compact:setStyleSheet("background:"..t.panel..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
-  for _,g in ipairs({self.hp,self.fatigue,self.carry,self.psi,self.web}) do g.text:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.small_font.."px;font-weight:700;"); if g.text.setFontSize then g.text:setFontSize(layout.small_font) end end
+  for _,g in ipairs({self.hp,self.fatigue,self.carry,self.psi,self.web}) do g.text:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.lower_small_font.."px;font-weight:700;"); if g.text.setFontSize then g.text:setFontSize(layout.lower_small_font) end end
   place(self.header,0,0,"100%",top); place(self.bottom,0,"100%-"..bottom,"100%",bottom)
   if layout.mode=="wide" or layout.mode=="medium" then
     self.compact:hide()
@@ -96,8 +96,8 @@ function View:applyLayout(layout)
     place(self.left,"100%-"..layout.right,top,layout.right,"100%-"..(top+bottom))
     local available=math.max(100,(layout.window_height or 800)-top-bottom)
     local optional=(self.last_state and self.last_state.vitals.psi.visible and 1 or 0)+(self.last_state and self.last_state.vitals.web.visible and 1 or 0)
-    local navigation_height=layout.compass_cell*3+layout.utility_height*2+22
-    local panel_height=math.min(available,layout.title_height+(3+optional)*(layout.gauge_height+layout.row_gap)+layout.status_height+layout.room_height+navigation_height+44)
+    local navigation_height=layout.lower_compass_cell*3+layout.lower_utility_height*2+math.floor(22*layout.lower_scale+.5)
+    local panel_height=math.min(available,layout.lower_title_height+(3+optional)*(layout.lower_gauge_height+layout.lower_row_gap)+layout.lower_status_height+layout.lower_room_height+navigation_height+layout.lower_section_gap)
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
     local details_y=top+layout.identity_height+12; local vitals_y=(layout.window_height or 800)-bottom-panel_height; local details_h=vitals_y-details_y-12
     local details_placement=Layout.detailsPlacement(details_h,layout.details_line_height)
@@ -119,24 +119,24 @@ function View:applyLayout(layout)
     self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.wealth:hide(); self.inventory:hide(); self.right:hide(); place(self.compact,0,62,"100%",top-62)
   end
   if layout.mode~="compact" then
-    place(self.right_bg,0,0,"100%","100%"); place(self.right_title,0,0,"100%",layout.title_height)
-    local inset=p; local y=layout.title_height; for _,g in ipairs({self.hp,self.fatigue,self.carry}) do place(g,inset,y,"100%-"..(inset*2),layout.gauge_height); y=y+layout.gauge_height+layout.row_gap end
-    if self.last_state and self.last_state.vitals.psi.visible then place(self.psi,inset,y,"100%-"..(inset*2),layout.gauge_height); y=y+layout.gauge_height+layout.row_gap else self.psi:hide() end
-    if self.last_state and self.last_state.vitals.web.visible then place(self.web,inset,y,"100%-"..(inset*2),layout.gauge_height); y=y+layout.gauge_height+layout.row_gap else self.web:hide() end
-    place(self.readiness,inset,y+4,"100%-"..(inset*2),layout.status_height)
-    place(self.room,inset,y+layout.status_height+16,"100%-"..(inset*2),layout.room_height)
-    local nav_y=y+layout.status_height+layout.room_height+28; place(self.compass_area,inset,nav_y,"100%-"..(inset*2),layout.compass_cell*3)
-    local cell_width=33.333; for _,entry in ipairs(self.direction_buttons) do local d=entry.direction; place(entry.label,(d.col-1)*cell_width.."%",(d.row-1)*layout.compass_cell,cell_width.."%",layout.compass_cell) end
-    place(self.compass_center,cell_width.."%",layout.compass_cell,cell_width.."%",layout.compass_cell)
-    place(self.utility_area,inset,nav_y+layout.compass_cell*3+8,"100%-"..(inset*2),layout.utility_height*2+6)
-    for i,entry in ipairs(self.utility_buttons) do local col=(i-1)%2; local row=math.floor((i-1)/2); place(entry.label,(col*50).."%",row*(layout.utility_height+3),"49%",layout.utility_height) end
+    place(self.right_bg,0,0,"100%","100%"); place(self.right_title,0,0,"100%",layout.lower_title_height)
+    local inset=lp; local y=layout.lower_title_height; for _,g in ipairs({self.hp,self.fatigue,self.carry}) do place(g,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap end
+    if self.last_state and self.last_state.vitals.psi.visible then place(self.psi,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap else self.psi:hide() end
+    if self.last_state and self.last_state.vitals.web.visible then place(self.web,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap else self.web:hide() end
+    place(self.readiness,inset,y+3,"100%-"..(inset*2),layout.lower_status_height)
+    place(self.room,inset,y+layout.lower_status_height+13,"100%-"..(inset*2),layout.lower_room_height)
+    local nav_y=y+layout.lower_status_height+layout.lower_room_height+22; place(self.compass_area,inset,nav_y,"100%-"..(inset*2),layout.lower_compass_cell*3)
+    local cell_width=33.333; for _,entry in ipairs(self.direction_buttons) do local d=entry.direction; place(entry.label,(d.col-1)*cell_width.."%",(d.row-1)*layout.lower_compass_cell,cell_width.."%",layout.lower_compass_cell) end
+    place(self.compass_center,cell_width.."%",layout.lower_compass_cell,cell_width.."%",layout.lower_compass_cell)
+    place(self.utility_area,inset,nav_y+layout.lower_compass_cell*3+6,"100%-"..(inset*2),layout.lower_utility_height*2+5)
+    for i,entry in ipairs(self.utility_buttons) do local col=(i-1)%2; local row=math.floor((i-1)/2); place(entry.label,(col*50).."%",row*(layout.lower_utility_height+2),"49%",layout.lower_utility_height) end
   end
 end
 function View:renderNavigation(exits)
   if not self.layout or self.layout.mode=="compact" then return end
   local t=self.settings.theme; self.exit_available=Navigation.availability(exits)
-  for _,entry in ipairs(self.direction_buttons) do local active=self.exit_available[entry.direction.key]; entry.label:setStyleSheet("background:"..(active and "#193024" or "rgba(16,23,19,0.28)")..";border:1px solid "..(active and "#5d9b71" or "#273029")..";border-radius:5px;color:"..(active and "#b8efc2" or "#536058")..";font-weight:700;"); entry.label:echo(View.withFont("<center><b>"..entry.direction.label.."</b></center>",self.layout.compass_font)) end
-  for _,entry in ipairs(self.utility_buttons) do entry.label:setStyleSheet("background:#17231c;border:1px solid #385044;border-radius:5px;color:"..t.jade..";font-weight:700;"); entry.label:echo(View.withFont("<center><b>"..entry.utility.label.."</b></center>",self.layout.utility_font)) end
+  for _,entry in ipairs(self.direction_buttons) do local active=self.exit_available[entry.direction.key]; entry.label:setStyleSheet("background:"..(active and "#193024" or "rgba(16,23,19,0.28)")..";border:1px solid "..(active and "#5d9b71" or "#273029")..";border-radius:5px;color:"..(active and "#b8efc2" or "#536058")..";font-weight:700;"); entry.label:echo(View.withFont("<center><b>"..entry.direction.label.."</b></center>",self.layout.lower_compass_font)) end
+  for _,entry in ipairs(self.utility_buttons) do entry.label:setStyleSheet("background:#17231c;border:1px solid #385044;border-radius:5px;color:"..t.jade..";font-weight:700;"); entry.label:echo(View.withFont("<center><b>"..entry.utility.label.."</b></center>",self.layout.lower_utility_font)) end
 end
 function View:renderInventory(s)
   local t=self.settings.theme; local layout=self.layout; if not layout or layout.mode=="compact" then return end
@@ -150,11 +150,11 @@ function View:update(s)
   self.header:echo(View.headerContent(layout,t,s.character.full_name))
   self.identity:echo(View.identityContent(s.character,t,layout))
   self.equipment:echo(View.equipmentContent(v,s.equipment.items,t,layout)); self.wealth:echo(View.wealthContent(v,t,layout))
-  self.right_title:echo(View.withFont("<b>VITALS &amp; LOCATION</b>",layout.body_font))
+  self.right_title:echo(View.withFont("<b>VITALS &amp; LOCATION</b>",layout.lower_body_font))
   self.hp:setValue(v.hp.current,math.max(v.hp.maximum,1),"Health  "..v.hp.current.." / "..v.hp.maximum); self.fatigue:setValue(v.fatigue.current,math.max(v.fatigue.maximum,1),"Fatigue  "..v.fatigue.current.." / "..v.fatigue.maximum); self.carry:setValue(v.carry.current,math.max(v.carry.maximum,1),"Carry  "..v.carry.current.." / "..v.carry.maximum)
   if v.psi.visible then self.psi:setValue(v.psi.current,v.psi.maximum,"PSI  "..v.psi.current.." / "..v.psi.maximum) end; if v.web.visible then self.web:setValue(v.web.current,v.web.maximum,"Web  "..v.web.current.." / "..v.web.maximum) end
-  self.readiness:echo(View.withFont("<span style='color:"..t.accent.."'><b>STATUS</b></span><br><br>Roundtime &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b><br>Position &nbsp; <b>"..v.position.."</b>",layout.body_font))
-  self.room:echo(View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>"..esc(s.room.name).."</b></span><br><span style='color:"..t.muted.."'>Room "..esc(s.room.num or "—").." · Area "..esc(s.room.area or "—").."</span><br><br>"..esc(s.room.environment).."<br>Players &nbsp; <b>"..#s.room.players.."</b><br>Flags &nbsp; "..esc(table.concat(s.room.flags,", ")),layout.body_font))
+  self.readiness:echo(View.withFont("<span style='color:"..t.accent.."'><b>STATUS</b></span><br><br>Roundtime &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b><br>Position &nbsp; <b>"..v.position.."</b>",layout.lower_body_font))
+  self.room:echo(View.withFont("<span style='color:"..t.accent..";font-size:"..layout.lower_heading_font.."px'><b>"..esc(s.room.name).."</b></span><br><span style='color:"..t.muted.."'>Room "..esc(s.room.num or "—").." · Area "..esc(s.room.area or "—").."</span><br><br>"..esc(s.room.environment).."<br>Players &nbsp; <b>"..#s.room.players.."</b><br>Flags &nbsp; "..esc(table.concat(s.room.flags,", ")),layout.lower_body_font))
   self.compact:echo(View.withFont("<b>HP "..v.hp.current.."/"..v.hp.maximum.."</b> &nbsp; FAT "..v.fatigue.current.."/"..v.fatigue.maximum.." &nbsp; WPN "..(v.weapon_readied and "✓" or "×").." &nbsp; SHD "..(v.shield_readied and "✓" or "×").." &nbsp; <span style='color:"..t.accent.."'>"..esc(s.room.name).."</span>",layout.body_font))
   self.bottom:echo(View.withFont("EXITS &nbsp; <b>"..esc(table.concat(s.room.exits,", ")).."</b> &nbsp;&nbsp; | &nbsp;&nbsp; CARRY &nbsp; <b>"..v.carry.current.." / "..v.carry.maximum.."</b> &nbsp;&nbsp; | &nbsp;&nbsp; ROUND &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b>",layout.small_font))
   if self.layout then self:applyLayout(self.layout); self.details:echo(View.detailsContent(s.combat,s.attributes,t,self.layout)); self:renderInventory(s); self:renderNavigation(s.room.exits) end

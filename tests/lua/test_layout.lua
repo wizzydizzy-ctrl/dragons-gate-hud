@@ -47,3 +47,13 @@ test("two-column character details reserve every rendered row",function()
   eq(Layout.detailsCardRows(2),11)
   eq(Layout.detailsCardRows(4),7)
 end)
+test("lower-left vitals stack scales every visual metric to eighty percent",function()
+  local r=Layout.compute(1920,1080)
+  eq(r.lower_scale,.8)
+  for _,pair in ipairs({
+    {r.lower_body_font,r.body_font},{r.lower_small_font,r.small_font},{r.lower_heading_font,r.heading_font},
+    {r.lower_panel_padding,r.panel_padding},{r.lower_gauge_height,r.gauge_height},{r.lower_row_gap,r.row_gap},
+    {r.lower_status_height,r.status_height},{r.lower_room_height,r.room_height},{r.lower_compass_cell,r.compass_cell},
+    {r.lower_utility_height,r.utility_height}
+  }) do eq(pair[1],math.floor(pair[2]*.8+.5)) end
+end)

@@ -107,7 +107,7 @@ function View:applyLayout(layout)
     place(self.equipment,card_x,top+p,card_w,equipment_h); place(self.wealth,card_x,top+p+equipment_h+12,card_w,wealth_h)
     local inventory_y=top+p+equipment_h+wealth_h+24; local rail_bottom=(layout.window_height or 800)-bottom-p
     if details_placement=="right" then
-      local right_details_h=layout.details_line_height*7+p*2+18
+      local right_details_h=layout.details_line_height*Layout.detailsCardRows(layout.details_columns)+p*2+18
       place(self.details,card_x,rail_bottom-right_details_h,card_w,right_details_h)
       if self.details.raise then self.details:raise() end
       rail_bottom=rail_bottom-right_details_h-12

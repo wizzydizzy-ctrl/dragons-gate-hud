@@ -43,3 +43,7 @@ test("character details move to the roomier rail when the left stack is short",f
   eq(Layout.detailsPlacement(180,26),"right")
   eq(Layout.detailsPlacement(120,26),"right")
 end)
+test("two-column character details reserve every rendered row",function()
+  eq(Layout.detailsCardRows(2),11)
+  eq(Layout.detailsCardRows(4),7)
+end)

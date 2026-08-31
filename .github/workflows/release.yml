@@ -1,0 +1,21 @@
+name: Release DragonsGateHUD
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leafo/gh-actions-lua@v11
+        with: {luaVersion: '5.1'}
+      - run: lua tests/run.lua
+      - run: python3 -m unittest tests/test_build.py -v
+      - run: python3 scripts/build.py --owner "${{ github.repository_owner }}" --repository "${GITHUB_REPOSITORY#*/}" --version "${GITHUB_REF_NAME#v}"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/DragonsGateHUD.mpackage
+            dist/manifest.json

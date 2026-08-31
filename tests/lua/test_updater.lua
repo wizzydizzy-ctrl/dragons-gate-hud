@@ -1,0 +1,5 @@
+local Updater=require("updater"); local SHA=require("sha256")
+test("update lock rejects overlapping operations",function() local u=Updater.new({},{}); eq(u:acquire("update"),true); local ok,err=u:acquire("check"); eq(ok,nil); eq(err,"update already in progress"); u:release(); eq(u:acquire("check"),true) end)
+test("download events correlate by exact owned path",function() local u=Updater.new({},{data_dir="/profile/DragonsGateHUD"}); u.expected_path="/profile/DragonsGateHUD/staging/package.mpackage"; eq(u:acceptDownload("/other/script/file"),false); eq(u:acceptDownload(u.expected_path),true) end)
+test("archive checksum mismatch blocks replacement",function() local called=false; local u=Updater.new({replacePackage=function() called=true end},{}); local ok=u:installVerified("payload",string.rep("0",64)); eq(ok,nil); eq(called,false); eq(SHA.hex("payload")~=string.rep("0",64),true) end)
+test("successful verified install requires health check",function() local calls=0; local u=Updater.new({replacePackage=function() calls=calls+1; return true end,healthCheck=function() return true end},{}); eq(u:installVerified("payload",SHA.hex("payload")),true); eq(calls,1) end)

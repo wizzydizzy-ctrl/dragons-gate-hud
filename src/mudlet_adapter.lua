@@ -1,5 +1,6 @@
 local View=require("view")
 local Adapter={}; Adapter.__index=Adapter
+function Adapter.updateBase(home) return home.."/DGHUDUpdater" end
 function Adapter.new() return setmetatable({},Adapter) end
 function Adapter:getBorders() return getBorderLeft(),getBorderTop(),getBorderRight(),getBorderBottom() end
 function Adapter:getWindowSize() return getMainWindowSize() end
@@ -17,7 +18,7 @@ local function hasPackage(name) for _,value in ipairs(getPackages() or {}) do if
 function Adapter:startUpdate(updater)
   local settings=updater.settings; local github=settings.github or {}; local policy=settings.update or {}
   if github.owner=="GITHUB_OWNER" or not tostring(github.owner):match("^[%w_.-]+$") or not tostring(github.repository):match("^[%w_.-]+$") then return nil,"configure the GitHub owner and repository first" end
-  local base=getMudletHomeDir().."/DragonsGateHUD"; local staging=base.."/staging"; lfs.mkdir(base); lfs.mkdir(staging)
+  local base=Adapter.updateBase(getMudletHomeDir()); local staging=base.."/staging"; lfs.mkdir(base); lfs.mkdir(staging)
   local manifestPath=staging.."/manifest.json"; local packagePath=staging.."/DragonsGateHUD.mpackage"; local ids={}; local timers={}; local timeoutId
   local function schedule(delay,fn) local id; id=tempTimer(delay,function() for i,value in ipairs(timers) do if value==id then table.remove(timers,i); break end end; fn() end); timers[#timers+1]=id; return id end
   local function cleanup() for _,id in ipairs(ids) do killAnonymousEventHandler(id) end; ids={}; for _,id in ipairs(timers) do killTimer(id) end; timers={}; if timeoutId then killTimer(timeoutId); timeoutId=nil end; updater:release() end

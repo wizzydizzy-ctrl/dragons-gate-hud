@@ -13,6 +13,7 @@ end
 
 dofile(root .. "/tests/lua/test_command_parser.lua")
 dofile(root .. "/tests/lua/test_command_collector.lua")
+dofile(root .. "/tests/lua/test_navigation.lua")
 dofile(root .. "/tests/lua/test_state.lua")
 dofile(root .. "/tests/lua/test_settings.lua")
 dofile(root .. "/tests/lua/test_sha256.lua")

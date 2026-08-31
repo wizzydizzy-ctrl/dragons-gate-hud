@@ -1,3 +1,4 @@
+local Navigation=require("navigation")
 local View={}; View.__index=View
 function View.withFont(text,size) return "<span style='font-size:"..tonumber(size).."px'>"..text.."</span>" end
 local function esc(v) return tostring(v or ""):gsub("&","&amp;"):gsub("<","&lt;"):gsub(">","&gt;") end
@@ -47,7 +48,7 @@ local function gauge(name,parent,color,theme)
 end
 local function place(item,x,y,w,h) item:move(x,y); item:resize(w,h); item:show() end
 function View.new(settings)
-  local self=setmetatable({settings=settings,exit_buttons={}},View); local t=settings.theme
+  local self=setmetatable({settings=settings,direction_buttons={},utility_buttons={},exit_available={}},View); local t=settings.theme
   self.root=Geyser.Container:new({name="DGHUD.Root",x=0,y=0,width="100%",height="100%"})
   self.header=label("DGHUD.Header",self.root,"background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px 18px;")
   self.identity=label("DGHUD.Identity",self.root,"background:"..t.panel..";border-right:1px solid "..t.border..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:18px;")
@@ -62,7 +63,11 @@ function View.new(settings)
   self.hp=gauge("DGHUD.Health",self.right,t.hp,t); self.fatigue=gauge("DGHUD.Fatigue",self.right,t.fatigue,t); self.carry=gauge("DGHUD.Carry",self.right,"#c9a359",t); self.psi=gauge("DGHUD.Psi",self.right,"#6a72c9",t); self.web=gauge("DGHUD.Web",self.right,"#9b78b5",t)
   self.readiness=label("DGHUD.Readiness",self.right,"background:#131a16;border:1px solid #2b3731;border-radius:6px;color:"..t.text..";padding:9px 12px;")
   self.room=label("DGHUD.Room",self.right,"background:#101a16;border:1px solid #385044;border-radius:6px;color:"..t.text..";padding:10px 12px;")
-  self.exit_area=Geyser.Container:new({name="DGHUD.Exits",x=0,y=0,width=100,height=40},self.right)
+  self.compass_area=Geyser.Container:new({name="DGHUD.Compass",x=0,y=0,width=100,height=100},self.right)
+  self.compass_center=label("DGHUD.Compass.Center",self.compass_area,"background:transparent;color:"..t.muted..";"); self.compass_center:echo("<center>◆</center>")
+  for i,direction in ipairs(Navigation.directions) do local b=label("DGHUD.Compass."..direction.key,self.compass_area); b:setClickCallback(function() if self.exit_available[direction.key] then send(direction.command) end end); self.direction_buttons[i]={label=b,direction=direction} end
+  self.utility_area=Geyser.Container:new({name="DGHUD.Utilities",x=0,y=0,width=100,height=60},self.right)
+  for i,utility in ipairs(Navigation.utilities) do local b=label("DGHUD.Utility."..i,self.utility_area); b:setClickCallback(function() send(utility.command) end); self.utility_buttons[i]={label=b,utility=utility} end
   self.bottom=label("DGHUD.Bottom",self.root,"background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px 15px;")
   self.compact=label("DGHUD.Compact",self.root,"background:"..t.panel..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:8px 12px;")
   return self
@@ -87,7 +92,8 @@ function View:applyLayout(layout)
     place(self.left,"100%-"..layout.right,top,layout.right,"100%-"..(top+bottom))
     local available=math.max(100,(layout.window_height or 800)-top-bottom)
     local optional=(self.last_state and self.last_state.vitals.psi.visible and 1 or 0)+(self.last_state and self.last_state.vitals.web.visible and 1 or 0)
-    local panel_height=math.min(available,layout.title_height+(3+optional)*(layout.gauge_height+layout.row_gap)+layout.status_height+layout.room_height+layout.exit_height+44)
+    local navigation_height=layout.compass_cell*3+layout.utility_height*2+22
+    local panel_height=math.min(available,layout.title_height+(3+optional)*(layout.gauge_height+layout.row_gap)+layout.status_height+layout.room_height+navigation_height+44)
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
     local details_y=top+layout.identity_height+12; local vitals_y=(layout.window_height or 800)-bottom-panel_height; local details_h=vitals_y-details_y-12
     if details_h>=layout.details_line_height*3 then place(self.details,0,details_y,layout.left,details_h) else self.details:hide() end
@@ -106,8 +112,18 @@ function View:applyLayout(layout)
     if self.last_state and self.last_state.vitals.web.visible then place(self.web,inset,y,"100%-"..(inset*2),layout.gauge_height); y=y+layout.gauge_height+layout.row_gap else self.web:hide() end
     place(self.readiness,inset,y+4,"100%-"..(inset*2),layout.status_height)
     place(self.room,inset,y+layout.status_height+16,"100%-"..(inset*2),layout.room_height)
-    place(self.exit_area,inset,y+layout.status_height+layout.room_height+28,"100%-"..(inset*2),layout.exit_height)
+    local nav_y=y+layout.status_height+layout.room_height+28; place(self.compass_area,inset,nav_y,"100%-"..(inset*2),layout.compass_cell*3)
+    local cell_width=33.333; for _,entry in ipairs(self.direction_buttons) do local d=entry.direction; place(entry.label,(d.col-1)*cell_width.."%",(d.row-1)*layout.compass_cell,cell_width.."%",layout.compass_cell) end
+    place(self.compass_center,cell_width.."%",layout.compass_cell,cell_width.."%",layout.compass_cell)
+    place(self.utility_area,inset,nav_y+layout.compass_cell*3+8,"100%-"..(inset*2),layout.utility_height*2+6)
+    for i,entry in ipairs(self.utility_buttons) do local col=(i-1)%2; local row=math.floor((i-1)/2); place(entry.label,(col*50).."%",row*(layout.utility_height+3),"49%",layout.utility_height) end
   end
+end
+function View:renderNavigation(exits)
+  if not self.layout or self.layout.mode=="compact" then return end
+  local t=self.settings.theme; self.exit_available=Navigation.availability(exits)
+  for _,entry in ipairs(self.direction_buttons) do local active=self.exit_available[entry.direction.key]; entry.label:setStyleSheet("background:"..(active and "#193024" or "rgba(16,23,19,0.28)")..";border:1px solid "..(active and "#5d9b71" or "#273029")..";border-radius:5px;color:"..(active and "#b8efc2" or "#536058")..";font-weight:700;"); entry.label:echo(View.withFont("<center><b>"..entry.direction.label.."</b></center>",self.layout.compass_font)) end
+  for _,entry in ipairs(self.utility_buttons) do entry.label:setStyleSheet("background:#17231c;border:1px solid #385044;border-radius:5px;color:"..t.jade..";font-weight:700;"); entry.label:echo(View.withFont("<center><b>"..entry.utility.label.."</b></center>",self.layout.utility_font)) end
 end
 function View:renderInventory(s)
   local t=self.settings.theme; local layout=self.layout; if not layout or layout.mode=="compact" then return end
@@ -115,12 +131,6 @@ function View:renderInventory(s)
   for _,item in ipairs(rows) do if item.overflow then lines[#lines+1]="<span style='color:"..t.muted.."'>"..item.label.."</span>" else lines[#lines+1]=esc(item.name).." <span style='color:"..t.muted.."'>"..esc(item.weight or "").." lb</span>" end end
   if s.inventory.total_weight then lines[#lines+1]="<br><b>Total "..esc(s.inventory.total_weight).." lb</b>" end
   self.inventory:echo(View.withFont(table.concat(lines,"<br>"),layout.inventory_font))
-end
-function View:clearExits() for _,button in ipairs(self.exit_buttons) do button:delete() end; self.exit_buttons={} end
-function View:buildExits(exits)
-  self:clearExits(); if not self.layout or self.layout.mode=="compact" then return end
-  local count=math.max(#exits,1); local width=math.floor(100/count)
-  for i,direction in ipairs(exits) do local b=label("DGHUD.Exit."..i,self.exit_area,"background:#193024;border:1px solid #39614a;border-radius:4px;color:#91d9a2;font-size:"..self.layout.small_font.."px;font-weight:700;"); place(b,(i-1)*width.."%",0,(width-2).."%",self.layout.small_font+12); b:echo(View.withFont("<center><b>"..esc(direction):upper().."</b></center>",self.layout.small_font)); b:setClickCallback(function() send(direction) end); self.exit_buttons[#self.exit_buttons+1]=b end
 end
 function View:update(s)
   self.last_state=s; local t=self.settings.theme; local v=s.vitals; local layout=self.layout or {mode="wide",heading_font=20}; local ready=function(x) return x and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:"..t.hp.."'><b>NOT READY</b></span>" end
@@ -135,7 +145,7 @@ function View:update(s)
   self.room:echo(View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>"..esc(s.room.name).."</b></span><br><span style='color:"..t.muted.."'>Room "..esc(s.room.num or "—").." · Area "..esc(s.room.area or "—").."</span><br><br>"..esc(s.room.environment).."<br>Players &nbsp; <b>"..#s.room.players.."</b><br>Flags &nbsp; "..esc(table.concat(s.room.flags,", ")),layout.body_font))
   self.compact:echo(View.withFont("<b>HP "..v.hp.current.."/"..v.hp.maximum.."</b> &nbsp; FAT "..v.fatigue.current.."/"..v.fatigue.maximum.." &nbsp; WPN "..(v.weapon_readied and "✓" or "×").." &nbsp; SHD "..(v.shield_readied and "✓" or "×").." &nbsp; <span style='color:"..t.accent.."'>"..esc(s.room.name).."</span>",layout.body_font))
   self.bottom:echo(View.withFont("EXITS &nbsp; <b>"..esc(table.concat(s.room.exits,", ")).."</b> &nbsp;&nbsp; | &nbsp;&nbsp; CARRY &nbsp; <b>"..v.carry.current.." / "..v.carry.maximum.."</b> &nbsp;&nbsp; | &nbsp;&nbsp; ROUND &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b>",layout.small_font))
-  self:buildExits(s.room.exits); if self.layout then self:applyLayout(self.layout); self:renderInventory(s) end
+  if self.layout then self:applyLayout(self.layout); self:renderInventory(s); self:renderNavigation(s.room.exits) end
 end
-function View:delete() self:clearExits(); if self.root then self.root:delete(); self.root=nil end end
+function View:delete() if self.root then self.root:delete(); self.root=nil end end
 return View

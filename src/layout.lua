@@ -18,19 +18,19 @@ local function metrics(width,height,layout)
   layout.utility_font=clamp(layout.body_font-4,12,18); layout.utility_height=layout.utility_font+12
   local function scaled(value) return math.floor(value*.8+.5) end
   layout.lower_scale=.8
-  layout.lower_body_font=scaled(layout.body_font); layout.lower_small_font=scaled(layout.small_font); layout.lower_heading_font=scaled(layout.heading_font)
-  layout.lower_panel_padding=scaled(layout.panel_padding); layout.lower_gauge_height=scaled(layout.gauge_height); layout.lower_row_gap=scaled(layout.row_gap)
+  layout.lower_body_font=scaled(layout.body_font); layout.lower_small_font=layout.lower_body_font; layout.lower_heading_font=scaled(layout.heading_font)
+  layout.lower_panel_padding=scaled(layout.panel_padding); layout.lower_gauge_height=layout.lower_small_font+14; layout.lower_row_gap=scaled(layout.row_gap)
   layout.lower_title_height=scaled(layout.title_height); layout.lower_status_height=scaled(layout.status_height); layout.lower_room_height=scaled(layout.room_height)
   layout.lower_compass_font=scaled(layout.compass_font); layout.lower_compass_cell=scaled(layout.compass_cell)
   layout.lower_utility_font=scaled(layout.utility_font); layout.lower_utility_height=scaled(layout.utility_height); layout.lower_section_gap=scaled(44)
-  layout.bottom=math.max(layout.bottom,layout.small_font+16); layout.window_height=height
+  layout.bottom=0; layout.window_height=height
   return layout
 end
 function Layout.compute(width,height)
   width=tonumber(width) or 1200; height=tonumber(height) or 800
   local rail=math.floor(width*.17)
-  if width>=1400 then return metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=38,show_character_rail=true,show_room_compass=height>=700,vitals_side="left"}) end
-  if width>=1000 then return metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=36,show_character_rail=true,show_room_compass=height>=650,vitals_side="left"}) end
-  return metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=58,show_character_rail=false,show_room_compass=false,vitals_side="compact"})
+  if width>=1400 then return metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=0,show_character_rail=true,show_room_compass=height>=700,vitals_side="left"}) end
+  if width>=1000 then return metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="left"}) end
+  return metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=0,show_character_rail=false,show_room_compass=false,vitals_side="compact"})
 end
 return Layout

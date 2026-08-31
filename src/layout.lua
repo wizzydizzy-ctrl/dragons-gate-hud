@@ -1,8 +1,8 @@
 local Layout={}
 local function clamp(value,minimum,maximum) return math.max(minimum,math.min(maximum,math.floor(value+0.5))) end
 local function metrics(width,layout)
-  layout.body_font=clamp(width/150,13,16); layout.small_font=clamp(layout.body_font-2,11,14); layout.heading_font=clamp(layout.body_font+5,18,22)
-  layout.panel_padding=clamp(width/120,12,22); layout.gauge_height=clamp(layout.body_font*2,26,32); layout.row_gap=clamp(layout.body_font*.75,9,13)
+  layout.body_font=clamp(width/130,14,18); layout.small_font=clamp(layout.body_font-2,12,16); layout.heading_font=clamp(layout.body_font+6,20,24)
+  layout.panel_padding=clamp(width/120,12,22); layout.gauge_height=clamp(layout.body_font*1.9,28,34); layout.row_gap=clamp(layout.body_font*.75,10,14)
   return layout
 end
 function Layout.compute(width,height)

@@ -21,11 +21,10 @@ function View.inventoryRows(items,capacity)
 end
 function View.detailsContent(combat,attributes,t,layout)
   combat=combat or {}; attributes=attributes or {}; local parts={}
-  if combat.body_armor then parts[#parts+1]="Armor <b>"..combat.body_armor.."%</b> &nbsp; OR <b>"..esc(combat.or_rating or "—").."</b> &nbsp; DR <b>"..esc(combat.dr or "—").."</b>" end
-  if combat.stance then parts[#parts+1]="Stance <b>"..esc(combat.stance).."</b>" end
+  if combat.body_armor then parts[#parts+1]="Armor <b>"..combat.body_armor.."%</b> &nbsp; OR <b>"..esc(combat.or_rating or "—").."</b> &nbsp; DR <b>"..esc(combat.dr or "—").."</b>"..(combat.stance and " &nbsp; <b>"..esc(combat.stance).."</b>" or "") elseif combat.stance then parts[#parts+1]="Stance <b>"..esc(combat.stance).."</b>" end
   local stats={}; for _,key in ipairs({"STR","INT","WIS","DEX","AGI","CON","CHA","WIL","VOI","PER","APP"}) do if attributes[key] then stats[#stats+1]=key.." <b>"..esc(attributes[key]).."</b>" end end
-  if #stats>0 then parts[#parts+1]=table.concat(stats," &nbsp; ") end
-  return View.withFont("<span style='color:"..t.accent.."'><b>CHARACTER &amp; COMBAT</b></span><br><br>"..table.concat(parts,"<br>"),layout.body_font)
+  for i=1,#stats,4 do local row={}; for n=i,math.min(i+3,#stats) do row[#row+1]=stats[n] end; parts[#parts+1]=table.concat(row," &nbsp; ") end
+  return View.withFont("<span style='color:"..t.accent.."'><b>CHARACTER &amp; COMBAT</b></span><br><br>"..table.concat(parts,"<br>"),layout.inventory_font or layout.body_font)
 end
 function View.equipmentContent(v,items,t,layout)
   if layout==nil then layout=t; t=items; items={} end

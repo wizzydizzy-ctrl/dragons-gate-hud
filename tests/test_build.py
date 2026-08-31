@@ -12,4 +12,5 @@ class BuildTest(unittest.TestCase):
             with zipfile.ZipFile(package) as z:
                 names=z.namelist(); self.assertEqual(names,['DragonsGateHUD.xml'])
                 xml=z.read(names[0]).decode(); self.assertIn('<name>DragonsGateHUD</name>',xml); self.assertIn('DGHUD.start',xml)
+                self.assertIn('package.preload[&quot;layout&quot;]',xml)
 if __name__=='__main__': unittest.main()

@@ -2,6 +2,7 @@ local View=require("view")
 local Adapter={}; Adapter.__index=Adapter
 function Adapter.new() return setmetatable({},Adapter) end
 function Adapter:getBorders() return getBorderLeft(),getBorderTop(),getBorderRight(),getBorderBottom() end
+function Adapter:getWindowSize() return getMainWindowSize() end
 function Adapter:setBorders(l,t,r,b) setBorderLeft(l);setBorderTop(t);setBorderRight(r);setBorderBottom(b) end
 function Adapter:createView(settings) return View.new(settings) end
 function Adapter:addEvent(name,fn) return registerAnonymousEventHandler(name,fn) end

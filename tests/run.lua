@@ -17,6 +17,7 @@ dofile(root .. "/tests/lua/test_sha256.lua")
 dofile(root .. "/tests/lua/test_release.lua")
 dofile(root .. "/tests/lua/test_runtime.lua")
 dofile(root .. "/tests/lua/test_updater.lua")
+dofile(root .. "/tests/lua/test_layout.lua")
 
 print(string.format("%d tests, %d failures", total, failed))
 os.exit(failed == 0 and 0 or 1)

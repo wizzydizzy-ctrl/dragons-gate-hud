@@ -1,4 +1,7 @@
-DGHUD = DGHUD or {}
+if DGHUD and DGHUD.shutdown then pcall(DGHUD.shutdown) end
+local moduleNames={"defaults","state","settings","sha256","release","events","layout","view","mudlet_adapter","main","updater"}
+for _,name in ipairs(moduleNames) do package.loaded[name]=nil end
+DGHUD = {}
 local defaults=require("defaults")
 local Settings=require("settings")
 local Adapter=require("mudlet_adapter")

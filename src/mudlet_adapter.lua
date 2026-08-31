@@ -18,8 +18,9 @@ function Adapter:startUpdate(updater)
   local settings=updater.settings; local github=settings.github or {}; local policy=settings.update or {}
   if github.owner=="GITHUB_OWNER" or not tostring(github.owner):match("^[%w_.-]+$") or not tostring(github.repository):match("^[%w_.-]+$") then return nil,"configure the GitHub owner and repository first" end
   local base=getMudletHomeDir().."/DragonsGateHUD"; local staging=base.."/staging"; lfs.mkdir(base); lfs.mkdir(staging)
-  local manifestPath=staging.."/manifest.json"; local packagePath=staging.."/DragonsGateHUD.mpackage"; local ids={}; local timeoutId
-  local function cleanup() for _,id in ipairs(ids) do killAnonymousEventHandler(id) end; ids={}; if timeoutId then killTimer(timeoutId); timeoutId=nil end; updater:release() end
+  local manifestPath=staging.."/manifest.json"; local packagePath=staging.."/DragonsGateHUD.mpackage"; local ids={}; local timers={}; local timeoutId
+  local function schedule(delay,fn) local id; id=tempTimer(delay,function() for i,value in ipairs(timers) do if value==id then table.remove(timers,i); break end end; fn() end); timers[#timers+1]=id; return id end
+  local function cleanup() for _,id in ipairs(ids) do killAnonymousEventHandler(id) end; ids={}; for _,id in ipairs(timers) do killTimer(id) end; timers={}; if timeoutId then killTimer(timeoutId); timeoutId=nil end; updater:release() end
   local function fail(message) cleanup(); cecho("\n<red>[DGHUD Update]</red> "..tostring(message).."\n") end
   ids[#ids+1]=registerAnonymousEventHandler("sysDownloadError",function(_,message,url) if url and (url:find(github.repository,1,true)) then fail(message) end end)
   ids[#ids+1]=registerAnonymousEventHandler("sysDownloadDone",function(_,path)
@@ -32,17 +33,31 @@ function Adapter:startUpdate(updater)
       local payload=readFile(path); local manifest=updater.pending_manifest
       if not payload or #payload>(policy.package_limit or 10485760) then return fail("package is missing or too large") end
       local current=base.."/current.mpackage"; local previous=base.."/previous.mpackage"; local old=readFile(current); if old then writeFile(previous,old) end
-      self.replacePackage=function(_,data,name)
-        if name~="DragonsGateHUD" then return nil,"package identity mismatch" end
+      self.replacePackageAsync=function(_,data,name,done)
+        if name~="DragonsGateHUD" then done(nil,"package identity mismatch"); return end
         local verified=staging.."/verified.mpackage"; writeFile(verified,data)
-        if hasPackage(name) then local removed=uninstallPackage(name); if removed==nil then return nil,"could not remove existing HUD package" end end
-        local installed=installPackage(verified); if installed==nil then if old then installPackage(previous) end; return nil,"could not install HUD package" end
-        return true
+        if DGHUD and DGHUD.shutdown then pcall(DGHUD.shutdown) end
+        if hasPackage(name) then local removed=uninstallPackage(name); if removed==nil then done(nil,"could not remove existing HUD package"); return end end
+        schedule(0.25,function()
+          local installed=installPackage(verified)
+          if installed==nil then done(nil,"could not install HUD package"); return end
+          schedule(0.40,function() done(true) end)
+        end)
       end
       self.healthCheck=function() return DGHUD and DGHUD.healthCheck and DGHUD.healthCheck() end
-      self.rollback=function() if readFile(previous) then uninstallPackage("DragonsGateHUD"); return installPackage(previous) end end
-      local installed,why=updater:installVerified(payload,manifest.sha256); if not installed then return fail(why) end
-      writeFile(current,payload); cleanup(); cecho("\n<green>[DGHUD Update]</green> Installed version "..manifest.version.."\n")
+      self.rollbackAsync=function(_,name,done)
+        if name~="DragonsGateHUD" or not readFile(previous) then done(nil,"no rollback package available"); return end
+        if DGHUD and DGHUD.shutdown then pcall(DGHUD.shutdown) end
+        if hasPackage(name) then uninstallPackage(name) end
+        schedule(0.25,function() local restored=installPackage(previous); schedule(0.40,function() done(restored~=nil) end) end)
+      end
+      local completed=false
+      local started,why=updater:installVerifiedAsync(payload,manifest.sha256,function(installed,message)
+        completed=true
+        if not installed then fail(message); return end
+        writeFile(current,payload); cleanup(); cecho("\n<green>[DGHUD Update]</green> Installed version "..manifest.version.."\n")
+      end)
+      if not started and not completed then return fail(why) end
     end
   end)
   updater.expected_path=manifestPath

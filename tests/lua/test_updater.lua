@@ -3,3 +3,43 @@ test("update lock rejects overlapping operations",function() local u=Updater.new
 test("download events correlate by exact owned path",function() local u=Updater.new({},{data_dir="/profile/DragonsGateHUD"}); u.expected_path="/profile/DragonsGateHUD/staging/package.mpackage"; eq(u:acceptDownload("/other/script/file"),false); eq(u:acceptDownload(u.expected_path),true) end)
 test("archive checksum mismatch blocks replacement",function() local called=false; local u=Updater.new({replacePackage=function() called=true end},{}); local ok=u:installVerified("payload",string.rep("0",64)); eq(ok,nil); eq(called,false); eq(SHA.hex("payload")~=string.rep("0",64),true) end)
 test("successful verified install requires health check",function() local calls=0; local u=Updater.new({replacePackage=function() calls=calls+1; return true end,healthCheck=function() return true end},{}); eq(u:installVerified("payload",SHA.hex("payload")),true); eq(calls,1) end)
+test("async install verifies before replacement and completes after health check",function()
+  local order={}
+  local adapter={
+    replacePackageAsync=function(_,payload,name,done)
+      order[#order+1]="replace:"..name..":"..payload
+      done(true)
+    end,
+    healthCheck=function() order[#order+1]="health"; return true end,
+  }
+  local result
+  local u=Updater.new(adapter,{})
+  eq(u:installVerifiedAsync("payload",SHA.hex("payload"),function(ok,err) result={ok,err} end),true)
+  eq(order[1],"replace:DragonsGateHUD:payload")
+  eq(order[2],"health")
+  eq(result[1],true)
+end)
+test("async checksum mismatch never starts replacement",function()
+  local called=false
+  local u=Updater.new({replacePackageAsync=function() called=true end},{})
+  local result
+  local ok=u:installVerifiedAsync("payload",string.rep("0",64),function(success,err) result={success,err} end)
+  eq(ok,nil)
+  eq(called,false)
+  eq(result[1],nil)
+  eq(result[2],"package checksum mismatch")
+end)
+test("async failed health check triggers rollback",function()
+  local rolledBack=false
+  local adapter={
+    replacePackageAsync=function(_,_,_,done) done(true) end,
+    healthCheck=function() return nil,"HUD did not start" end,
+    rollbackAsync=function(_,_,done) rolledBack=true; done(true) end,
+  }
+  local result
+  local u=Updater.new(adapter,{})
+  u:installVerifiedAsync("payload",SHA.hex("payload"),function(ok,err) result={ok,err} end)
+  eq(rolledBack,true)
+  eq(result[1],nil)
+  eq(result[2],"HUD did not start")
+end)

@@ -18,6 +18,11 @@ test("info completes from its data rows without relying on a trailing prompt",fu
   local without_prompt={}; for i=1,#info-1 do without_prompt[i]=info[i] end
   local r=assert(Parser.parseInfo(without_prompt)); eq(r.attributes.STR,"Good"); eq(Parser.isComplete("info",without_prompt),true)
 end)
+test("info tolerates condition text appended to the physical sentence",function()
+  local with_conditions={}; for i,line in ipairs(info) do with_conditions[i]=line end
+  with_conditions[1]=with_conditions[1].." You are hungry. You are thirsty."
+  local r=assert(Parser.parseInfo(with_conditions)); eq(r.physical.weight,309); eq(r.attributes.APP,"Fair")
+end)
 test("detects completed command responses",function() eq(Parser.isComplete("inventory",inventory),true); eq(Parser.isComplete("inventory",{"Items carried:","Your inventory totals 0 lbs."}),false); eq(Parser.isComplete("stat",stat),true); eq(Parser.isComplete("info",info),true); eq(Parser.isComplete("info",{"You are Test"}),false) end)
 
 return {inventory=inventory,stat=stat,info=info}

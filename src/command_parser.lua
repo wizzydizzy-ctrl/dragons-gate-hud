@@ -37,7 +37,7 @@ function Parser.parseInfo(lines)
   local result={physical={},attributes={}}
   for i,raw in ipairs(lines or {}) do
     local line=clean(raw)
-    local full,description,age,alignment,sex,stage,race,height,weight=line:match("^You are (.-), (.-) (%d+) year old (%S+) (%S+) (%S+) (%S+)%.%s+You are (.-) and weigh (%d+) lbs%.$")
+    local full,description,age,alignment,sex,stage,race,height,weight=line:match("^You are (.-), (.-) (%d+) year old (%S+) (%S+) (%S+) (%S+)%.%s+You are (.-) and weigh (%d+) lbs%.")
     if full then result.character={full_name=full,alignment=alignment,race=race}; result.physical={description=description,age=tonumber(age),sex=sex,life_stage=stage,height=height,weight=tonumber(weight)} end
     if line:match("^%s*Str%s+Int%s+Wis%s+Dex%s+Agi%s+Con%s+Cha%s+Wil%s+Voi%s+Per%s+App%s*$") then
       local values={}; for value in clean(lines[i+1] or ""):gmatch("%S+") do values[#values+1]=value end

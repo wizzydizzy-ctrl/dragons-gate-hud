@@ -13,9 +13,9 @@ local function fake()
   return f
 end
 test("startup is idempotent and shutdown owns exact runtime IDs",function()
-  local f=fake(); local hud=Main.new(f,{layout={left_width=190,right_width=270}}); eq(hud:start(),true); local first=f.next; eq(hud:start(),true); eq(f.next,first); eq(hud:shutdown(),true); eq(f.deleted,1); eq(f.set_borders[1],10); eq(f.set_borders[2],20); for i=1,first do eq(f.killed[(i<=6 and "event-" or "alias-")..i],true) end
+  local f=fake(); local hud=Main.new(f,{layout={left_width=190,right_width=270}}); eq(hud:start(),true); local first=f.next; eq(hud:start(),true); eq(f.next,first); eq(hud:shutdown(),true); eq(f.deleted,1); eq(f.set_borders[1],0); eq(f.set_borders[2],0); for i=1,first do eq(f.killed[(i<=6 and "event-" or "alias-")..i],true) end
 end)
 test("health check requires root and handlers",function() local hud=Main.new(fake(),{layout={left_width=190,right_width=270}}); eq(hud:healthCheck(),nil); hud:start(); eq(hud:healthCheck(),true) end)
-test("window resize recomputes borders and view layout",function()
-  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); eq(f.layouts[#f.layouts].mode,"wide"); f.width=760; f.height=700; f.callbacks["sysWindowResizeEvent"](); eq(f.layouts[#f.layouts].mode,"compact"); eq(f.set_borders[1],10); eq(f.set_borders[2],136); eq(f.set_borders[3],30); eq(f.set_borders[4],98)
+test("window resize recomputes absolute borders and view layout",function()
+  local f=fake(); f.borders={1290,234,1610,120}; local hud=Main.new(f,{layout={}}); hud:start(); eq(f.layouts[#f.layouts].mode,"wide"); eq(f.set_borders[1],250); eq(f.set_borders[2],74); eq(f.set_borders[3],326); eq(f.set_borders[4],38); f.width=760; f.height=700; f.callbacks["sysWindowResizeEvent"](); eq(f.layouts[#f.layouts].mode,"compact"); eq(f.set_borders[1],0); eq(f.set_borders[2],116); eq(f.set_borders[3],0); eq(f.set_borders[4],58)
 end)

@@ -4,12 +4,12 @@ function Main.new(adapter,settings) return setmetatable({adapter=adapter,setting
 function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP()); self.view:update(normalized); self.last_state=normalized; return true end
 function Main:applyResponsiveLayout()
   local width,height=self.adapter:getWindowSize(); local layout=Layout.compute(width,height); self.current_layout=layout
-  local base=self.original_borders or {0,0,0,0}; self.adapter:setBorders(base[1]+layout.left,base[2]+layout.top,base[3]+layout.right,base[4]+layout.bottom)
+  self.adapter:setBorders(layout.left,layout.top,layout.right,layout.bottom)
   if self.view and self.view.applyLayout then self.view:applyLayout(layout) end; return layout
 end
 function Main:start()
   if self.started then return true end
-  local l,t,r,b=self.adapter:getBorders(); self.original_borders={l,t,r,b}
+  self.original_borders={0,0,0,0}
   self.view=self.adapter:createView(self.settings)
   self:applyResponsiveLayout()
   for _,name in ipairs(Events.gmcp) do self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(name,function() self:refresh() end) end

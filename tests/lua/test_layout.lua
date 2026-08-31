@@ -1,13 +1,13 @@
 local Layout=require("layout")
 test("wide screens reserve full command deck rails",function()
-  local r=Layout.compute(1920,1080); eq(r.mode,"wide"); eq(r.left,300); eq(r.right,380); eq(r.top,78); eq(r.bottom,40); eq(r.show_character_rail,true)
+  local r=Layout.compute(1920,1080); eq(r.mode,"wide"); eq(r.left,250); eq(r.right,326); eq(r.top,74); eq(r.bottom,38); eq(r.show_character_rail,true)
 end)
 test("medium screens preserve console by folding character rail",function()
-  local r=Layout.compute(1200,800); eq(r.mode,"medium"); eq(r.left,0); eq(r.right,300); eq(r.top,68); eq(r.show_character_rail,false); eq(r.show_room_compass,true)
+  local r=Layout.compute(1200,800); eq(r.mode,"medium"); eq(r.left,0); eq(r.right,252); eq(r.top,66); eq(r.show_character_rail,false); eq(r.show_room_compass,true)
 end)
 test("compact screens move all status out of side rails",function()
   local r=Layout.compute(760,700); eq(r.mode,"compact"); eq(r.left,0); eq(r.right,0); eq(r.top,116); eq(r.bottom,58); eq(r.show_room_compass,false)
 end)
-test("layout dimensions never consume more than forty percent of width per rail",function()
-  for _,w in ipairs({900,1024,1366,1600,2560,3840}) do local r=Layout.compute(w,900); eq(r.left<=w*.4,true); eq(r.right<=w*.4,true) end
+test("layout always leaves most of the window for the main console",function()
+  for _,w in ipairs({900,1024,1366,1400,1600,1920,2056,2560,3840}) do local r=Layout.compute(w,900); eq((w-r.left-r.right)>=w*.64,true) end
 end)

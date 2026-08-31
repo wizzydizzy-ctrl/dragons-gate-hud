@@ -63,9 +63,17 @@ local function fakeGeyser()
     function item:delete() self.deleted=true end
     function item:setClickCallback(callback) self.click=callback end
     function item:echo(value)
-      if self.kind=="console" then self.echoes[#self.echoes+1]=value; self.lastLine=self.lastLine+1 else self.message=value end
+      if self.kind=="console" then
+        self.echoes[#self.echoes+1]=value
+        local first=self.lastLine+1
+        local columns=math.max(1,tonumber(self.wrap) or 80)
+        local rows=math.max(1,math.ceil(#tostring(value)/columns))
+        self.lastLine=self.lastLine+rows
+        self.renderedEntries=self.renderedEntries or {}
+        self.renderedEntries[#self.renderedEntries+1]={first=first,last=self.lastLine}
+      else self.message=value end
     end
-    function item:clear() self.echoes={}; self.lastLine=0 end
+    function item:clear() self.echoes={}; self.lastLine=0; self.renderedEntries={} end
     function item:setWrap(value) self.wrap=value; return true end
     function item:setFontSize(value) self.fontSize=value end
     function item:enableScrollBar() self.scrollBar=true end
@@ -142,6 +150,19 @@ test("chat wrap reflows on resize while preserving scroll intent and filter",fun
   view.chat_output.currentScroll=view.chat_output.lastLine; view:applyLayout(wide)
   eq(view.chat_output.wrap,wide.chat_wrap_columns); eq(view.chat_output.scrollCalls[#view.chat_output.scrollCalls],"bottom")
   eq(view.chat_active_filter,"ESP")
+end)
+
+test("chat reflow keeps the same wrapped entry visible while narrowing and widening",function()
+  local Layout=require("layout"); local wide=Layout.compute(1920,1080); local narrow=Layout.compute(1000,700); local view=chatView(); local entries={}
+  for index=1,20 do entries[index]={category="ESP",timestamp="2026-08-31T13:00:00-04:00",line=string.rep("entry-"..index.." ",40)} end
+  view:applyLayout(wide); view:renderChat(entries,{"ESP"},"ESP")
+  view.chat_output.currentScroll=view.chat_output.renderedEntries[10].first+1
+  view:applyLayout(narrow)
+  local narrowed=view.chat_output.renderedEntries[10]
+  eq(view.chat_output.currentScroll>=narrowed.first and view.chat_output.currentScroll<=narrowed.last,true)
+  view:applyLayout(wide)
+  local widened=view.chat_output.renderedEntries[10]
+  eq(view.chat_output.currentScroll>=widened.first and view.chat_output.currentScroll<=widened.last,true)
 end)
 
 test("chat wrap accepts legacy Geyser setters that return no value",function()

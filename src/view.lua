@@ -6,16 +6,30 @@ function View.raiseCards(cards) for _,card in ipairs(cards or {}) do if card and
 local function esc(v) return tostring(v or ""):gsub("&","&amp;"):gsub("<","&lt;"):gsub(">","&gt;") end
 local function safeText(v) return esc(tostring(v or ""):gsub("%c"," ")) end
 local chat_colors={ROOM="text",OWN="jade",WHISPER="#d49bc8",ESP="#a6a3e8",DRAGON="#d9a869",CONTACT="#8bc6b0",STAFF="#e09672"}
-local function chatScroll(output)
+local function chatScroll(output,ranges)
   local okCurrent,current=pcall(function() return output:getScroll() end)
   local okLast,last=pcall(function() return output:getLastLineNumber() end)
   if not okCurrent or not okLast or current==nil or last==nil then return {at_bottom=true,line=0} end
-  return {at_bottom=current>=last,line=current}
+  local state={at_bottom=current>=last,line=current}
+  if not state.at_bottom then
+    for index,range in ipairs(ranges or {}) do
+      if current>=range.first and current<=range.last then
+        state.entry=range.entry; state.index=index; state.offset=current-range.first; break
+      end
+    end
+  end
+  return state
 end
-local function restoreChatScroll(output,state)
+local function restoreChatScroll(output,state,ranges)
   if state.at_bottom then pcall(function() output:scrollTo() end); return end
   local ok,last=pcall(function() return output:getLastLineNumber() end)
-  pcall(function() output:scrollTo(math.min(state.line,(ok and tonumber(last)) or state.line)) end)
+  local line=state.line
+  for index,range in ipairs(ranges or {}) do
+    if range.entry==state.entry or (state.entry==nil and index==state.index) then
+      line=range.first+math.min(math.max(0,state.offset or 0),range.last-range.first); break
+    end
+  end
+  pcall(function() output:scrollTo(math.min(line,(ok and tonumber(last)) or line)) end)
 end
 function View.chatLine(entry,t,timestamps)
   entry=type(entry)=="table" and entry or {}
@@ -263,15 +277,22 @@ function View:renderInventory(s)
 end
 function View:renderChat(entries,categories,activeFilter,savedScroll)
   entries=type(entries)=="table" and entries or {}; categories=type(categories)=="table" and categories or {}
-  local state=savedScroll or chatScroll(self.chat_output); local first=math.max(1,#entries-999)
+  local state=savedScroll or chatScroll(self.chat_output,self.chat_line_ranges); local first=math.max(1,#entries-999)
   self.chat_entries={}; for index=first,#entries do self.chat_entries[#self.chat_entries+1]=entries[index] end
   self.chat_categories={}; for index,value in ipairs(categories) do self.chat_categories[index]=value end
   self.chat_active_filter=tostring(activeFilter or "ALL"):upper()
   self:renderChatTabs(self.chat_categories,self.chat_active_filter)
   self.chat_output:clear()
   local chatSettings=self.settings.chat or {}
-  for _,entry in ipairs(self.chat_entries) do self.chat_output:echo(View.chatLine(entry,self.settings.theme,chatSettings.timestamps)) end
-  restoreChatScroll(self.chat_output,state)
+  self.chat_line_ranges={}
+  for index,entry in ipairs(self.chat_entries) do
+    local okBefore,before=pcall(function() return self.chat_output:getLastLineNumber() end)
+    self.chat_output:echo(View.chatLine(entry,self.settings.theme,chatSettings.timestamps))
+    local okAfter,after=pcall(function() return self.chat_output:getLastLineNumber() end)
+    before=okBefore and tonumber(before) or 0; after=okAfter and tonumber(after) or before
+    self.chat_line_ranges[index]={entry=entry,first=before+1,last=math.max(before+1,after)}
+  end
+  restoreChatScroll(self.chat_output,state,self.chat_line_ranges)
   return true
 end
 function View:applyChatWrap(layout)
@@ -279,7 +300,7 @@ function View:applyChatWrap(layout)
   local columns=math.max(30,math.floor(tonumber(layout.chat_wrap_columns) or 30))
   local font=math.max(1,math.floor(tonumber(layout.chat_font) or 13))
   local changed=self.chat_wrap_columns~=columns or self.chat_font~=font
-  local state=changed and chatScroll(output) or nil
+  local state=changed and chatScroll(output,self.chat_line_ranges) or nil
   pcall(function() output:setFontSize(font) end)
   local ok,applied,why=pcall(function() return output:setWrap(columns) end)
   if not ok then return nil,tostring(applied) end
@@ -287,7 +308,7 @@ function View:applyChatWrap(layout)
   self.chat_wrap_columns=columns; self.chat_font=font
   if changed then
     if self.chat_entries then self:renderChat(self.chat_entries,self.chat_categories,self.chat_active_filter,state)
-    else restoreChatScroll(output,state) end
+    else restoreChatScroll(output,state,self.chat_line_ranges) end
   end
   return true
 end

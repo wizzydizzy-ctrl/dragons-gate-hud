@@ -16,9 +16,15 @@ local function chatMetrics(width,height,layout,settings)
   local minimum=tonumber(settings.min_height) or 160
   local maximum=tonumber(settings.max_height) or 320
   local percent=tonumber(settings.height_percent) or default_percent
+  local minimum_console_remainder=math.max(1,math.floor(tonumber(settings.minimum_console_remainder) or 120))
   if maximum<minimum then maximum=minimum end
   layout.header_height=layout.top
-  layout.chat_height=clamp(height*percent*(target/(1080*default_percent)),minimum,maximum)
+  local configured_height=clamp(height*percent*(target/(1080*default_percent)),minimum,maximum)
+  local available=math.max(0,height-layout.header_height)
+  local minimum_visible_chat=available>0 and 1 or 0
+  local available_chat=math.max(minimum_visible_chat,available-minimum_console_remainder)
+  layout.minimum_console_remainder=minimum_console_remainder
+  layout.chat_height=math.min(configured_height,available_chat)
   layout.chat_x=layout.left
   layout.chat_width=layout.console_width
   layout.chat_padding=8
@@ -28,6 +34,7 @@ local function chatMetrics(width,height,layout,settings)
   layout.chat_inner_width=math.max(1,layout.chat_width-(2*layout.chat_padding)-layout.chat_scrollbar_allowance)
   layout.chat_wrap_columns=math.max(30,math.floor(layout.chat_inner_width/layout.chat_character_width))
   layout.console_top=layout.header_height+layout.chat_height
+  layout.console_remainder=math.max(0,height-layout.console_top)
   layout.top=layout.console_top
   return layout
 end

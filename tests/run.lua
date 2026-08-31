@@ -11,6 +11,7 @@ function eq(actual, expected)
   if actual ~= expected then error("expected " .. tostring(expected) .. ", got " .. tostring(actual), 2) end
 end
 
+dofile(root .. "/tests/lua/test_command_parser.lua")
 dofile(root .. "/tests/lua/test_state.lua")
 dofile(root .. "/tests/lua/test_settings.lua")
 dofile(root .. "/tests/lua/test_sha256.lua")

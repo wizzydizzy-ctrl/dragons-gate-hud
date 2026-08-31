@@ -61,7 +61,7 @@ function View:clearExits() for _,button in ipairs(self.exit_buttons) do button:d
 function View:buildExits(exits)
   self:clearExits(); if not self.layout or self.layout.mode=="compact" then return end
   local count=math.max(#exits,1); local width=math.floor(100/count)
-  for i,direction in ipairs(exits) do local b=label("DGHUD.Exit."..i,self.exit_area,"background:#193024;border:1px solid #39614a;border-radius:4px;color:#91d9a2;font-size:"..self.layout.small_font.."px;font-weight:700;"); place(b,(i-1)*width.."%",0,(width-2).."%",self.layout.small_font+12); b:echo("<center>"..esc(direction):upper().."</center>"); b:setClickCallback(function() send(direction) end); self.exit_buttons[#self.exit_buttons+1]=b end
+  for i,direction in ipairs(exits) do local b=label("DGHUD.Exit."..i,self.exit_area,"background:#193024;border:1px solid #39614a;border-radius:4px;color:#91d9a2;font-size:"..self.layout.small_font.."px;font-weight:700;"); place(b,(i-1)*width.."%",0,(width-2).."%",self.layout.small_font+12); b:echo(View.withFont("<center><b>"..esc(direction):upper().."</b></center>",self.layout.small_font)); b:setClickCallback(function() send(direction) end); self.exit_buttons[#self.exit_buttons+1]=b end
 end
 function View:update(s)
   self.last_state=s; local t=self.settings.theme; local v=s.vitals; local layout=self.layout or {mode="wide",heading_font=20}; local ready=function(x) return x and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:"..t.hp.."'><b>NOT READY</b></span>" end

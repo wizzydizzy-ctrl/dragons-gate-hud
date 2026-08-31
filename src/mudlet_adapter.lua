@@ -1,6 +1,7 @@
 local View=require("view")
 local Adapter={}; Adapter.__index=Adapter
 function Adapter.updateBase(home) return home.."/DGHUDUpdater" end
+function Adapter.updateArchivePath(home) return Adapter.updateBase(home).."/staging/DragonsGateHUD.mpackage" end
 function Adapter.new() return setmetatable({},Adapter) end
 function Adapter:getBorders() return getBorderLeft(),getBorderTop(),getBorderRight(),getBorderBottom() end
 function Adapter:getWindowSize() return getMainWindowSize() end
@@ -19,7 +20,7 @@ function Adapter:startUpdate(updater)
   local settings=updater.settings; local github=settings.github or {}; local policy=settings.update or {}
   if github.owner=="GITHUB_OWNER" or not tostring(github.owner):match("^[%w_.-]+$") or not tostring(github.repository):match("^[%w_.-]+$") then return nil,"configure the GitHub owner and repository first" end
   local base=Adapter.updateBase(getMudletHomeDir()); local staging=base.."/staging"; lfs.mkdir(base); lfs.mkdir(staging)
-  local manifestPath=staging.."/manifest.json"; local packagePath=staging.."/DragonsGateHUD.mpackage"; local ids={}; local timers={}; local timeoutId
+  local manifestPath=staging.."/manifest.json"; local packagePath=Adapter.updateArchivePath(getMudletHomeDir()); local ids={}; local timers={}; local timeoutId
   local function schedule(delay,fn) local id; id=tempTimer(delay,function() for i,value in ipairs(timers) do if value==id then table.remove(timers,i); break end end; fn() end); timers[#timers+1]=id; return id end
   local function cleanup() for _,id in ipairs(ids) do killAnonymousEventHandler(id) end; ids={}; for _,id in ipairs(timers) do killTimer(id) end; timers={}; if timeoutId then killTimer(timeoutId); timeoutId=nil end; updater:release() end
   local function fail(message) cleanup(); cecho("\n<red>[DGHUD Update]</red> "..tostring(message).."\n") end
@@ -36,7 +37,7 @@ function Adapter:startUpdate(updater)
       local current=base.."/current.mpackage"; local previous=base.."/previous.mpackage"; local old=readFile(current); if old then writeFile(previous,old) end
       self.replacePackageAsync=function(_,data,name,done)
         if name~="DragonsGateHUD" then done(nil,"package identity mismatch"); return end
-        local verified=staging.."/verified.mpackage"; writeFile(verified,data)
+        local verified=packagePath; writeFile(verified,data)
         if DGHUD and DGHUD.shutdown then pcall(DGHUD.shutdown) end
         if hasPackage(name) then local removed=uninstallPackage(name); if removed==nil then done(nil,"could not remove existing HUD package"); return end end
         schedule(0.25,function()

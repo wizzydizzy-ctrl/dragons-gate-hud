@@ -5,6 +5,9 @@ function Layout.detailsPlacement(available_height,line_height,left_width)
   return enough_height and enough_width and "left" or "right"
 end
 function Layout.detailsCardRows(columns) return tonumber(columns)==2 and 11 or 7 end
+function Layout.detailsFit(rail_bottom,inventory_y,details_height,minimum_inventory_height)
+  return (tonumber(rail_bottom) or 0)-(tonumber(details_height) or 0)-12-(tonumber(inventory_y) or 0)>=(tonumber(minimum_inventory_height) or 0)
+end
 local function clamp(value,minimum,maximum) return math.max(minimum,math.min(maximum,math.floor(value+0.5))) end
 local function metrics(width,height,layout)
   layout.console_width=width-layout.left-layout.right

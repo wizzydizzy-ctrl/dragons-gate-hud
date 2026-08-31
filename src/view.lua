@@ -63,6 +63,7 @@ function View.new(settings)
   local self=setmetatable({settings=settings,direction_buttons={},utility_buttons={},exit_available={}},View); local t=settings.theme
   self.root=Geyser.Container:new({name="DGHUD.Root",x=0,y=0,width="100%",height="100%"})
   self.header=label("DGHUD.Header",self.root,"background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px 18px;")
+  self.left_bg=label("DGHUD.LeftBackground",self.root,"background:"..t.panel..";border-right:1px solid "..t.border..";")
   self.identity=label("DGHUD.Identity",self.root,"background:"..t.panel..";border-right:1px solid "..t.border..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:18px;")
   self.details=label("DGHUD.Details",self.root,"background:"..t.panel..";border:1px solid "..t.border..";color:"..t.text..";padding:18px;")
   self.left=label("DGHUD.LeftRail",self.root,"background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:18px;")
@@ -100,6 +101,7 @@ function View:applyLayout(layout)
   place(self.header,0,0,"100%",top); self.bottom:hide()
   if layout.mode=="wide" or layout.mode=="medium" then
     self.compact:hide()
+    place(self.left_bg,0,top,layout.left,"100%-"..top)
     place(self.identity,0,top,layout.left,layout.identity_height)
     place(self.left,"100%-"..layout.right,top,layout.right,"100%-"..(top+bottom))
     local available=math.max(100,(layout.window_height or 800)-top-bottom)
@@ -115,16 +117,16 @@ function View:applyLayout(layout)
     local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18; local wealth_h=layout.heading_font+layout.details_line_height*2+p*2+18
     place(self.equipment,card_x,top+p,card_w,equipment_h); place(self.wealth,card_x,top+p+equipment_h+12,card_w,wealth_h)
     local inventory_y=top+p+equipment_h+wealth_h+24; local rail_bottom=(layout.window_height or 800)-bottom-p
+    local minimum_inventory_h=layout.heading_font+layout.inventory_row_height+p*2+30
     if details_placement=="right" then
       local right_details_h=layout.details_line_height*Layout.detailsCardRows(layout.details_columns)+p*2+18
-      place(self.details,card_x,rail_bottom-right_details_h,card_w,right_details_h)
-      rail_bottom=rail_bottom-right_details_h-12
+      if Layout.detailsFit(rail_bottom,inventory_y,right_details_h,minimum_inventory_h) then place(self.details,card_x,rail_bottom-right_details_h,card_w,right_details_h); rail_bottom=rail_bottom-right_details_h-12 else self.details:hide() end
     end
     local inventory_h=rail_bottom-inventory_y
-    if inventory_h>=layout.inventory_row_height*2 then place(self.inventory,card_x,inventory_y,card_w,inventory_h); self.inventory_capacity=math.max(1,math.floor((inventory_h-layout.heading_font-p*2-30)/layout.inventory_row_height)) else self.inventory:hide(); self.inventory_capacity=0 end
+    if inventory_h>=minimum_inventory_h then place(self.inventory,card_x,inventory_y,card_w,inventory_h); self.inventory_capacity=math.max(1,math.floor((inventory_h-layout.heading_font-p*2-30)/layout.inventory_row_height)) else self.inventory:hide(); self.inventory_capacity=0 end
     View.raiseCards({self.equipment,self.wealth,self.inventory,self.details})
   else
-    self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.wealth:hide(); self.inventory:hide(); self.right:hide(); place(self.compact,0,62,"100%",top-62)
+    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.wealth:hide(); self.inventory:hide(); self.right:hide(); place(self.compact,0,62,"100%",top-62)
   end
   if layout.mode~="compact" then
     place(self.right_bg,0,0,"100%","100%"); self.right_title:hide()

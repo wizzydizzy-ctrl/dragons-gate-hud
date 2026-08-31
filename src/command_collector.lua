@@ -42,6 +42,7 @@ function Collector:onLine(value)
 end
 function Collector:onOutgoing(command)
   command=tostring(command or ""):match("^%s*(.-)%s*$"):lower()
+  if command=="inv" then command="inventory" end
   if not self.active and SPECS[command] then self:begin(command,false) end
 end
 function Collector:start()

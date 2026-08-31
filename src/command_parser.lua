@@ -51,6 +51,6 @@ end
 
 function Parser.isComplete(command,lines)
   local fn={inventory=Parser.parseInventory,stat=Parser.parseStat,info=Parser.parseInfo}
-  return fn[command] and fn[command](lines)~=nil or false
+  return hasPrompt(lines) and fn[command] and fn[command](lines)~=nil or false
 end
 return Parser

@@ -11,6 +11,11 @@ function Adapter:addEvent(name,fn) return registerAnonymousEventHandler(name,fn)
 function Adapter:killEvent(id) return killAnonymousEventHandler(id) end
 function Adapter:addAlias(pattern,fn) return tempAlias(pattern,fn) end
 function Adapter:killAlias(id) return killAlias(id) end
+function Adapter:addLineTrigger(fn) return tempRegexTrigger("^.*$",function() fn(line or "") end) end
+function Adapter:killTrigger(id) return killTrigger(id) end
+function Adapter:schedule(seconds,fn) return tempTimer(seconds,fn) end
+function Adapter:cancelTimer(id) return killTimer(id) end
+function Adapter:sendCommand(command) return send(command) end
 function Adapter:getGMCP() return gmcp or {} end
 function Adapter:openSettings() cecho("\n<gold>[DGHUD]</gold> Settings: "..getMudletHomeDir().."/DragonsGateHUD/settings.lua\n") end
 local function readFile(path) local f=io.open(path,"rb"); if not f then return nil end; local data=f:read("*a"); f:close(); return data end

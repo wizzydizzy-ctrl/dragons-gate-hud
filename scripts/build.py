@@ -3,7 +3,7 @@ import argparse, hashlib, html, json, zipfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
-MODULES=['defaults','command_parser','state','settings','sha256','release','events','layout','view','mudlet_adapter','main','updater']
+MODULES=['defaults','command_parser','command_collector','state','settings','sha256','release','events','layout','view','mudlet_adapter','main','updater']
 def script_node(name,code):
     return f'''<Script isActive="yes" isFolder="no"><name>{html.escape(name)}</name><packageName>DragonsGateHUD</packageName><script>{html.escape(code)}</script><eventHandlerList/></Script>'''
 def build(output,owner,repository,version):

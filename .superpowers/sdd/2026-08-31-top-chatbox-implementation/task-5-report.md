@@ -43,3 +43,19 @@ Fresh fix-round verification:
 - `git diff --check` — passed with no output.
 
 No live installation, updater run, version bump, push, tag, or publication was performed in this fix round.
+
+## Fix Round 2 — First-Run History Diagnostics
+
+- Startup history loading now ensures the owned chat base and active-character directories before listing. A first-run or new-character directory therefore loads as empty history without setting `lastError`.
+- Directory creation failures and genuine list, open, and read failures continue to report through `Storage:lastError()` and controller-backed chat status. Malformed JSONL recovery remains unchanged.
+- The real-adapter regression models an absent first-run character directory, a denied list, a denied open, and a denied read.
+
+Fresh verification:
+
+- `lua tests/run.lua` — 137 tests, 0 failures.
+- `python3 -m unittest tests/test_build.py -v` — 1 test passed.
+- `luac -p src/*.lua tests/lua/*.lua tests/run.lua` — passed.
+- `python3 scripts/build.py --owner wizzydizzy-ctrl --repository dragons-gate-hud` — package build completed.
+- `git diff --check` — passed with no output.
+
+No live installation, updater run, version bump, push, tag, or publication was performed in this fix round.

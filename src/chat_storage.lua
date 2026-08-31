@@ -89,6 +89,16 @@ end
 
 function Storage:loadRecent(character)
   local directory=path(self.basePath,Storage.safeCharacter(character))
+  local created,createErr=call(self.api,"mkdir",self.basePath)
+  if not created then
+    self:reportFailure(createErr or "could not create chat storage")
+    return {}
+  end
+  created,createErr=call(self.api,"mkdir",directory)
+  if not created then
+    self:reportFailure(createErr or "could not create character storage")
+    return {}
+  end
   local files,listErr=call(self.api,"list",directory)
   if type(files)~="table" then
     if listErr then self:reportFailure(listErr) end

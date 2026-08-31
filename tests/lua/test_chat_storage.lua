@@ -131,7 +131,7 @@ test("exposes the latest internal storage failure for diagnostics",function()
   eq(storage:lastError():find("directory unavailable",1,true)~=nil,true)
 end)
 
-test("Mudlet storage facade exposes list and read failures to diagnostics",function()
+test("Mudlet storage facade treats new character history as empty but reports real failures",function()
   local originalLfs,originalIo=lfs,io
   local ok,err=pcall(function()
     lfs=nil
@@ -141,10 +141,31 @@ test("Mudlet storage facade exposes list and read failures to diagnostics",funct
     local controller=Controller.new({addLineTrigger=function() return "chat-trigger" end,killTrigger=function() end},nil,History.new(1000,3),unavailable,function() end,function() return "Dace" end)
     eq(controller:start(),true)
     eq(controller:status().last_storage_error,"filesystem is unavailable")
-    lfs={dir=function()
+    local directories={}
+    lfs={
+      mkdir=function(path) directories[path]=true; return true end,
+      dir=function(path)
+        if not directories[path] then return nil,"No such file or directory" end
+        return function() return nil end
+      end,
+    }
+    local firstRun=Storage.new(Storage.mudletApi("/profile"),"/profile/DragonsGateHUD/chat",1000)
+    eq(#firstRun:loadRecent("Brand New Character"),0)
+    eq(firstRun:lastError(),nil)
+    lfs={
+      mkdir=function() return true end,
+      dir=function() return nil,"permission denied" end,
+    }
+    local deniedList=Storage.new(Storage.mudletApi("/profile"),"/profile/DragonsGateHUD/chat",1000)
+    eq(#deniedList:loadRecent("Dace"),0)
+    eq(deniedList:lastError(),"permission denied")
+    lfs={
+      mkdir=function() return true end,
+      dir=function()
       local sent=false
       return function() if sent then return nil end; sent=true; return "2026-08-31.jsonl" end
-    end}
+      end,
+    }
     io={open=function(_,mode) if mode=="rb" then return nil,"permission denied" end end}
     local unreadable=Storage.new(Storage.mudletApi("/profile"),"/profile/DragonsGateHUD/chat",1000)
     eq(#unreadable:loadRecent("Dace"),0)

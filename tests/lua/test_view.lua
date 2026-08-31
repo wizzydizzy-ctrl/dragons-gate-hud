@@ -37,3 +37,7 @@ test("right rail details use short rows",function()
   eq(details:find("<br>Stance",1,true)~=nil,true)
   eq(details:find("STR <b>Good</b> &nbsp; INT <b>Low</b><br>WIS",1,true)~=nil,true)
 end)
+test("right rail cards can be raised above their shared background",function()
+  local raised=0; local card={raise=function() raised=raised+1 end}
+  View.raiseCards({card,card,card}); eq(raised,3)
+end)

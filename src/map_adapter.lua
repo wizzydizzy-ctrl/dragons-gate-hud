@@ -186,6 +186,119 @@ function MapAdapter:roomRecord(roomID)
   return record
 end
 
+function MapAdapter:areaRecord(areaID)
+  local area=positiveInteger(areaID)
+  if not area then return nil,"mapper area ID must be a positive integer" end
+  local areas,areasErr=read(self.api,"getAreaTable")
+  if areas==nil then return nil,areasErr or "Mudlet mapper API getAreaTable failed" end
+  if type(areas)~="table" then return nil,"Mudlet mapper API getAreaTable returned invalid data" end
+  local exists=false
+  for _,id in pairs(areas) do if positiveInteger(id)==area then exists=true; break end end
+  if not exists then return nil,"mapper area "..tostring(area).." does not exist" end
+  local owner,ownerErr=read(self.api,"getAreaUserData",area,"dghud.owner")
+  if owner==nil and ownerErr~=nil then return nil,ownerErr end
+  return {id=area,exists=true,owned=owner==self.owner,owner=owner}
+end
+
+function MapAdapter:roomsInArea(areaID)
+  local area=positiveInteger(areaID)
+  if not area then return nil,"mapper area ID must be a positive integer" end
+  local rooms,roomsErr=read(self.api,"getAreaRooms1",area)
+  if rooms==nil then return nil,roomsErr or "Mudlet mapper API getAreaRooms1 failed" end
+  if type(rooms)~="table" then return nil,"Mudlet mapper API getAreaRooms1 returned invalid data" end
+  local unique={}
+  for _,value in pairs(rooms) do
+    local room=positiveInteger(value)
+    if room then unique[room]=true end
+  end
+  local normalized={}
+  for room in pairs(unique) do normalized[#normalized+1]=room end
+  table.sort(normalized)
+  return normalized
+end
+
+function MapAdapter:inboundSources(roomIDs)
+  if type(roomIDs)~="table" then return nil,"room IDs must be a table" end
+  local deleting={}
+  for _,value in pairs(roomIDs) do
+    local room=positiveInteger(value)
+    if room then deleting[room]=true end
+  end
+  local rooms,roomsErr=read(self.api,"getRooms")
+  if rooms==nil then return nil,roomsErr or "Mudlet mapper API getRooms failed" end
+  if type(rooms)~="table" then return nil,"Mudlet mapper API getRooms returned invalid data" end
+  local existing={}
+  for key,value in pairs(rooms) do
+    local valueID=positiveInteger(value)
+    if valueID then
+      existing[valueID]=true
+    else
+      local keyID=positiveInteger(key)
+      if keyID then existing[keyID]=true end
+    end
+  end
+  local inbound={}
+  for source in pairs(existing) do
+    local ordinary,ordinaryErr=read(self.api,"getRoomExits",source)
+    if ordinary==nil then return nil,ordinaryErr or "Mudlet mapper API getRoomExits failed" end
+    if type(ordinary)~="table" then return nil,"Mudlet mapper API getRoomExits returned invalid data" end
+    local special,specialErr=read(self.api,"getSpecialExits",source,true)
+    if special==nil then return nil,specialErr or "Mudlet mapper API getSpecialExits failed" end
+    if type(special)~="table" then return nil,"Mudlet mapper API getSpecialExits returned invalid data" end
+    if not deleting[source] then
+      for _,destination in pairs(ordinary) do
+        if deleting[positiveInteger(destination)] then inbound[source]=true; break end
+      end
+      if not inbound[source] then
+        for destination in pairs(special) do
+          if deleting[positiveInteger(destination)] then inbound[source]=true; break end
+        end
+      end
+    end
+  end
+  local sources={}
+  for source in pairs(inbound) do sources[#sources+1]=source end
+  table.sort(sources)
+  return sources
+end
+
+function MapAdapter:deleteOwnedRoom(roomID)
+  local room=positiveInteger(roomID)
+  if not room then return nil,"room ID must be a positive integer" end
+  local record,recordErr=self:roomRecord(room)
+  if record==nil then return nil,recordErr end
+  if not record.exists then return nil,"room "..tostring(room).." does not exist" end
+  if not record.owned then return nil,"room "..tostring(room).." is not owned by DragonsGateHUD" end
+  local deleted,deleteErr=invoke(self.api,"deleteRoom",room)
+  if deleted==nil then return nil,deleteErr end
+  return true
+end
+
+function MapAdapter:deleteEmptyOwnedArea(areaID)
+  local record,recordErr=self:areaRecord(areaID)
+  if record==nil then return nil,recordErr end
+  if not record.owned then return nil,"mapper area "..tostring(record.id).." is not owned by DragonsGateHUD" end
+  local rooms,roomsErr=self:roomsInArea(record.id)
+  if rooms==nil then return nil,roomsErr end
+  if #rooms>0 then return nil,"mapper area "..tostring(record.id).." is not empty" end
+  local deleted,deleteErr=invoke(self.api,"deleteArea",record.id)
+  if deleted==nil then return nil,deleteErr end
+  return true
+end
+
+function MapAdapter:invalidateDeleted(roomIDs,areaID)
+  for _,roomID in pairs(roomIDs or {}) do
+    local room=positiveInteger(roomID)
+    if room then self.createdRooms[room]=nil end
+  end
+  local area=positiveInteger(areaID)
+  if area then
+    self.createdAreas[area]=nil
+    for key,cachedArea in pairs(self.areas) do if cachedArea==area then self.areas[key]=nil end end
+  end
+  return true
+end
+
 local function partitionForArea(self,area)
   if area==nil then return nil,"map area is unavailable" end
   local areas,areasErr=read(self.api,"getAreaTable")
@@ -422,7 +535,7 @@ end
 function MapAdapter.mudletApi(globals)
   globals=globals or _G
   local api={}
-  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","addSpecialExit","getSpecialExits","getRoomCoordinates","getRooms","getRoomsByPosition","getMapZoom","setMapZoom","setRoomIDbyHash","centerview","updateMap"}
+  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","getAreaRooms1","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","getRoomExits","addSpecialExit","getSpecialExits","getRoomCoordinates","getRooms","getRoomsByPosition","getMapZoom","setMapZoom","setRoomIDbyHash","centerview","updateMap"}
   local function wrapper(name)
     return function(...)
       local fn=globals[name]

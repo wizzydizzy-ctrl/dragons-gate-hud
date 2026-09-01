@@ -17,6 +17,12 @@ local function fakeMapApi(seed)
   function api.deleteArea(id) local ok,e=gate("deleteArea"); if not ok then return nil,e end; for name,areaID in pairs(api.areas) do if areaID==id then api.areas[name]=nil end end; api.areaUser[id]=nil; api.deletedAreas[#api.deletedAreas+1]=id; return true end
   function api.setAreaUserData(id,k,v) local ok,e=gate("setAreaUserData"); if not ok then return nil,e end; api.areaUser[id]=api.areaUser[id] or {}; api.areaUser[id][k]=v; return true end
   function api.getAreaUserData(id,k) local ok,e=gate("getAreaUserData"); if not ok then return nil,e end; return api.areaUser[id] and api.areaUser[id][k] end
+  function api.getAreaRooms1(id)
+    local ok,e=gate("getAreaRooms1"); if not ok then return nil,e end
+    local out,index={},0
+    for roomID,room in pairs(api.rooms) do if room.area==id then out[index]=roomID; index=index+1 end end
+    return out
+  end
   function api.setRoomArea(id,v) local ok,e=gate("setRoomArea"); if not ok then return nil,e end; api.rooms[id].area=v; return true end
   function api.getRoomArea(id) local ok,e=gate("getRoomArea"); if not ok then return nil,e end; return api.rooms[id] and api.rooms[id].area end
   function api.setRoomName(id,v) local ok,e=gate("setRoomName"); if not ok then return nil,e end; api.rooms[id].name=v; return true end
@@ -31,6 +37,10 @@ local function fakeMapApi(seed)
   end
   function api.setExitStub(id,d) local ok,e=gate("setExitStub"); if not ok then return nil,e end; api.rooms[id].stubs[d]=true; return true end
   function api.setExit(id,to,d) local ok,e=gate("setExit"); if not ok then return nil,e end; api.rooms[id].exits[d]=to; return true end
+  function api.getRoomExits(id)
+    local ok,e=gate("getRoomExits"); if not ok then return nil,e end
+    local out={}; for direction,to in pairs((api.rooms[id] and api.rooms[id].exits) or {}) do out[direction]=to end; return out
+  end
   function api.addSpecialExit(from,to,command)
     local ok,e=gate("addSpecialExit"); if not ok then return nil,e end
     api.special[from]=api.special[from] or {}; api.special[from][command]=to; api.specialAdds=api.specialAdds+1; return true
@@ -380,6 +390,72 @@ test("never adopts preexisting unowned provisional-looking objects",function()
   local map=Adapter.new(api); local ok=map:ensureRoom(descriptor(20),{}); eq(ok,nil); ok=map:ensureArea("Personal"); eq(ok,nil)
 end)
 
+test("individual deletion accepts only a persisted HUD-owned room",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(100,"A"),{x=0,y=0,z=0}))
+  eq(map:deleteOwnedRoom(100),true); eq(api.rooms[100],nil); eq(api.deletedRooms[1],100)
+
+  api.rooms[101]={area=9,user={},exits={},stubs={}}
+  local ok,e=map:deleteOwnedRoom(101)
+  eq(ok,nil); eq(e,"room 101 is not owned by DragonsGateHUD"); eq(api.rooms[101]~=nil,true); eq(#api.deletedRooms,1)
+end)
+
+test("individual deletion rechecks persisted ownership immediately before mutation",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(100,"A"),{x=0,y=0,z=0}))
+  assert(map:roomRecord(100)); api.rooms[100].user["dghud.owner"]="PersonalMapper"
+  local ok,e=map:deleteOwnedRoom(100)
+  eq(ok,nil); eq(e,"room 100 is not owned by DragonsGateHUD"); eq(api.rooms[100]~=nil,true); eq(#api.deletedRooms,0)
+end)
+
+test("area inspection and membership use persisted state and normalized sorted IDs",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  local area=assert(map:ensureArea("Owned"))
+  api.getAreaRooms1=function(id) eq(id,area); return {[0]="12",[1]=10,[2]=12,[3]=0,[4]="bad",extra=11} end
+  local record=assert(map:areaRecord(area)); eq(record.id,area); eq(record.exists,true); eq(record.owned,true); eq(record.owner,"DragonsGateHUD")
+  local rooms=assert(map:roomsInArea(area)); eq(#rooms,3); eq(rooms[1],10); eq(rooms[2],11); eq(rooms[3],12)
+
+  local missing,e=map:areaRecord(999)
+  eq(missing,nil); eq(e,"mapper area 999 does not exist")
+end)
+
+test("unowned ordinary and special inbound sources are reported without mutation",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(100,"A"),{x=0,y=0,z=0})); assert(map:ensureRoom(descriptor(101,"A"),{x=1,y=0,z=0}))
+  api.rooms[50]={name="Personal ordinary",area=9,user={},exits={n=100},stubs={}}
+  api.rooms[40]={name="Personal special",area=9,user={},exits={},stubs={}}; api.special[40]={gate=101}
+  api.rooms[100].exits.s=101; api.special[101]={back=100}
+  local sources=assert(map:inboundSources({101,100,101}))
+  eq(#sources,2); eq(sources[1],40); eq(sources[2],50)
+  eq(api.rooms[50].exits.n,100); eq(api.special[40].gate,101); eq(api.rooms[100]~=nil,true); eq(api.rooms[101]~=nil,true)
+end)
+
+test("inbound inspection fails closed on every required mapper read",function()
+  for _,name in ipairs({"getRooms","getRoomExits","getSpecialExits"}) do
+    local api=fakeMapApi(); api.rooms[50]={name="Personal",area=9,user={},exits={n=100},stubs={}}; api.fail[name]=true
+    local sources,e=Adapter.new(api):inboundSources({100})
+    eq(sources,nil); eq(e,name.." rejected")
+  end
+end)
+
+test("empty area deletion requires persisted ownership and current emptiness",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  api.areas["Personal"]=41; api.areaUser[41]={}; api.nextArea=42
+  local ok,e=map:deleteEmptyOwnedArea(41)
+  eq(ok,nil); eq(e,"mapper area 41 is not owned by DragonsGateHUD"); eq(api.areas["Personal"],41); eq(#api.deletedAreas,0)
+
+  local owned=assert(map:ensureArea("Owned")); api.rooms[100]={area=owned,user={["dghud.owner"]="DragonsGateHUD"},exits={},stubs={}}
+  ok,e=map:deleteEmptyOwnedArea(owned)
+  eq(ok,nil); eq(e,"mapper area "..owned.." is not empty"); eq(api.areas["Dragons Gate - Owned"],owned); eq(#api.deletedAreas,0)
+  api.rooms[100]=nil; eq(map:deleteEmptyOwnedArea(owned),true); eq(api.areas["Dragons Gate - Owned"],nil); eq(api.deletedAreas[1],owned)
+end)
+
+test("deleted map objects are invalidated from adapter caches",function()
+  local map=Adapter.new(fakeMapApi()); map.areas.A=7; map.areas.B=8; map.createdAreas[7]=true; map.createdRooms[100]=true; map.createdRooms[101]=true
+  eq(map:invalidateDeleted({101,100},7),true)
+  eq(map.areas.A,nil); eq(map.areas.B,8); eq(map.createdAreas[7],nil); eq(map.createdRooms[100],nil); eq(map.createdRooms[101],nil)
+end)
+
 test("creates stubs one-way and confirmed reverse links",function()
   local api=fakeMapApi(); local map=Adapter.new(api); assert(map:ensureRoom(descriptor(1),{})); assert(map:ensureRoom(descriptor(2),{})); assert(map:ensureStub(1,"n"))
   assert(map:connect(1,2,"e",false)); eq(api.rooms[2].exits.w,nil); assert(map:connect(1,2,"n",true)); eq(api.rooms[2].exits.s,1)
@@ -544,6 +620,17 @@ test("production factory exposes guarded special-exit APIs",function()
   local api=Adapter.mudletApi(globals)
   assert(api.addSpecialExit(100,900,"go gate")); eq(added[1],100); eq(added[2],900); eq(added[3],"go gate")
   local exits,from,listAll=api.getSpecialExits(100,true); eq(exits[900]["go gate"],"0"); eq(from,100); eq(listAll,true)
+end)
+
+test("production factory exposes guarded cleanup inspection APIs",function()
+  local globals={}
+  globals.getAreaRooms1=function(area) return {[0]=100},area end
+  globals.getRoomExits=function(room) return {n=101},room end
+  local api=Adapter.mudletApi(globals)
+  local rooms,area=api.getAreaRooms1(7); eq(rooms[0],100); eq(area,7)
+  local exits,room=api.getRoomExits(100); eq(exits.n,101); eq(room,100)
+  globals.getRoomExits=function() error("inspection exploded") end
+  local value,e=api.getRoomExits(100); eq(value,nil); assert(e:find("Mudlet mapper API getRoomExits failed",1,true))
 end)
 
 test("production factory exposes guarded native zoom APIs",function()

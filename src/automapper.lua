@@ -1,10 +1,5 @@
 local Automapper={}; Automapper.__index=Automapper
 
-local teleportCommands={
-  ["go portal"]=true,["go door"]=true,["go gate"]=true,["go arch"]=true,
-  portal=true,door=true,gate=true,arch=true,
-}
-
 local function trim(value)
   return tostring(value or ""):match("^%s*(.-)%s*$")
 end
@@ -34,7 +29,7 @@ function Automapper:onOutgoing(command)
   local direction=self.model.direction(classified)
   if direction and self.current_id then
     self.pending={from=self.current_id,direction=direction}
-  elseif teleportCommands[classified] or classified:match("^walkto%s+") then
+  else
     self.pending=nil
   end
   return direction

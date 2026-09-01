@@ -41,3 +41,30 @@ Each production correction was preceded by a regression test and an observed fai
 - `git diff --check`: **PASS**.
 
 The first ad-hoc checksum inspection wrapper contained an f-string quoting syntax error after the build step. It was corrected and the complete build/checksum/content command was rerun successfully; the successful evidence above comes from that fresh rerun.
+
+## Finding 9 Follow-Up
+
+Finding 9 from `whole-branch-rereview.md` was fixed by making outbound transition ownership uniform in `Automapper:onOutgoing`: a valid direction replaces directional pending state, while every non-direction command clears any prior directional pending state before `SpecialTransition` classifies or owns the command. The later successful `onSpecialTransition` handoff remains responsible for installing arbitrary-special pending state. The obsolete portal/door/gate/arch-only clearing table was removed.
+
+Four integrated runtime regressions exercise observable persisted graph behavior through `Main`, `Automapper`, `SpecialTransition`, and the map adapter boundary:
+
+1. `north` → `climb rope` → candidate expiry → room `900` creates no directional or special edge.
+2. `north` → `climb rope` → timer creation failure → room `900` creates no directional or special edge.
+3. `north` → excluded `look` → room `900` creates no directional or special edge.
+4. `north` → `Climb RuneRope` → room `900` creates only the exact observed `100 --Climb RuneRope--> 900` special edge and no directional edge.
+
+### Finding 9 TDD Evidence
+
+Before the production change, the focused runtime suite reported **52 tests, 3 failures**. The expiry, scheduler-failure, and excluded-control regressions each failed with `expected 0, got 1` for persisted directional links. The successful arbitrary-special regression already passed, protecting the behavior that must remain intact. After the minimal non-direction clearing change and dead-code refactor, the runtime-focused suite reported **52 tests, 0 failures**.
+
+### Finding 9 Final Verification
+
+- Focused automapper/runtime suites: **72 tests, 0 failures**.
+- Full Lua suite: **302 tests, 0 failures**.
+- Full Python suite: **1 test, OK**.
+- Lua syntax: **47 files passed `luac -p`**.
+- Python syntax: **2 Python files compiled successfully in memory**.
+- Release package build: **version 0.2.53**, **38,263 bytes**.
+- Package contents: `special_transition` preload present.
+- Manifest/package SHA-256 match: `ec448b97ad6d5c46028e4d952f6c311d4911fe0e809ba9d0439e762742055946`.
+- `git diff --check`: **PASS**.

@@ -48,6 +48,17 @@ local function fake()
   function f:fireTimer() local id,fn=next(self.timers); if id then self.timers[id]=nil; fn() end end
   function f:sendCommand(command) self.sent=command end
   function f:count(tableValue) local n=0; for _ in pairs(tableValue) do n=n+1 end; return n end
+  function f:createMapAdapter()
+    local map={rooms={},stubs={},links={},current=nil,shutdowns=0}
+    function map:ensureRoom(room,coordinates) self.rooms[room.id]={room=room,coordinates=coordinates}; return true end
+    function map:ensureStub() return true end
+    function map:connect(from,to,direction,reverse) self.links[#self.links+1]={from=from,to=to,direction=direction,reverse=reverse}; return true end
+    function map:setCurrent(id) self.current=id; return true end
+    function map:coordinates(id) local item=self.rooms[id]; return item and item.coordinates end
+    function map:roomsAt() return {} end
+    self.createdMaps=(self.createdMaps or 0)+1; self.map=map; return map
+  end
+  function f:reportMapperStatus(kind,message) self.mapperStatuses=self.mapperStatuses or {}; self.mapperStatuses[#self.mapperStatuses+1]={kind,message} end
   return f
 end
 test("startup is idempotent and shutdown owns exact runtime IDs",function()
@@ -103,7 +114,26 @@ test("startup refreshes command data when installed at an in-game prompt",functi
   local hud=Main.new(f,{layout={}}); hud:start(); eq(f.sent,"inventory")
 end)
 test("reload leaves one command collector",function()
-  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); eq(f:count(f.triggers),2); local outgoing=0; for _,name in pairs(f.events) do if name=="sysDataSendRequest" then outgoing=outgoing+1 end end; eq(outgoing,1)
+  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); eq(f:count(f.triggers),2); local outgoing=0; for _,name in pairs(f.events) do if name=="sysDataSendRequest" then outgoing=outgoing+1 end end; eq(outgoing,2)
+end)
+
+test("runtime wires one automapper handler per event and cleans it exactly",function()
+  local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=100,name="A",area=1,exits={"north"}}}}
+  local personal=f:addEvent("gmcp.Room.Info",function() end); local hud=Main.new(f,{layout={}}); assert(hud:start())
+  eq(f.createdMaps,1); eq(hud.automapper:currentRoom(),100)
+  local function count(name) local n=0; for _,value in pairs(f.events) do if value==name then n=n+1 end end; return n end
+  eq(count("gmcp.Room.Info"),2); eq(count("gmcp.Room.WrongDir"),1); eq(count("sysDisconnectionEvent"),2); eq(count("sysDataSendRequest"),2)
+  hud:reload(); eq(f.createdMaps,2); eq(count("gmcp.Room.Info"),2); eq(count("gmcp.Room.WrongDir"),1); eq(count("sysDataSendRequest"),2)
+  hud:shutdown(); eq(f.events[personal],"gmcp.Room.Info"); eq(count("gmcp.Room.Info"),1); eq(count("gmcp.Room.WrongDir"),0); eq(count("sysDataSendRequest"),0)
+end)
+
+test("runtime routes movement, wrong direction, teleport commands, and disconnect",function()
+  local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=100,name="A",area=1,exits={"north"}}}}
+  local hud=Main.new(f,{layout={}}); assert(hud:start())
+  f.callbacks["sysDataSendRequest"](nil,"north"); eq(hud.automapper.pending.direction,"n")
+  f.callbacks["gmcp.Room.WrongDir"](); eq(hud.automapper.pending,nil)
+  f.callbacks["sysDataSendRequest"](nil,"north"); f.callbacks["sysDataSendRequest"](nil,"go portal"); eq(hud.automapper.pending,nil)
+  f.callbacks["sysDataSendRequest"](nil,"north"); f.callbacks["sysDisconnectionEvent"](); eq(hud.automapper.pending,nil)
 end)
 test("roundtime counts down once per second and becomes ready",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:onRoundtime(2); eq(hud.last_state.vitals.roundtime,2)
@@ -141,4 +171,30 @@ test("reload and shutdown retain unrelated aliases events and timers",function()
   local f=fake(); local personalAlias=f:addAlias(); local personalEvent=f:addEvent("personal",function() end); local personalTimer=f:schedule(1,function() end)
   local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); hud:shutdown()
   eq(f.aliases[personalAlias]~=nil,true); eq(f.events[personalEvent]~=nil,true); eq(f.timers[personalTimer]~=nil,true)
+end)
+
+test("map adapter construction exceptions and nil results roll back startup",function()
+  for _,mode in ipairs({"throw","nil"}) do
+    local f=fake()
+    function f:createMapAdapter()
+      if mode=="throw" then error("adapter exploded") end
+      return nil,"adapter unavailable"
+    end
+    local hud=Main.new(f,{layout={}}); local ok,err=hud:start()
+    eq(ok,nil); eq(tostring(err):find(mode=="throw" and "adapter exploded" or "adapter unavailable",1,true)~=nil,true)
+    eq(hud.started,false); eq(hud.map,nil); eq(hud.automapper,nil); eq(f:count(f.events),0); eq(f:count(f.aliases),0); eq(f:count(f.triggers),0)
+  end
+end)
+
+test("automapper construction exceptions and nil results roll back startup",function()
+  for _,mode in ipairs({"throw","nil"}) do
+    local f=fake(); local hud=Main.new(f,{layout={}})
+    hud.createAutomapper=function()
+      if mode=="throw" then error("automapper exploded") end
+      return nil,"automapper unavailable"
+    end
+    local ok,err=hud:start()
+    eq(ok,nil); eq(tostring(err):find(mode=="throw" and "automapper exploded" or "automapper unavailable",1,true)~=nil,true)
+    eq(hud.started,false); eq(hud.map,nil); eq(hud.automapper,nil); eq(f:count(f.events),0); eq(f:count(f.aliases),0); eq(f:count(f.triggers),0)
+  end
 end)

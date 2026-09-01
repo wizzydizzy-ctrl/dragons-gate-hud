@@ -140,8 +140,8 @@ function MapAdapter:coordinates(roomID)
 end
 
 function MapAdapter:roomsAt(areaKey,x,y,z)
-  local area=self.areas[tostring(areaKey or "unknown")]
-  if area==nil then return {} end
+  local area,areaErr=self:ensureArea(areaKey)
+  if area==nil then return nil,areaErr end
   local rooms,err=invoke(self.api,"getRoomsByPosition",area,x,y,z)
   if rooms==nil then return nil,err end
   return rooms

@@ -90,6 +90,26 @@ test("reads zero-indexed occupancy route and view",function()
   local occupied=assert(map:roomsAt("7",3,4,1)); eq(occupied[0],10); api.path={"n","e"}; eq(assert(map:route(10,20))[2],"e"); assert(map:setCurrent(10)); assert(map:center(10)); eq(api.refreshed,1)
 end)
 
+test("reload resolves persisted owned area before checking occupied coordinates",function()
+  local api=fakeMapApi(); local first=Adapter.new(api)
+  assert(first:ensureRoom(descriptor(10,"Castle"),{x=0,y=1,z=0}))
+
+  local reloaded=Adapter.new(api)
+  local occupied=assert(reloaded:roomsAt("Castle",0,1,0))
+  eq(occupied[0],10)
+end)
+
+test("occupancy reload rejects unowned areas and propagates area query failures",function()
+  local collision=fakeMapApi(); collision.areas["Dragons Gate - Castle"]=41; collision.areaUser[41]={}
+  local rooms,e=Adapter.new(collision):roomsAt("Castle",0,0,0)
+  eq(rooms,nil); eq(e,"area Dragons Gate - Castle is not owned by DragonsGateHUD")
+
+  local api=fakeMapApi(); assert(Adapter.new(api):ensureRoom(descriptor(10,"Castle"),{x=0,y=1,z=0}))
+  api.fail.getRoomsByPosition=true
+  rooms,e=Adapter.new(api):roomsAt("Castle",0,1,0)
+  eq(rooms,nil); eq(e,"getRoomsByPosition rejected")
+end)
+
 test("contains mapper API exceptions",function()
   local api=fakeMapApi(); api.fail.getAreaTable="throw"; local ok,e=Adapter.new(api):ensureRoom(descriptor(1),{}); eq(ok,nil); assert(e:find("Mudlet mapper API getAreaTable failed",1,true))
 end)

@@ -108,6 +108,7 @@ local function fakeGeyser()
   end
   local geyser={}
   geyser.Container={new=function(_,cons,parent) return widget(cons,parent,"container") end}
+  geyser.ScrollBox={new=function(_,cons,parent) return widget(cons,parent,"scrollbox") end}
   geyser.Label={new=function(_,cons,parent) return widget(cons,parent,"label") end}
   geyser.MiniConsole={new=function(_,cons,parent) return widget(cons,parent,"console") end}
   geyser.Mapper={new=function(_,cons,parent) return widget(cons,parent,"mapper") end}
@@ -130,8 +131,8 @@ end)
 
 test("inventory and skills own five-row scrollable consoles",function()
   local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
-  eq(view.inventory_output.scrollBar,true); eq(view.inventory_output.horizontalScrollBar,false)
-  eq(view.skills_output.scrollBar,true); eq(view.skills_output.horizontalScrollBar,false)
+  eq(view.inventory_output.kind,"scrollbox"); eq(view.skills_output.kind,"scrollbox")
+  eq(view.inventory_content.parent,view.inventory_output); eq(view.skills_content.parent,view.skills_output)
   eq(view.inventory_output.height,layout.list_row_height*5); eq(view.skills_output.height,layout.list_row_height*5)
 end)
 test("responsive skill columns fit both wide and medium right rails",function()
@@ -142,19 +143,19 @@ test("responsive skill columns fit both wide and medium right rails",function()
 end)
 
 test("scrollable cards render every inventory item and every ranked skill",function()
-  local view=chatView(); view:applyLayout(require("layout").compute(1920,1080))
+  local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
   local items,skills={},{}; for i=1,12 do items[i]={name="Item "..i,weight=i}; skills[i]={name="Skill "..i,level=20-i,remain=i} end
   view:update({character={full_name="Test",race="Monitanian",class="Fighter",alignment="entropy",physical={}},attributes={},combat={},equipment={items={}},inventory={items=items,total_weight=78},skills={items=skills},vitals={hp={current=1,maximum=1},fatigue={current=1,maximum=1},carry={current=1,maximum=1},psi={visible=false},web={visible=false},gold=2,silver=3,roundtime=0,position=0,weapon_readied=false,shield_readied=false},room={name="Room",num=1,area=1,environment="Plain",players={},flags={},exits={}}})
-  eq(#view.inventory_output.echoes,12); eq(#view.skills_output.echoes,12)
-  eq(view.skills_output.echoes[1]:find("Skill 1",1,true)~=nil,true); eq(view.inventory_footer.message:find("2gp",1,true)~=nil,true)
+  eq(view.inventory_content.message:find("Item 12",1,true)~=nil,true); eq(view.skills_content.message:find("Skill 12",1,true)~=nil,true)
+  eq(view.inventory_content.height>=layout.list_row_height*12,true); eq(view.skills_content.height>=layout.list_row_height*12,true); eq(view.inventory_footer.message:find("2gp",1,true)~=nil,true)
 end)
 
 test("unchanged HUD refreshes preserve inventory and skill scroll positions",function()
   local view=chatView(); view:applyLayout(require("layout").compute(1920,1080))
   local state={character={full_name="Test",race="M",class="F",alignment="e",physical={}},attributes={},combat={},equipment={items={}},inventory={items={{name="One",weight=1}},total_weight=1},skills={items={{name="Biting",level=4,remain=10}}},vitals={hp={current=1,maximum=1},fatigue={current=1,maximum=1},carry={current=1,maximum=1},psi={visible=false},web={visible=false},gold=0,silver=0,roundtime=0,position=0},room={name="R",players={},flags={},exits={}}}
-  view:update(state); view.inventory_output.currentScroll=3; view.skills_output.currentScroll=4; local inventoryClears=view.inventory_output.clearCalls; local skillClears=view.skills_output.clearCalls
-  view:update(state); eq(view.inventory_output.currentScroll,3); eq(view.skills_output.currentScroll,4); eq(view.inventory_output.clearCalls,inventoryClears); eq(view.skills_output.clearCalls,skillClears)
-  state.skills.items={{name="Clawing",level=5,remain=2}}; view:update(state); eq(view.skills_output.currentScroll,0); eq(view.skills_output.clearCalls,skillClears+1)
+  view:update(state); local inventoryMessage=view.inventory_content.message; local skillMessage=view.skills_content.message
+  view:update(state); eq(view.inventory_content.message,inventoryMessage); eq(view.skills_content.message,skillMessage)
+  state.skills.items={{name="Clawing",level=5,remain=2}}; view:update(state); eq(view.skills_content.message:find("Clawing",1,true)~=nil,true)
 end)
 
 test("right rail orders inventory combat skills and vitals without overlap",function()

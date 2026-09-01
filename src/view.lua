@@ -137,11 +137,13 @@ function View.new(settings)
   self.equipment=label("DGHUD.Equipment",self.root,"background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:14px;")
   self.inventory=label("DGHUD.Inventory",self.root,"background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:14px;")
   self.inventory_title=label("DGHUD.Inventory.Title",self.root,"background:transparent;color:"..t.accent..";")
-  self.inventory_output=Geyser.MiniConsole:new({name="DGHUD.Inventory.Output",x=0,y=0,width=100,height=100},self.root); self.inventory_output:enableScrollBar(); self.inventory_output:disableHorizontalScrollBar()
+  self.inventory_output=Geyser.ScrollBox:new({name="DGHUD.Inventory.Output",x=0,y=0,width=100,height=100},self.root)
+  self.inventory_content=label("DGHUD.Inventory.Content",self.inventory_output,"background:#101713;color:"..t.text..";")
   self.inventory_footer=label("DGHUD.Inventory.Footer",self.root,"background:transparent;color:"..t.text..";")
   self.skills=label("DGHUD.Skills",self.root,"background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";")
   self.skills_title=label("DGHUD.Skills.Title",self.root,"background:transparent;color:"..t.accent..";")
-  self.skills_output=Geyser.MiniConsole:new({name="DGHUD.Skills.Output",x=0,y=0,width=100,height=100},self.root); self.skills_output:enableScrollBar(); self.skills_output:disableHorizontalScrollBar()
+  self.skills_output=Geyser.ScrollBox:new({name="DGHUD.Skills.Output",x=0,y=0,width=100,height=100},self.root)
+  self.skills_content=label("DGHUD.Skills.Content",self.skills_output,"background:#101713;color:"..t.text..";")
   self.right=Geyser.Container:new({name="DGHUD.RightRail",x=0,y=0,width=300,height=500},self.root)
   self.right_bg=label("DGHUD.RightBackground",self.right,"background:"..t.panel..";border-right:1px solid "..t.border..";")
   self.right_title=label("DGHUD.RightTitle",self.right,"background:transparent;color:"..t.accent..";font-size:13px;font-weight:700;padding:10px 14px;")
@@ -252,7 +254,7 @@ function View:applyLayout(layout)
   for _,card in ipairs({self.equipment,self.inventory,self.skills}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
   for _,title in ipairs({self.inventory_title,self.skills_title}) do title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.list_font.."px;font-weight:700;") end
   self.inventory_footer:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.list_font.."px;")
-  for _,output in ipairs({self.inventory_output,self.skills_output}) do if output.setFontSize then output:setFontSize(layout.list_font) end; if output.setWrap then output:setWrap(200) end end
+  for _,content in ipairs({self.inventory_content,self.skills_content}) do content:setStyleSheet("background:#101713;color:"..t.text..";font-family:'Courier New','Monospace';font-size:"..layout.list_font.."px;") end
   self.right_title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.lower_body_font.."px;font-weight:700;padding:"..lp.."px;")
   self.room:setStyleSheet("background:#101a16;border:1px solid #385044;border-radius:7px;color:"..t.text..";padding:"..lp.."px;font-size:"..layout.lower_body_font.."px;")
   self.bottom:setStyleSheet("background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px "..p.."px;font-size:"..layout.small_font.."px;")
@@ -363,7 +365,8 @@ function View:renderInventory(s)
   for _,item in ipairs(inventory.items or {}) do signature[#signature+1]=tostring(item.name or "").."\31"..tostring(item.weight or "") end
   signature=table.concat(signature,"\30"); if signature==self.inventory_signature then return end; self.inventory_signature=signature
   self.inventory_title:echo("<b>INVENTORY</b>")
-  self.inventory_output:clear(); for _,item in ipairs(inventory.items or {}) do self.inventory_output:echo(tostring(item.name or "").."  "..tostring(item.weight or "").." lb\n") end; pcall(function() self.inventory_output:scrollTo(0) end)
+  local lines={}; for _,item in ipairs(inventory.items or {}) do lines[#lines+1]=esc(item.name or "").."  <span style='color:"..t.muted.."'>"..esc(item.weight or "").." lb</span>" end
+  self.inventory_content:echo("<div style='white-space:nowrap;font-family:monospace'>"..table.concat(lines,"<br>").."</div>"); self.inventory_content:move(0,0); self.inventory_content:resize("100%-4",math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.inventory_content:show()
   self.inventory_footer:echo("<b>Total "..esc(inventory.total_weight or 0).." lb</b><br><span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(v.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(v.silver or 0).."sp</b></span>")
 end
 function View:renderSkills(s)
@@ -372,7 +375,8 @@ function View:renderSkills(s)
   for _,skill in ipairs(items) do signature[#signature+1]=tostring(skill.name or "").."\31"..tostring(skill.level or "").."\31"..tostring(skill.remain or "") end
   signature=table.concat(signature,"\30"); if signature==self.skills_signature then return end; self.skills_signature=signature
   self.skills_title:echo("<b>"..esc(View.skillHeader(nameWidth)).."</b>")
-  self.skills_output:clear(); for _,skill in ipairs(items) do self.skills_output:echo(View.skillLine(skill,nameWidth).."\n") end; pcall(function() self.skills_output:scrollTo(0) end)
+  local lines={}; for _,skill in ipairs(items) do lines[#lines+1]=esc(View.skillLine(skill,nameWidth)) end
+  self.skills_content:echo("<div style='white-space:pre;font-family:monospace'>"..table.concat(lines,"<br>").."</div>"); self.skills_content:move(0,0); self.skills_content:resize("100%-4",math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.skills_content:show()
 end
 function View:renderChat(entries,categories,activeFilter,savedScroll)
   entries=type(entries)=="table" and entries or {}; categories=type(categories)=="table" and categories or {}

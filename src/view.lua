@@ -110,7 +110,6 @@ function View.inventoryContent(inventory,vitals,t,layout,capacity)
   inventory=inventory or {}; vitals=vitals or {}
   local rows=View.inventoryRows(inventory.items,capacity); local lines={"<span style='color:"..t.accent.."'><b>INVENTORY</b></span>"}
   for _,item in ipairs(rows) do if item.overflow then lines[#lines+1]="<span style='color:"..t.muted.."'>"..item.label.."</span>" else lines[#lines+1]=esc(item.name).." <span style='color:"..t.muted.."'>"..esc(item.weight or "").." lb</span>" end end
-  if inventory.total_weight then lines[#lines+1]="<br><b>Total "..esc(inventory.total_weight).." lb</b>" end
   lines[#lines+1]="<span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(vitals.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(vitals.silver or 0).."sp</b></span>"
   return View.withFont(table.concat(lines,"<br>"),layout.inventory_font)
 end
@@ -262,11 +261,12 @@ function View:applyLayout(layout)
   self.left:setStyleSheet("background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   for _,card in ipairs({self.equipment,self.inventory,self.skills}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
   for _,title in ipairs({self.inventory_title,self.skills_title}) do title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.list_font.."px;font-weight:700;") end
-  self.inventory_footer:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.list_font.."px;")
+  self.inventory_footer:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..(layout.list_font+2).."px;")
   for _,widget in ipairs({self.inventory_title,self.skills_title,self.inventory_content,self.skills_content,self.list_measure}) do
     if widget.setFont then widget:setFont(self.list_font_family) end
     if widget.setFontSize then widget:setFontSize(layout.list_font) end
   end
+  if self.inventory_footer.setFontSize then self.inventory_footer:setFontSize(layout.list_font+2) end
   self.list_measure:echo("Ag<br>Ag<br>Ag<br>Ag<br>Ag")
   local measured; if self.list_measure.getSizeHint then local ok,_,height=pcall(self.list_measure.getSizeHint,self.list_measure); if ok then measured=tonumber(height) end end
   local fallback=math.ceil(layout.list_font*1.3)*5
@@ -323,7 +323,7 @@ function View:applyLayout(layout)
     self.details:hide()
     place(self.equipment,card_x,top+p,card_w,equipment_h)
     local inventory_y=top+p+equipment_h+12; local rail_bottom=(layout.window_height or 800)-bottom-vitals_h-12
-    local rows=layout.list_visible_rows or 5; local list_h=layout.list_viewport_height or layout.list_row_height*rows; local title_h=layout.list_row_height+4; local footer_h=layout.list_row_height*2
+    local rows=layout.list_visible_rows or 5; local list_h=layout.list_viewport_height or layout.list_row_height*rows; local title_h=layout.list_row_height+4; local footer_h=layout.list_row_height+4
     local inventory_h=p*2+title_h+list_h+footer_h+8; local skills_h=p*2+title_h+list_h+4
     local right_details_h=layout.details_line_height*Layout.detailsCardRows(layout.details_columns)+p*2+18
     local required=inventory_h+12+skills_h
@@ -391,7 +391,7 @@ function View:renderInventory(s)
   self.inventory_title:echo("<b>INVENTORY</b>")
   local lines={}; for _,item in ipairs(inventory.items or {}) do lines[#lines+1]=esc(item.name or "").."  <span style='color:"..t.muted.."'>"..esc(item.weight or "").." lb</span>" end
   self.inventory_content:echo("<div style='white-space:nowrap'>"..table.concat(lines,"<br>").."</div>"); self.inventory_content:move(0,0); self.inventory_content:resize(self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.inventory_content:show()
-  self.inventory_footer:echo("<b>Total "..esc(inventory.total_weight or 0).." lb</b><br><span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(v.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(v.silver or 0).."sp</b></span>")
+  self.inventory_footer:echo("<span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(v.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(v.silver or 0).."sp</b></span>")
 end
 function View:renderSkills(s)
   local layout=self.layout; if not layout or layout.mode=="compact" then return end

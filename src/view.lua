@@ -290,7 +290,7 @@ function View:renderChat(entries,categories,activeFilter,savedScroll)
   for index,entry in ipairs(self.chat_entries) do
     local okBefore,before=pcall(function() return self.chat_output:getLastLineNumber() end)
     local prefix,message=View.chatLine(entry,self.settings.theme,chatSettings.timestamps)
-    self.chat_output:cecho(prefix)
+    self.chat_output:hecho(prefix)
     self.chat_output:echo(message)
     local okAfter,after=pcall(function() return self.chat_output:getLastLineNumber() end)
     before=okBefore and tonumber(before) or 0; after=okAfter and tonumber(after) or before

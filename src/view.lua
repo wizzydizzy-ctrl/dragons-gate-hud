@@ -79,9 +79,7 @@ end
 function View.equipmentContent(v,items,t,layout)
   if layout==nil then layout=t; t=items; items={} end
   local function ready(value) return value and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:#c85b4b'><b>NOT READY</b></span>" end
-  local body
-  if items and #items>0 then local lines={}; for _,item in ipairs(items) do lines[#lines+1]=esc(item) end; body=table.concat(lines,"<br>")
-  else body="Weapon &nbsp; "..ready(v.weapon_readied).."<br>Shield &nbsp; "..ready(v.shield_readied) end
+  local body="Weapon &nbsp; "..ready(v.weapon_readied).."<br>Shield &nbsp; "..ready(v.shield_readied)
   return View.withFont("<span style='color:"..t.accent.."'><b>EQUIPMENT</b></span><br><br>"..body,layout.body_font)
 end
 function View.wealthContent(v,t,layout)
@@ -234,7 +232,7 @@ function View:applyLayout(layout)
     local details_placement=Layout.detailsPlacement(details_h,layout.details_line_height,layout.left)
     layout.details_columns=details_placement=="right" and 2 or 4
     if details_placement=="left" then place(self.details,0,details_y,layout.left,details_h) else self.details:hide() end
-    local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=math.max(2,math.min(#((self.last_state and self.last_state.equipment.items) or {}),6))
+    local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=2
     local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18; local wealth_h=layout.heading_font+layout.details_line_height*2+p*2+18
     place(self.equipment,card_x,top+p,card_w,equipment_h); place(self.wealth,card_x,top+p+equipment_h+12,card_w,wealth_h)
     local inventory_y=top+p+equipment_h+wealth_h+24; local rail_bottom=(layout.window_height or 800)-bottom-p

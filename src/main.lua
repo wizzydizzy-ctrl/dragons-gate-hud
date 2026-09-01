@@ -1,4 +1,4 @@
-local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper")
+local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local MapWalker=require("map_walker")
 local Main={}; Main.__index=Main
 function Main.new(adapter,settings) return setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=0},Main) end
 function Main.installChatApi(namespace)
@@ -66,6 +66,44 @@ function Main:applyResponsiveLayout()
   self.adapter:setBorders(layout.left,layout.top,layout.right,layout.bottom)
   if self.view and self.view.applyLayout then self.view:applyLayout(layout) end; return layout
 end
+function Main:mapperStatus(kind,message) if self.adapter.reportMapperStatus then self.adapter:reportMapperStatus(kind,message) end end
+function Main:routeShape(fromID,toID,route)
+  if type(route)~="table" then return nil,"invalid map route" end
+  local commands=type(route.commands)=="table" and route.commands or route
+  local path=type(route.rooms)=="table" and route.rooms or (type(_G.speedWalkPath)=="table" and _G.speedWalkPath or nil)
+  if not path then return nil,"map route did not provide room numbers" end
+  local rooms={}; for index,value in ipairs(path) do rooms[index]=tonumber(value) end
+  local copiedCommands={}; for index,value in ipairs(commands) do copiedCommands[index]=value end
+  if #rooms==#copiedCommands then table.insert(rooms,1,tonumber(fromID)) end
+  if #rooms~=#copiedCommands+1 then return nil,"map route rooms and commands do not match" end
+  if tonumber(rooms[1])~=tonumber(fromID) or tonumber(rooms[#rooms])~=tonumber(toID) then return nil,"map route endpoints do not match" end
+  return {rooms=rooms,commands=copiedCommands}
+end
+function Main:walkTo(destination,providedRoute)
+  destination=tonumber(destination)
+  if not destination or destination<=0 or destination%1~=0 then return nil,"destination room must be a positive integer" end
+  local current=self.automapper and self.automapper:currentRoom()
+  if not current then return nil,"current room is unavailable" end
+  local route,routeErr=providedRoute,nil; if not route then route,routeErr=self.map:route(current,destination) end
+  if not route then return nil,routeErr or "route unavailable" end
+  local shaped,shapeErr=self:routeShape(current,destination,route); if not shaped then return nil,shapeErr end
+  local ok,err=self.walker:start(shaped,destination); if not ok then return nil,err end
+  return true
+end
+function Main:installMapClickHook()
+  self.previous_speed_walk=rawget(_G,"doSpeedWalk")
+  local controller=self
+  self.speed_walk_hook=function()
+    local destination=type(_G.speedWalkPath)=="table" and _G.speedWalkPath[#_G.speedWalkPath] or nil
+    if not destination then return nil,"clicked route has no destination room" end
+    return controller:walkTo(destination,{rooms=_G.speedWalkPath,commands=_G.speedWalkDir or {}})
+  end
+  _G.doSpeedWalk=self.speed_walk_hook
+end
+function Main:removeMapClickHook()
+  if self.speed_walk_hook and rawget(_G,"doSpeedWalk")==self.speed_walk_hook then _G.doSpeedWalk=self.previous_speed_walk end
+  self.speed_walk_hook=nil; self.previous_speed_walk=nil
+end
 function Main:start()
   if self.started then return true end
   self.original_borders={0,0,0,0}
@@ -74,33 +112,54 @@ function Main:start()
   if not map then self:shutdown(); return nil,mapErr or "map adapter construction failed" end
   self.map=map
   local factory=self.createAutomapper or function(_,model,adapter,status) return Automapper.new(model,adapter,status) end
-  local automapperOk,automapper,automapperErr=pcall(factory,self,MapperModel,self.map,function(kind,message)
-    if self.adapter.reportMapperStatus then self.adapter:reportMapperStatus(kind,message) end
-  end)
+  local automapperOk,automapper,automapperErr=pcall(factory,self,MapperModel,self.map,function(kind,message) self:mapperStatus(kind,message) end)
   if not automapperOk then self:shutdown(); return nil,automapper end
   if not automapper then self:shutdown(); return nil,automapperErr or "automapper construction failed" end
   self.automapper=automapper
+  local walkerAdapter={owner=self}
+  function walkerAdapter:sendCommand(command)
+    self.owner.generated_movement=MapperModel.direction(command)
+    local ok,err=self.owner.adapter:sendCommand(command)
+    if ok==false or err~=nil then self.owner.generated_movement=nil; return nil,err or "movement command failed" end
+    return true
+  end
+  function walkerAdapter:schedule(delay,callback) return self.owner.adapter:schedule(delay,callback) end
+  function walkerAdapter:cancelTimer(id) return self.owner.adapter:cancelTimer(id) end
+  function walkerAdapter:clearGenerated() self.owner.generated_movement=nil end
+  self.walker=MapWalker.new(walkerAdapter,function(kind,message) self:mapperStatus(kind,message) end,12)
+  self:installMapClickHook()
+  local startupOk,startupErr=pcall(function()
   self.view=self.adapter:createView(self.settings)
   self:applyResponsiveLayout()
-  self.collector=Collector.new(self.adapter,Parser,function() self:refresh() end,function(value) self:onRoundtime(value) end); self.collector:start()
+  self.collector=Collector.new(self.adapter,Parser,function() self:refresh() end,function(value) self:onRoundtime(value) end); local collectorOk,collectorErr=self.collector:start(); if not collectorOk then error(collectorErr,0) end
   if self.adapter.isCharacterActive and self.adapter:isCharacterActive() then self.collector:refresh() end
   for _,name in ipairs(Events.gmcp) do self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(name,function() self:refresh() end) end
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.room,function()
-    local data=self.adapter:getGMCP(); self.automapper:onRoom(data and data.Room and data.Room.Info); self:refresh()
+    local data=self.adapter:getGMCP(); local info=data and data.Room and data.Room.Info; local ok,err=self.automapper:onRoom(info)
+    if self.walker and self.walker:active() then if not ok then self.walker:stop(err or "room mapping failed") else self.walker:onRoom(info and info.num) end end; self:refresh()
   end)
-  self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.wrong,function(_,direction) self.automapper:onWrongDirection(direction); self:refresh() end)
-  self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.outgoing,function(_,command) self.automapper:onOutgoing(command) end)
-  self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.disconnect,function() self.automapper:onDisconnect() end)
+  self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.wrong,function(_,direction) self.automapper:onWrongDirection(direction); self.walker:onWrongDirection(); self:refresh() end)
+  self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.outgoing,function(_,command)
+    local canonical=MapperModel.direction(command); local generated=canonical~=nil and canonical==self.generated_movement
+    if generated then self.generated_movement=nil end
+    self.walker:onManualMovement(command,generated); self.automapper:onOutgoing(command)
+  end)
+  self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.disconnect,function() self.automapper:onDisconnect(); self.walker:stop("disconnected") end)
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent("sysWindowResizeEvent",function() self:applyResponsiveLayout() end)
-  local commands={function() if self.updater then self.updater:check() end end,function() if self.updater then self.updater:update() end end,function() self:reload() end,function() if self.adapter.openSettings then self.adapter:openSettings() end end,function() if self.adapter.requestPurge then self.adapter:requestPurge() end end,function() return self:reportChatStatus() end}
+  local function aliasArgument(value) return value or (type(_G.matches)=="table" and _G.matches[2]) end
+  local commands={function() if self.updater then self.updater:check() end end,function() if self.updater then self.updater:update() end end,function() self:reload() end,function() if self.adapter.openSettings then self.adapter:openSettings() end end,function() if self.adapter.requestPurge then self.adapter:requestPurge() end end,function() return self:reportChatStatus() end,function(value) return self:walkTo(aliasArgument(value)) end,function() return self.walker:stop("requested") end,function() local room=self.automapper:currentRoom(); if not room then return nil,"current room is unavailable" end; return self.map:center(room) end}
   for i,pattern in ipairs(Events.aliases) do self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias(pattern,commands[i]) end
-  self.started=true; local ok,err=pcall(function() local data=self.adapter:getGMCP(); if data and data.Room and data.Room.Info then self.automapper:onRoom(data.Room.Info) end; self:refresh() end); if not ok then self:shutdown(); return nil,err end
-  local chatStarted,chatErr=self:startChat(); if not chatStarted then self:shutdown(); return nil,chatErr end; return true
+  self.started=true; local data=self.adapter:getGMCP(); if data and data.Room and data.Room.Info then self.automapper:onRoom(data.Room.Info) end; self:refresh()
+  local chatStarted,chatErr=self:startChat(); if not chatStarted then error(chatErr,0) end
+  end)
+  if not startupOk then pcall(function() self:shutdown() end); return nil,startupErr end
+  return true
 end
 function Main:shutdown()
   if self.roundtime_timer then self.adapter:cancelTimer(self.roundtime_timer); self.roundtime_timer=nil end
   local chat=self.chat; self.chat=nil; if chat then chat:shutdown() end
   if self.collector then self.collector:shutdown(); self.collector=nil end
+  if self.walker then self.walker:shutdown(); self.walker=nil end; self.generated_movement=nil; self:removeMapClickHook()
   if self.automapper then self.automapper:shutdown(); self.automapper=nil end; self.map=nil
   for _,id in ipairs(self.runtime.events) do self.adapter:killEvent(id) end; for _,id in ipairs(self.runtime.aliases) do self.adapter:killAlias(id) end
   self.runtime={events={},aliases={}}; if self.view then self.view:delete(); self.view=nil end

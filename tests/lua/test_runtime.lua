@@ -15,7 +15,7 @@ local function fake()
     delete=function() f.deleted=f.deleted+1 end,
   } end
   function f:addEvent(name,fn) self.next=self.next+1; self.callbacks[name]=fn; local id="event-"..self.next; self.events[id]=name; return id end
-  function f:addAlias() self.next=self.next+1; local id="alias-"..self.next; self.aliases[id]=true; return id end
+  function f:addAlias(pattern,fn) self.next=self.next+1; local id="alias-"..self.next; self.aliases[id]={pattern=pattern,fn=fn}; return id end
   function f:killEvent(id) self.killed[id]=true; self.events[id]=nil end
   function f:killAlias(id) self.killed[id]=true; self.aliases[id]=nil end
   function f:getGMCP() return self.gmcp or {Char={Vitals={hp=1,hp_max=1}}} end
@@ -49,7 +49,7 @@ local function fake()
   function f:schedule(_,fn) self.next=self.next+1; local id="timer-"..self.next; self.timers[id]=fn; return id end
   function f:cancelTimer(id) self.timers[id]=nil end
   function f:fireTimer() local id,fn=next(self.timers); if id then self.timers[id]=nil; fn() end end
-  function f:sendCommand(command) self.sent=command end
+  function f:sendCommand(command) self.sent=command; self.sentCommands=self.sentCommands or {}; self.sentCommands[#self.sentCommands+1]=command; return true end
   function f:count(tableValue) local n=0; for _ in pairs(tableValue) do n=n+1 end; return n end
   function f:createMapAdapter()
     local map={rooms={},stubs={},links={},current=nil,shutdowns=0}
@@ -60,10 +60,18 @@ local function fake()
     function map:center(id) self.centered=id; f.mapCenterCalls=(f.mapCenterCalls or 0)+1; return true end
     function map:coordinates(id) local item=self.rooms[id]; return item and item.coordinates end
     function map:roomsAt() return {} end
+    function map:route(fromID,toID)
+      if f.routeError then return nil,f.routeError end
+      return f.route or {rooms={fromID,toID},commands={"n"}}
+    end
     self.createdMaps=(self.createdMaps or 0)+1; self.map=map; return map
   end
   function f:reportMapperStatus(kind,message) self.mapperStatuses=self.mapperStatuses or {}; self.mapperStatuses[#self.mapperStatuses+1]={kind,message} end
   return f
+end
+
+local function aliasCallback(f,pattern)
+  for _,alias in pairs(f.aliases) do if alias.pattern==pattern then return alias.fn end end
 end
 
 test("successful room ingestion centers the embedded mapper",function()
@@ -217,4 +225,84 @@ test("automapper construction exceptions and nil results roll back startup",func
     eq(ok,nil); eq(tostring(err):find(mode=="throw" and "automapper exploded" or "automapper unavailable",1,true)~=nil,true)
     eq(hud.started,false); eq(hud.map,nil); eq(hud.automapper,nil); eq(f:count(f.events),0); eq(f:count(f.aliases),0); eq(f:count(f.triggers),0)
   end
+end)
+
+test("every post-hook startup failure restores hook and cleans runtime",function()
+  local oldHook=_G.doSpeedWalk; local personal=function() return "personal" end
+  for _,boundary in ipairs({"view","layout","collector","event","alias"}) do
+    _G.doSpeedWalk=personal; local f=fake(); local hud=Main.new(f,{layout={}})
+    if boundary=="view" then function f:createView() error("view exploded") end end
+    if boundary=="layout" then function f:setBorders() error("layout exploded") end end
+    if boundary=="collector" then function f:addLineTrigger() error("collector exploded") end end
+    if boundary=="event" then function f:addEvent() error("event exploded") end end
+    if boundary=="alias" then function f:addAlias() error("alias exploded") end end
+    local ok,err=hud:start(); eq(ok,nil); eq(tostring(err):find("exploded",1,true)~=nil,true)
+    eq(_G.doSpeedWalk,personal); eq(hud.started,false); eq(hud.walker,nil)
+    eq(f:count(f.events),0); eq(f:count(f.aliases),0); eq(f:count(f.triggers),0); eq(f:count(f.timers),0)
+  end
+  _G.doSpeedWalk=oldHook
+end)
+
+test("walk failures emit one stopped status and clear generated marker",function()
+  for _,boundary in ipairs({"send","schedule"}) do
+    local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=1,name="A",area=1,exits={"north"}}}}; f.route={rooms={1,2},commands={"north"}}
+    if boundary=="send" then function f:sendCommand() error("send exploded") end
+    else function f:schedule() error("schedule exploded") end end
+    local hud=Main.new(f,{layout={}}); assert(hud:start()); local before=#(f.mapperStatuses or {})
+    local ok=aliasCallback(f,"^walkto\\s+(\\d+)$")("2"); eq(ok,nil); eq(hud.walker:active(),false); eq(hud.generated_movement,nil)
+    local stopped=0; for index=before+1,#f.mapperStatuses do if f.mapperStatuses[index][1]=="stopped" then stopped=stopped+1 end end
+    eq(stopped,1); eq(f.mapperStatuses[#f.mapperStatuses][1],"stopped"); hud:shutdown()
+  end
+end)
+
+test("walk aliases validate current room route safely and share one walker",function()
+  local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}
+  f.route={rooms={175,176,180},commands={"north","east"}}
+  local hud=Main.new(f,{layout={}}); assert(hud:start())
+  local walkto=assert(aliasCallback(f,"^walkto\\s+(\\d+)$")); local walkstop=assert(aliasCallback(f,"^walkstop$")); local mapcenter=assert(aliasCallback(f,"^mapcenter$"))
+  assert(walkto("180")); eq(f.sentCommands[#f.sentCommands],"n"); eq(hud.walker:active(),true)
+  f.callbacks["sysDataSendRequest"](nil,"n"); eq(hud.walker:active(),true)
+  f.callbacks["gmcp.Room.Info"](); eq(#f.sentCommands,1)
+  walkstop(); eq(hud.walker:active(),false)
+  mapcenter(); eq(f.map.centered,175)
+end)
+
+test("walkto rejects missing current rooms route errors and special exits",function()
+  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start())
+  local walkto=assert(aliasCallback(f,"^walkto\\s+(\\d+)$")); local ok,err=walkto("20"); eq(ok,nil); eq(err,"current room is unavailable")
+  hud.automapper.current_id=10; f.routeError="no route"; ok,err=walkto("20"); eq(ok,nil); eq(err,"no route")
+  f.routeError=nil; f.route={rooms={10,20},commands={"go portal"}}; ok,err=walkto("20"); eq(ok,nil); eq(err,"unsupported route command go portal")
+end)
+
+test("native map click uses walker route and restores the previous global hook",function()
+  local previous=function() return "personal" end; local oldHook=_G.doSpeedWalk; _G.doSpeedWalk=previous
+  local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}
+  local hud=Main.new(f,{layout={}}); assert(hud:start()); local ownedHook=_G.doSpeedWalk; eq(ownedHook~=previous,true)
+  _G.speedWalkPath={175,176}; _G.speedWalkDir={"north"}; assert(ownedHook()); eq(f.sentCommands[#f.sentCommands],"n")
+  hud:shutdown(); eq(_G.doSpeedWalk,previous); eq(f:count(f.timers),0); eq(f:count(f.aliases),0)
+  _G.doSpeedWalk=oldHook; _G.speedWalkPath=nil; _G.speedWalkDir=nil
+end)
+
+test("native map click accepts speedWalkPath without the current room",function()
+  local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}
+  local hud=Main.new(f,{layout={}}); assert(hud:start())
+  _G.speedWalkPath={176}; _G.speedWalkDir={"north"}; assert(_G.doSpeedWalk()); eq(hud.walker:active(),true); eq(f.sentCommands[#f.sentCommands],"n")
+  hud:shutdown(); _G.speedWalkPath=nil; _G.speedWalkDir=nil
+end)
+
+test("Mudlet send with no return value still starts controlled walking",function()
+  local f=fake(); function f:sendCommand(command) self.sentCommands=self.sentCommands or {}; self.sentCommands[#self.sentCommands+1]=command end
+  f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=1,name="A",area=1,exits={"north"}}}}; f.route={rooms={1,2},commands={"north"}}
+  local hud=Main.new(f,{layout={}}); assert(hud:start()); local walkto=assert(aliasCallback(f,"^walkto\\s+(\\d+)$"))
+  assert(walkto("2")); eq(hud.walker:active(),true); eq(f.sentCommands[#f.sentCommands],"n"); hud:shutdown()
+end)
+
+test("walker stops on disconnect WrongDir unexpected room manual movement and shutdown",function()
+  local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=1,name="A",area=1,exits={"north"}}}}; f.route={rooms={1,2},commands={"north"}}
+  local hud=Main.new(f,{layout={}}); assert(hud:start()); local walkto=assert(aliasCallback(f,"^walkto\\s+(\\d+)$"))
+  walkto("2"); f.callbacks["sysDataSendRequest"](nil,"east"); eq(hud.walker:active(),false)
+  walkto("2"); f.callbacks["gmcp.Room.WrongDir"](); eq(hud.walker:active(),false)
+  walkto("2"); f.gmcp.Room.Info={num=99,name="Elsewhere",area=1,exits={}}; f.callbacks["gmcp.Room.Info"](); eq(hud.walker:active(),false)
+  f.gmcp.Room.Info={num=1,name="A",area=1,exits={"north"}}; hud.automapper.current_id=1; walkto("2"); f.callbacks["sysDisconnectionEvent"](); eq(hud.walker:active(),false)
+  walkto("2"); hud:shutdown(); eq(f:count(f.timers),0)
 end)

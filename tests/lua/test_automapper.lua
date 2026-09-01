@@ -124,16 +124,22 @@ test("unowned special destination collision clears pending without moving or lin
   local mapper=Automapper.new(Model,map,function() end); assert(mapper:onRoom(room(100,"Outside",1)))
   assert(mapper:onSpecialTransition({from=100,to=900,command="go gate",kind="special"}))
   local ok,e=mapper:onRoom(room(900,"Collision",1)); eq(ok,nil); assert(e:find("not owned",1,true))
-  eq(mapper.pending,nil); eq(map.current,100); eq(#map.special,0)
+  eq(mapper.pending,nil); eq(mapper:currentRoom(),nil); eq(map.current,100); eq(#map.special,0)
   eq(personal.partition,"personal"); eq(personal.coordinates.x,8); eq(personal.coordinates.y,7); eq(personal.coordinates.z,6)
 end)
 
-test("failed special-exit write clears pending and never records the edge",function()
+test("failed special-exit write advances to the ensured destination before later movement",function()
   local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end); assert(mapper:onRoom(room(100,"Outside",1)))
   map.specialError="addSpecialExit rejected"
   assert(mapper:onSpecialTransition({from=100,to=900,command="go gate",kind="special"}))
   local ok,e=mapper:onRoom(room(900,"Inside",1)); eq(ok,nil); eq(e,"addSpecialExit rejected")
-  eq(mapper.pending,nil); eq(map.current,100); eq(#map.special,0); eq(map.roomByID[900].partition,"special:900")
+  eq(mapper.pending,nil); eq(mapper:currentRoom(),900); eq(map.current,900)
+  eq(#map.special,0); eq(map.roomByID[900].partition,"special:900")
+
+  map.specialError=nil
+  mapper:onOutgoing("north"); assert(mapper:onRoom(room(901,"Hall",1,{"south"})))
+  eq(#map.links,1); eq(map.links[1].from,900); eq(map.links[1].to,901); eq(map.links[1].direction,"n")
+  eq(map.roomByID[901].partition,"special:900")
 end)
 
 test("tracks exact standard directions and clears pending on exceptional movement",function()

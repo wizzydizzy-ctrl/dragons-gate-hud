@@ -64,7 +64,11 @@ local function fake()
   function f:count(tableValue) local n=0; for _ in pairs(tableValue) do n=n+1 end; return n end
   function f:createMapAdapter()
     local map={rooms={},stubs={},links={},special={},current=nil,shutdowns=0}
-    function map:ensureRoom(room,coordinates) self.rooms[room.id]={room=room,coordinates=coordinates}; return true end
+    function map:ensureRoom(room,coordinates,partition)
+      local record=self.rooms[room.id]
+      if record then record.room=room else self.rooms[room.id]={room=room,coordinates=coordinates,partition=partition or room.area_key,game_area=room.area_key,owned=true} end
+      return true
+    end
     function map:ensureStub() return true end
     function map:connect(from,to,direction,reverse) self.links[#self.links+1]={from=from,to=to,direction=direction,reverse=reverse}; return true end
     function map:connectSpecial(from,to,command)
@@ -80,6 +84,12 @@ local function fake()
       return f.zoomResult or 17.5
     end
     function map:coordinates(id) local item=self.rooms[id]; return item and item.coordinates end
+    function map:roomRecord(id)
+      local record=self.rooms[id]
+      if not record then return {exists=false,owned=false,placement_needed=true} end
+      return {exists=true,owned=record.owned,coordinates=record.coordinates,partition=record.partition,game_area=record.game_area}
+    end
+    function map:effectivePartition(id) local record=self.rooms[id]; return record and record.partition end
     function map:roomsAt() return {} end
     function map:isOwned(id) return self.rooms[id]~=nil end
     function map:route(fromID,toID)
@@ -282,6 +292,17 @@ test("runtime contains mapper failure after confirmation and clears transition s
   local callbackOk=pcall(f.callbacks["gmcp.Room.Info"])
   eq(callbackOk,true); eq(hud.special_transition:pending(),nil); eq(hud.automapper.pending,nil); eq(f:count(f.timers),0)
   eq(#f.map.special,0); eq(tostring(hud.last_mapper_error):find("special mapping exploded",1,true)~=nil,true)
+  hud:shutdown()
+end)
+test("runtime continues from an ensured special destination after edge persistence fails",function()
+  local f=fake(); f.gmcp=gmcpRoom(100); local hud=Main.new(f,{layout={}}); assert(hud:start())
+  f.callbacks["sysDataSendRequest"](nil,"go gate"); f.failSpecialMap="return"; f.gmcp=gmcpRoom(900); f.callbacks["gmcp.Room.Info"]()
+  eq(#f.map.special,0); eq(hud.automapper:currentRoom(),900); eq(f.map.current,900)
+  eq(f.map.rooms[900].partition,"special:900")
+
+  f.failSpecialMap=nil; f.callbacks["sysDataSendRequest"](nil,"north"); f.gmcp=gmcpRoom(901); f.callbacks["gmcp.Room.Info"]()
+  eq(#f.map.links,1); eq(f.map.links[1].from,900); eq(f.map.links[1].to,901); eq(f.map.links[1].direction,"n")
+  eq(f.map.rooms[901].partition,"special:900")
   hud:shutdown()
 end)
 test("repeated reload cancels each candidate once and retains unrelated runtime",function()

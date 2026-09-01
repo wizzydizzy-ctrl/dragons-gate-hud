@@ -215,7 +215,7 @@ test("fresh automapper retry places an owner-only special destination in its des
   local stillInterrupted=assert(Adapter.new(api):roomRecord(900))
   eq(stillInterrupted.placement_needed,true); eq(stillInterrupted.state,nil); eq(stillInterrupted.partition,nil)
   eq(stillInterrupted.area,-1); eq(stillInterrupted.coordinates.x,0); eq(stillInterrupted.coordinates.y,0); eq(stillInterrupted.coordinates.z,0)
-  eq(first:currentRoom(),100); eq(api.special[100],nil)
+  eq(first:currentRoom(),nil); eq(api.special[100],nil)
 
   local retried=Automapper.new(Model,Adapter.new(api),function() end)
   assert(retried:onRoom(gmcpRoom(100,1,"Outside")))
@@ -252,7 +252,7 @@ test("fresh automapper retry derives coordinates for a provisional directional c
   eq(stillInterrupted.placement_needed,true); eq(stillInterrupted.state,"provisional")
   eq(stillInterrupted.partition,"special:900"); eq(stillInterrupted.area,submapArea)
   eq(stillInterrupted.coordinates.x,0); eq(stillInterrupted.coordinates.y,0); eq(stillInterrupted.coordinates.z,0)
-  eq(first:currentRoom(),900); eq(api.rooms[900].exits.n,nil); eq(api.rooms[901].exits.s,nil)
+  eq(first:currentRoom(),nil); eq(api.rooms[900].exits.n,nil); eq(api.rooms[901].exits.s,nil)
 
   local retried=Automapper.new(Model,Adapter.new(api),function() end)
   assert(retried:onRoom(gmcpRoom(900,1,"Root",{"north"})))

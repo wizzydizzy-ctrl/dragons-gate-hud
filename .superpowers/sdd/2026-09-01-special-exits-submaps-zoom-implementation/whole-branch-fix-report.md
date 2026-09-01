@@ -68,3 +68,43 @@ Before the production change, the focused runtime suite reported **52 tests, 3 f
 - Package contents: `special_transition` preload present.
 - Manifest/package SHA-256 match: `ec448b97ad6d5c46028e4d952f6c311d4911fe0e809ba9d0439e762742055946`.
 - `git diff --check`: **PASS**.
+
+## Final Review Follow-Up
+
+The sole Important finding from `whole-branch-final-review.md` is fixed. Different-room ingestion failures can no longer leave the prior `current_id` usable as a false movement origin:
+
+- If destination ownership/placement has not completed safely, the automapper clears pending transition ownership and invalidates logical current-room state. Durable owner-only/provisional room records remain untouched and retryable through a later observed transition.
+- If the destination was successfully ensured but stub or edge persistence fails, the automapper clears the failed transition, adopts the ensured destination as logical current, and centers the native map there while still returning and reporting the original persistence error.
+- If destination centering fails during that recovery, logical current-room state is invalidated so the next outbound command cannot own a stale origin.
+- The normal successful centering failure path now also invalidates logical current-room state.
+
+The runtime map fake now exposes production-shaped room records and effective partitions. The integrated regression drives the real `Main`/special-transition/automapper flow through `100 --go gate--> 900`, forces the special-edge write to fail, and then observes `north` to room `901`. It proves:
+
+- no failed special edge is recorded;
+- current room and map center synchronize to ensured room `900`;
+- the next directional edge is exactly `900 --n--> 901`, never from stale origin `100`;
+- room `901` inherits canonical partition `special:900`.
+
+Production-boundary interrupted-placement tests now assert invalid current-room state after owner-only/provisional destination ensure failures while preserving the existing durable retry and canonical placement behavior. The unowned-collision test likewise proves the personal room remains untouched while logical current is invalidated.
+
+### Final Review TDD Evidence
+
+- Baseline before edits: **302 Lua tests, 0 failures**; Python package suite **1 test, OK**.
+- Unit RED: focused automapper suite reported **20 tests, 1 failure** at the new continuation regression: `expected 900, got 100` for `currentRoom()` after the failed special-edge write.
+- Integrated RED: focused automapper/runtime suites reported **73 tests, 2 failures**; both the component and runtime continuation regressions returned stale origin `100` instead of ensured destination `900`.
+- Focused GREEN after implementation: automapper/runtime suites reported **73 tests, 0 failures**.
+- The first full run then exposed two pre-existing interrupted-placement expectations that still asserted stale origins (`100` and `900`). They were updated to the final-review safety contract (`currentRoom()==nil`); the canonical fresh-retry paths remained green.
+- Final production-boundary focused suites (`map_adapter`, `automapper`, and `runtime`): **117 tests, 0 failures**.
+
+### Final Review Verification
+
+- Full Lua suite: **303 tests, 0 failures**.
+- Full Python package suite: **1 test, OK**. This suite builds the package, verifies dependency closure, loads all packaged preloads with isolated Lua paths, requires packaged `main`, and proves initial-entry/reload eviction of `special_transition`.
+- Lua syntax: **47 files passed `luac -p`**.
+- Python syntax: **2 Python files parsed successfully**.
+- Independent release-package build: **version 0.2.53**, **38,347 bytes**, **23 preloads**.
+- Package dependency/preload inspection: `special_transition` present, entry eviction present, and no required preload missing.
+- Manifest/package SHA-256 match: **`6cb65812292f53c24364f481ef84d68e523f70a4b1c170b8412536c0b2162479`**.
+- `git diff --check`: **PASS**.
+
+No merge, push, tag, release, live Mudlet edit, or subagent operation was performed.

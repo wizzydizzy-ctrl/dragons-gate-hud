@@ -117,51 +117,61 @@ local function hasObservedPlacementIntent(self,room)
   return true
 end
 
+local function failUnensuredRoom(self,room,sameOrigin,kind,err)
+  if not sameOrigin then self.pending=nil end
+  if not room or (self.current_id and self.current_id~=room.id) then self.current_id=nil end
+  self:status(kind,err)
+  return nil,err
+end
+
+local function failEnsuredRoom(self,roomID,sameOrigin,kind,err)
+  if not sameOrigin then
+    self.pending=nil
+    self.current_id=roomID
+    local current,currentErr=self.map:setCurrent(roomID)
+    if not current then
+      self.current_id=nil
+      self:status(kind,tostring(err).."; destination synchronization failed: "..tostring(currentErr))
+      return nil,err
+    end
+  end
+  self:status(kind,err)
+  return nil,err
+end
+
 function Automapper:onRoom(raw)
   local room,normalizeErr=self.model.normalizeRoom(raw)
-  if not room then self.pending=nil; self:status("invalid_room",normalizeErr); return nil,normalizeErr end
+  if not room then return failUnensuredRoom(self,nil,false,"invalid_room",normalizeErr) end
   local sameOrigin=self.pending and self.pending.from==room.id
   local specialArrival=self.pending and self.pending.kind=="special" and not sameOrigin
   if specialArrival and self.pending.to~=room.id then
-    self.pending=nil; self:status("invalid_room","special transition destination did not match GMCP room")
-    return nil,"special transition destination did not match GMCP room"
+    local err="special transition destination did not match GMCP room"
+    return failUnensuredRoom(self,room,sameOrigin,"invalid_room",err)
   end
   local record,recordErr=self:roomRecord(room.id)
-  if not record then
-    if not sameOrigin or specialArrival then self.pending=nil end
-    self:status("invalid_room",recordErr); return nil,recordErr
-  end
+  if not record then return failUnensuredRoom(self,room,sameOrigin,"invalid_room",recordErr) end
   if record.exists and record.placement_needed then
     local hasIntent,intentErr=hasObservedPlacementIntent(self,room)
     if not hasIntent then
       local err=intentErr or ("room "..tostring(room.id).." placement requires an observed transition")
-      if not sameOrigin or specialArrival then self.pending=nil end
-      self:status("invalid_room",err); return nil,err
+      return failUnensuredRoom(self,room,sameOrigin,"invalid_room",err)
     end
   end
   local partition,partitionErr=self:partitionFor(room,record)
-  if not partition then
-    if not sameOrigin or specialArrival then self.pending=nil end
-    self:status("invalid_room",partitionErr); return nil,partitionErr
-  end
+  if not partition then return failUnensuredRoom(self,room,sameOrigin,"invalid_room",partitionErr) end
   local coordinates,coordinatesErr
   if specialArrival and (not record.exists or record.placement_needed) then coordinates={x=0,y=0,z=0} else coordinates,coordinatesErr=self:coordinatesFor(room,partition,record) end
-  if not coordinates then
-    if not sameOrigin or specialArrival then self.pending=nil end
-    self:status("invalid_room",coordinatesErr); return nil,coordinatesErr
-  end
+  if not coordinates then return failUnensuredRoom(self,room,sameOrigin,"invalid_room",coordinatesErr) end
   local ensured,ensureErr=self.map:ensureRoom(room,coordinates,partition)
   if not ensured then
-    if not sameOrigin then self.pending=nil end
     local kind=tostring(ensureErr):find("not owned",1,true) and "ownership_conflict" or "invalid_room"
-    self:status(kind,ensureErr); return nil,ensureErr
+    return failUnensuredRoom(self,room,sameOrigin,kind,ensureErr)
   end
   for _,direction in ipairs(room.exits) do
     local stubbed,stubErr=self.map:ensureStub(room.id,direction)
     if not stubbed then
-      if not sameOrigin then self.pending=nil end
       local kind=tostring(stubErr):find("not owned",1,true) and "ownership_conflict" or "invalid_room"
-      self:status(kind,stubErr); return nil,stubErr
+      return failEnsuredRoom(self,room.id,sameOrigin,kind,stubErr)
     end
   end
   local previous=self.current_id
@@ -173,12 +183,12 @@ function Automapper:onRoom(raw)
       local reverse=self.model.opposite(self.pending.direction)
       connected,connectErr=self.map:connect(self.pending.from,room.id,self.pending.direction,contains(room.exits,reverse))
     end
-    if not connected then self.pending=nil; self:status("invalid_room",connectErr); return nil,connectErr end
+    if not connected then return failEnsuredRoom(self,room.id,sameOrigin,"invalid_room",connectErr) end
   end
   local hadPending=self.pending~=nil
   if not sameOrigin then self.pending=nil end; self.current_id=room.id
   local current,currentErr=self.map:setCurrent(room.id)
-  if not current then self:status("invalid_room",currentErr); return nil,currentErr end
+  if not current then self.current_id=nil; self:status("invalid_room",currentErr); return nil,currentErr end
   if previous and previous~=room.id and not hadPending then self:status("teleport","room changed without a tracked direction") else self:status("mapped","room "..tostring(room.id)) end
   return true
 end

@@ -39,6 +39,16 @@ local function optionalRoomUserData(api,roomID,key)
   return tostring(value)
 end
 
+local function positiveInteger(value)
+  local number=tonumber(value)
+  if not number or number~=number or number==math.huge or number==-math.huge or number<=0 or number%1~=0 then return nil end
+  return number
+end
+
+local function normalizeCommand(value)
+  return tostring(value or ""):lower():match("^%s*(.-)%s*$")
+end
+
 local function requireCapabilities(api,names)
   for _,name in ipairs(names) do
     if type(api[name])~="function" then return missing(name) end
@@ -255,6 +265,31 @@ function MapAdapter:connect(fromID,toID,direction,confirmedReverse)
   return true
 end
 
+function MapAdapter:specialExitMatches(fromID,toID,command)
+  local from=positiveInteger(fromID); local to=positiveInteger(toID)
+  if not from or not to then return nil,"special exit endpoints require positive numeric IDs" end
+  local normalized=normalizeCommand(command)
+  if normalized=="" then return nil,"special exit command is required" end
+  local exits,exitsErr=read(self.api,"getSpecialExits",from,true)
+  if exits==nil then return nil,exitsErr end
+  local destination=exits[to] or exits[tostring(to)]
+  return type(destination)=="table" and destination[normalized]~=nil
+end
+
+function MapAdapter:connectSpecial(fromID,toID,command)
+  local from=positiveInteger(fromID); local to=positiveInteger(toID)
+  if not from or not to then return nil,"special exit endpoints require positive numeric IDs" end
+  local normalized=normalizeCommand(command)
+  if normalized=="" then return nil,"special exit command is required" end
+  if not self:isOwned(from) or not self:isOwned(to) then return nil,"special exit endpoints are not owned by DragonsGateHUD" end
+  local matches,matchErr=self:specialExitMatches(from,to,normalized)
+  if matches==nil then return nil,matchErr end
+  if matches then return true end
+  local added,addErr=invoke(self.api,"addSpecialExit",from,to,normalized)
+  if added==nil then return nil,addErr end
+  return true
+end
+
 function MapAdapter:setCurrent(roomID)
   if not self:isOwned(roomID) then return nil,"room "..tostring(roomID).." is not owned by DragonsGateHUD" end
   local ok,err=invoke(self.api,"centerview",roomID)
@@ -295,7 +330,7 @@ end
 function MapAdapter.mudletApi(globals)
   globals=globals or _G
   local api={}
-  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","getRoomCoordinates","getRoomsByPosition","setRoomIDbyHash","centerview","updateMap"}
+  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","addSpecialExit","getSpecialExits","getRoomCoordinates","getRoomsByPosition","setRoomIDbyHash","centerview","updateMap"}
   local function wrapper(name)
     return function(...)
       local fn=globals[name]
@@ -306,7 +341,7 @@ function MapAdapter.mudletApi(globals)
       return a,b,c
     end
   end
-  local mutations={addRoom=true,deleteRoom=true,addAreaName=true,deleteArea=true,setAreaUserData=true,setRoomArea=true,setRoomName=true,setRoomCoordinates=true,setRoomUserData=true,setExitStub=true,setExit=true,setRoomIDbyHash=true,centerview=true,updateMap=true}
+  local mutations={addRoom=true,deleteRoom=true,addAreaName=true,deleteArea=true,setAreaUserData=true,setRoomArea=true,setRoomName=true,setRoomCoordinates=true,setRoomUserData=true,setExitStub=true,setExit=true,addSpecialExit=true,setRoomIDbyHash=true,centerview=true,updateMap=true}
   for _,name in ipairs(names) do
     if mutations[name] then
       api[name]=wrapper(name)

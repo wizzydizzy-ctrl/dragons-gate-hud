@@ -1,7 +1,7 @@
 local Adapter=require("map_adapter")
 
 local function fakeMapApi(seed)
-  local api={rooms=seed or {},areas={},areaUser={},nextArea=1,fail={},path=nil,refreshed=0,deletedRooms={},deletedAreas={}}
+  local api={rooms=seed or {},areas={},areaUser={},nextArea=1,fail={},path=nil,refreshed=0,deletedRooms={},deletedAreas={},special={},specialAdds=0}
   local function gate(name)
     if api.fail[name]=="throw" then error(name.." exploded") end
     if api.fail[name] then return nil,name.." rejected" end
@@ -29,6 +29,15 @@ local function fakeMapApi(seed)
   end
   function api.setExitStub(id,d) local ok,e=gate("setExitStub"); if not ok then return nil,e end; api.rooms[id].stubs[d]=true; return true end
   function api.setExit(id,to,d) local ok,e=gate("setExit"); if not ok then return nil,e end; api.rooms[id].exits[d]=to; return true end
+  function api.addSpecialExit(from,to,command)
+    local ok,e=gate("addSpecialExit"); if not ok then return nil,e end
+    api.special[from]=api.special[from] or {}; api.special[from][to]=api.special[from][to] or {}; api.special[from][to][command]="0"; api.specialAdds=api.specialAdds+1; return true
+  end
+  function api.getSpecialExits(from,listAll)
+    local ok,e=gate("getSpecialExits"); if not ok then return nil,e end
+    eq(listAll,true)
+    return api.special[from] or {}
+  end
   function api.getRoomCoordinates(id) local ok,e=gate("getRoomCoordinates"); if not ok then return nil,e end; local r=api.rooms[id]; return r and r.x,r and r.y,r and r.z end
   function api.getRoomsByPosition(area,x,y,z) local ok,e=gate("getRoomsByPosition"); if not ok then return nil,e end; local out,i={},0; for id,r in pairs(api.rooms) do if r.area==area and r.x==x and r.y==y and r.z==z then out[i]=id;i=i+1 end end; return out end
   function api.centerview(id) local ok,e=gate("centerview"); if not ok then return nil,e end; api.centered=id; return true end
@@ -273,6 +282,39 @@ test("reports stub forward and reverse failures",function()
   ok,e=map:connect(1,2,"n",true); eq(ok,nil); eq(e,"reverse rejected")
 end)
 
+test("adds only an observed one-way special exit and is idempotent",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(100,"1"),{},"1")); assert(map:ensureRoom(descriptor(900,"1"),{},"special:900"))
+  assert(map:connectSpecial(100,900,"  GO Gate  ")); assert(Adapter.new(api):connectSpecial(100,900,"go gate"))
+  eq(api.special[100][900]["go gate"],"0"); eq(api.special[900],nil); eq(api.specialAdds,1)
+  eq(map:specialExitMatches(100,900,"GO GATE"),true)
+  eq(map:specialExitMatches(100,900,"leave gate"),false)
+  eq(map:specialExitMatches(100,901,"go gate"),false)
+end)
+
+test("contains special-exit read and write failures without inventing an edge",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(100,"1"),{},"1")); assert(map:ensureRoom(descriptor(900,"1"),{},"special:900"))
+  api.fail.getSpecialExits=true; local ok,e=map:connectSpecial(100,900,"go gate")
+  eq(ok,nil); eq(e,"getSpecialExits rejected"); eq(api.specialAdds,0)
+  api.fail.getSpecialExits=nil; api.fail.addSpecialExit=true; ok,e=map:connectSpecial(100,900,"go gate")
+  eq(ok,nil); eq(e,"addSpecialExit rejected"); eq(api.specialAdds,0); eq(next(api.special),nil)
+end)
+
+test("rejects invalid or unowned special-exit endpoints without mapper mutation",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(100,"1"),{},"1")); assert(map:ensureRoom(descriptor(900,"1"),{},"special:900"))
+  for _,values in ipairs({{0,900,"go gate"},{100,-1,"go gate"},{100,900,"   "}}) do
+    local ok=map:connectSpecial(values[1],values[2],values[3]); eq(ok,nil)
+  end
+  api.rooms[900].user["dghud.owner"]="PersonalMapper"
+  local ok,e=map:connectSpecial(100,900,"go gate")
+  eq(ok,nil); eq(e,"special exit endpoints are not owned by DragonsGateHUD"); eq(api.specialAdds,0); eq(next(api.special),nil)
+  api.rooms[900].user["dghud.owner"]="DragonsGateHUD"; api.rooms[100].user["dghud.owner"]="PersonalMapper"
+  ok,e=map:connectSpecial(100,900,"go gate")
+  eq(ok,nil); eq(e,"special exit endpoints are not owned by DragonsGateHUD"); eq(api.specialAdds,0); eq(next(api.special),nil)
+end)
+
 test("reads zero-indexed occupancy route and view",function()
   local api=fakeMapApi(); local map=Adapter.new(api); assert(map:ensureRoom(descriptor(10,"7"),{x=3,y=4,z=1})); local p=assert(map:coordinates(10)); eq(p.x,3); eq(p.y,4); eq(p.z,1)
   local occupied=assert(map:roomsAt("7",3,4,1)); eq(occupied[0],10); api.path={"n","e"}; eq(assert(map:route(10,20))[2],"e"); assert(map:setCurrent(10)); assert(map:center(10)); eq(api.refreshed,1)
@@ -315,6 +357,15 @@ test("production factory exposes private rollback wrappers",function()
   local deletedRoom,deletedArea
   local api=Adapter.mudletApi({deleteRoom=function(id) deletedRoom=id end,deleteArea=function(id) deletedArea=id end})
   assert(api.deleteRoom(51)); assert(api.deleteArea(6)); eq(deletedRoom,51); eq(deletedArea,6)
+end)
+
+test("production factory exposes guarded special-exit APIs",function()
+  local added; local globals={}
+  globals.addSpecialExit=function(from,to,command) added={from,to,command} end
+  globals.getSpecialExits=function(from,listAll) return {[900]={["go gate"]="0"}},from,listAll end
+  local api=Adapter.mudletApi(globals)
+  assert(api.addSpecialExit(100,900,"go gate")); eq(added[1],100); eq(added[2],900); eq(added[3],"go gate")
+  local exits,from,listAll=api.getSpecialExits(100,true); eq(exits[900]["go gate"],"0"); eq(from,100); eq(listAll,true)
 end)
 
 test("production route isolates speedWalkDir",function()

@@ -2,12 +2,34 @@ local Automapper=require("automapper")
 local Model=require("mapper_model")
 
 local function fakeMap()
-  local map={rooms={},stubs={},links={},current=nil,coordinatesByID={}}
-  function map:ensureRoom(room,coordinates) self.rooms[#self.rooms+1]={room=room,coordinates=coordinates}; self.coordinatesByID[room.id]=coordinates; return true end
+  local map={rooms={},roomByID={},ensureRequests={},stubs={},links={},special={},current=nil,coordinatesByID={}}
+  function map:ensureRoom(room,coordinates,partition)
+    local record=self.roomByID[room.id]
+    self.ensureRequests[#self.ensureRequests+1]={id=room.id,coordinates=coordinates,partition=partition}
+    if record and not record.owned then return nil,"room "..room.id.." is not owned by DragonsGateHUD" end
+    if self.ensureError then return nil,self.ensureError end
+    if not record then
+      record={room=room,coordinates=coordinates,partition=partition or room.area_key,game_area=room.area_key,owned=true}
+      self.roomByID[room.id]=record; self.rooms[#self.rooms+1]=record; self.coordinatesByID[room.id]=coordinates
+    else
+      record.room=room
+    end
+    return true
+  end
   function map:ensureStub(id,direction) self.stubs[#self.stubs+1]={id=id,direction=direction}; return true end
   function map:connect(from,to,direction,reverse) self.links[#self.links+1]={from=from,to=to,direction=direction,reverse=reverse}; return true end
+  function map:connectSpecial(from,to,command)
+    if self.specialError then return nil,self.specialError end
+    self.special[#self.special+1]={from=from,to=to,command=command}; return true
+  end
   function map:setCurrent(id) self.current=id; return true end
   function map:coordinates(id) return self.coordinatesByID[id] end
+  function map:roomRecord(id)
+    local record=self.roomByID[id]
+    if not record then return {exists=false,owned=false} end
+    return {exists=true,owned=record.owned,partition=record.partition,game_area=record.game_area,coordinates=record.coordinates}
+  end
+  function map:effectivePartition(id) local record=self.roomByID[id]; return record and record.partition end
   function map:roomsAt() return {} end
   return map
 end
@@ -36,6 +58,82 @@ test("does not invent a link after a teleport",function()
   local map=fakeMap(); local statuses={}; local mapper=Automapper.new(Model,map,function(kind) statuses[#statuses+1]=kind end)
   assert(mapper:onRoom({num=100,name="A",area=1,exits={"north"}})); assert(mapper:onRoom({num=900,name="Elsewhere",area=2,exits={}}))
   eq(#map.links,0); eq(map.current,900); eq(statuses[#statuses],"teleport")
+end)
+
+test("special movement creates a destination-rooted submap and exact one-way edge",function()
+  local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
+  assert(mapper:onRoom(room(100,"Outside",1,{"north"})))
+  assert(mapper:onSpecialTransition({from=100,to=900,command="go door",kind="special"}))
+  assert(mapper:onRoom(room(900,"Inside",1,{"south"})))
+  eq(map.roomByID[900].partition,"special:900")
+  eq(map.coordinatesByID[900].x,0); eq(map.coordinatesByID[900].y,0); eq(map.coordinatesByID[900].z,0)
+  eq(#map.special,1); eq(map.special[1].from,100); eq(map.special[1].to,900); eq(map.special[1].command,"go door")
+end)
+
+test("reverse special edge appears only after its exact return command is observed",function()
+  local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
+  assert(mapper:onRoom(room(100,"Outside",1,{"north"})))
+  assert(mapper:onSpecialTransition({from=100,to=900,command="go door",kind="special"})); assert(mapper:onRoom(room(900,"Inside",1,{"south"})))
+  eq(#map.special,1)
+  assert(mapper:onSpecialTransition({from=900,to=100,command="leave door",kind="special"})); assert(mapper:onRoom(room(100,"Outside",1,{"north"})))
+  eq(#map.special,2); eq(map.special[2].from,900); eq(map.special[2].to,100); eq(map.special[2].command,"leave door")
+end)
+
+test("special entry reuses an existing canonical destination without changing its partition or coordinates",function()
+  local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
+  assert(mapper:onRoom(room(900,"Known",7)))
+  map.roomByID[900].partition="persisted:900"; map.roomByID[900].coordinates={x=4,y=5,z=1}; map.coordinatesByID[900]=map.roomByID[900].coordinates
+  assert(mapper:onRoom(room(100,"Outside",1)))
+  assert(mapper:onSpecialTransition({from=100,to=900,command="enter known door",kind="special"})); assert(mapper:onRoom(room(900,"Known",7)))
+  local request=map.ensureRequests[#map.ensureRequests]
+  eq(request.partition,"persisted:900"); eq(request.coordinates.x,4); eq(request.coordinates.y,5); eq(request.coordinates.z,1)
+  eq(map.roomByID[900].partition,"persisted:900"); eq(#map.rooms,2); eq(#map.special,1)
+end)
+
+test("directional exploration inherits a special partition until the game area changes",function()
+  local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
+  assert(mapper:onRoom(room(100,"Outside",1,{"north"})))
+  assert(mapper:onSpecialTransition({from=100,to=900,command="go gate",kind="special"})); assert(mapper:onRoom(room(900,"Inside",1,{"north"})))
+  mapper:onOutgoing("north"); assert(mapper:onRoom(room(901,"Hall",1,{"south","north"})))
+  eq(map.roomByID[901].partition,"special:900"); eq(map.coordinatesByID[901].y,1)
+  mapper:onOutgoing("north"); assert(mapper:onRoom(room(902,"Elsewhere",2,{"south"})))
+  eq(map.roomByID[902].partition,"2"); eq(map.coordinatesByID[902].y,2)
+end)
+
+test("multiple origins reuse one destination-rooted submap without duplicating the room",function()
+  local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
+  assert(mapper:onRoom(room(100,"West",1))); assert(mapper:onSpecialTransition({from=100,to=900,command="go west gate",kind="special"})); assert(mapper:onRoom(room(900,"Inside",1)))
+  assert(mapper:onRoom(room(200,"East",1))); assert(mapper:onSpecialTransition({from=200,to=900,command="go east gate",kind="special"})); assert(mapper:onRoom(room(900,"Inside",1)))
+  eq(#map.rooms,3); eq(map.roomByID[900].partition,"special:900"); eq(#map.special,2)
+  eq(map.special[1].command,"go west gate"); eq(map.special[2].command,"go east gate")
+end)
+
+test("same-room refresh preserves a pending special transition without creating an edge",function()
+  local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
+  assert(mapper:onRoom(room(100,"Outside",1)))
+  assert(mapper:onSpecialTransition({from=100,to=900,command="go gate",kind="special"}))
+  assert(mapper:onRoom(room(100,"Outside refreshed",1)))
+  eq(mapper.pending.from,100); eq(mapper.pending.to,900); eq(#map.special,0)
+  assert(mapper:onRoom(room(900,"Inside",1)))
+  eq(mapper.pending,nil); eq(#map.special,1); eq(map.special[1].command,"go gate")
+end)
+
+test("unowned special destination collision clears pending without moving or linking it",function()
+  local map=fakeMap(); local personal={room=room(900,"Personal",1),coordinates={x=8,y=7,z=6},partition="personal",game_area="1",owned=false}
+  map.roomByID[900]=personal; map.coordinatesByID[900]=personal.coordinates
+  local mapper=Automapper.new(Model,map,function() end); assert(mapper:onRoom(room(100,"Outside",1)))
+  assert(mapper:onSpecialTransition({from=100,to=900,command="go gate",kind="special"}))
+  local ok,e=mapper:onRoom(room(900,"Collision",1)); eq(ok,nil); assert(e:find("not owned",1,true))
+  eq(mapper.pending,nil); eq(map.current,100); eq(#map.special,0)
+  eq(personal.partition,"personal"); eq(personal.coordinates.x,8); eq(personal.coordinates.y,7); eq(personal.coordinates.z,6)
+end)
+
+test("failed special-exit write clears pending and never records the edge",function()
+  local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end); assert(mapper:onRoom(room(100,"Outside",1)))
+  map.specialError="addSpecialExit rejected"
+  assert(mapper:onSpecialTransition({from=100,to=900,command="go gate",kind="special"}))
+  local ok,e=mapper:onRoom(room(900,"Inside",1)); eq(ok,nil); eq(e,"addSpecialExit rejected")
+  eq(mapper.pending,nil); eq(map.current,100); eq(#map.special,0); eq(map.roomByID[900].partition,"special:900")
 end)
 
 test("tracks exact standard directions and clears pending on exceptional movement",function()

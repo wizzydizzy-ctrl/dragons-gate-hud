@@ -110,6 +110,8 @@ test("chat output colors its trusted prefix without printing HTML markup literal
   view:renderChat({{category="ROOM",timestamp="2026-08-31T20:12:00-04:00",line='Gia says, "hey"'}},{"ROOM"},"ALL")
   eq(#(view.chat_output.hechoes or {}),1)
   eq(view.chat_output.hechoes[1]:find("<span",1,true),nil)
+  eq(view.chat_output.hechoes[1]:find("<",1,true),nil)
+  eq(view.chat_output.hechoes[1],"#75857c[20:12]#r #d7d0bfROOM#r")
   eq(#view.chat_output.echoes,1)
   eq(view.chat_output.echoes[1]:find('Gia says, "hey"',1,true)~=nil,true)
 end)
@@ -136,7 +138,7 @@ test("chat rendering keeps only the newest thousand and isolates untrusted text 
   eq(#view.chat_output.echoes,1000); eq(view.chat_output.echoes[1]:find("line-2",1,true)~=nil,true)
   local last=view.chat_output.echoes[#view.chat_output.echoes]
   eq(last:find("<b>owned &",1,true)~=nil,true); eq(last:find("\n\27",1,true),nil)
-  eq(view.chat_output.hechoes[#view.chat_output.hechoes]:find("<#75857c>",1,true)~=nil,true)
+  eq(view.chat_output.hechoes[#view.chat_output.hechoes]:find("#75857c",1,true)~=nil,true)
 end)
 
 test("chat tabs stay inside narrow panels and expose deterministic overflow",function()

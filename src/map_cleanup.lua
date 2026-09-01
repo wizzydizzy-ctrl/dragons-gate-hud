@@ -1,0 +1,235 @@
+local Cleanup={}
+Cleanup.__index=Cleanup
+
+local function positiveInteger(value)
+  local number=tonumber(value)
+  if not number or number~=number or number==math.huge or number==-math.huge or number<=0 or number%1~=0 then return nil end
+  return number
+end
+
+local function copy(value,seen)
+  if type(value)~="table" then return value end
+  seen=seen or {}
+  if seen[value] then error("cleanup plans must not contain cycles") end
+  seen[value]=true
+  local result={}
+  for key,item in pairs(value) do result[copy(key,seen)]=copy(item,seen) end
+  seen[value]=nil
+  return result
+end
+
+local function equal(left,right,seen)
+  if type(left)~=type(right) then return false end
+  if type(left)~="table" then return left==right end
+  seen=seen or {}
+  if seen[left]==right then return true end
+  seen[left]=right
+  for key,value in pairs(left) do if not equal(value,right[key],seen) then return false end end
+  for key in pairs(right) do if left[key]==nil then return false end end
+  return true
+end
+
+local function contains(ids,target)
+  for _,id in ipairs(ids or {}) do if id==target then return true end end
+  return false
+end
+
+local function guardedAreaTable(map)
+  local api=type(map)=="table" and map.api or nil
+  local fn=type(api)=="table" and api.getAreaTable or nil
+  if type(fn)~="function" then return nil,"Mudlet mapper API getAreaTable is unavailable" end
+  local ok,areas,err=pcall(fn)
+  if not ok then return nil,"Mudlet mapper API getAreaTable failed: "..tostring(areas) end
+  if areas==nil then return nil,err or "Mudlet mapper API getAreaTable failed" end
+  if type(areas)~="table" then return nil,"Mudlet mapper API getAreaTable returned invalid data" end
+  return areas
+end
+
+local function resolveArea(map,target)
+  local numeric=positiveInteger(target)
+  if numeric then return numeric end
+  local name=tostring(target or "")
+  if name=="" then return nil,"mapper area target is required" end
+  local areas,areasErr=guardedAreaTable(map)
+  if not areas then return nil,areasErr end
+  local matches={}
+  local function add(value)
+    local id=positiveInteger(value)
+    if id then matches[id]=true end
+  end
+  for key,value in pairs(areas) do
+    if type(key)=="string" and key==name then add(value) end
+    if type(value)=="string" and value==name then add(key) end
+  end
+  local found
+  for id in pairs(matches) do
+    if found and found~=id then return nil,"mapper area "..name.." is ambiguous" end
+    found=id
+  end
+  if not found then return nil,"mapper area "..name.." does not exist" end
+  return found
+end
+
+local function roomEvidence(map,ids,areaID,partition)
+  local evidence={}
+  for _,roomID in ipairs(ids) do
+    local record,recordErr=map:roomRecord(roomID)
+    if record==nil then return nil,recordErr end
+    if not record.exists then return nil,"room "..tostring(roomID).." does not exist" end
+    if not record.owned then return nil,"room "..tostring(roomID).." is not owned by DragonsGateHUD" end
+    if areaID and record.area~=areaID then return nil,"room "..tostring(roomID).." is outside mapper area "..tostring(areaID) end
+    if partition and record.partition~=partition then return nil,"room "..tostring(roomID).." is outside partition "..partition end
+    evidence[#evidence+1]={id=roomID,area=record.area,owned=true,partition=record.partition}
+  end
+  return evidence
+end
+
+local function safetyError(snapshot,roomIDs)
+  if type(snapshot)~="table" then return "cleanup safety state is unavailable" end
+  if contains(roomIDs,snapshot.current_room) then return "cleanup includes the current room" end
+  if snapshot.walking then return "map walking is active" end
+  if type(snapshot.route_rooms)~="table" then return "cleanup safety state is unavailable" end
+  for _,roomID in ipairs(snapshot.route_rooms) do if contains(roomIDs,roomID) then return "cleanup intersects the active route" end end
+  if snapshot.pending_automap then return "automapper movement is pending" end
+  if snapshot.pending_special then return "special transition is pending" end
+  return nil
+end
+
+function Cleanup.new(map,runtime,clock,tokenFactory,ttlSeconds)
+  assert(type(map)=="table","cleanup map adapter is required")
+  assert(type(runtime)=="table","cleanup runtime is required")
+  assert(type(clock)=="function","cleanup clock is required")
+  assert(type(tokenFactory)=="function","cleanup token factory is required")
+  local ttl=tonumber(ttlSeconds or 30)
+  assert(ttl and ttl>0,"cleanup token lifetime must be positive")
+  return setmetatable({map=map,runtime=runtime,clock=clock,tokenFactory=tokenFactory,ttl=ttl},Cleanup)
+end
+
+function Cleanup:_finishPlan(plan,issueToken)
+  local evidence,evidenceErr=roomEvidence(self.map,plan.room_ids,plan.area_id,plan.partition)
+  if not evidence then return nil,evidenceErr end
+  plan.ownership=evidence
+  local inbound,inboundErr=self.map:inboundSources(plan.room_ids)
+  if inbound==nil then return nil,inboundErr end
+  plan.inbound_sources=copy(inbound)
+  for _,source in ipairs(inbound) do
+    local record,recordErr=self.map:roomRecord(source)
+    if record==nil then return nil,recordErr end
+    if not record.exists or not record.owned then return nil,"unowned room "..tostring(source).." has an inbound exit" end
+  end
+  local snapshot,snapshotErr=self.runtime:safetySnapshot(copy(plan.room_ids))
+  if snapshot==nil then return nil,snapshotErr or "cleanup safety state is unavailable" end
+  local blocker=safetyError(snapshot,plan.room_ids)
+  if blocker then return nil,blocker end
+  plan.safety=copy(snapshot)
+  plan.blockers={}
+  if issueToken then
+    plan.created_at=self.clock()
+    plan.token=tostring(self.tokenFactory())
+    if plan.token=="" then return nil,"cleanup token factory returned an empty token" end
+  end
+  return plan
+end
+
+function Cleanup:_roomPlan(roomID,issueToken)
+  local room=positiveInteger(roomID)
+  if not room then return nil,"room ID must be a positive integer" end
+  local record,recordErr=self.map:roomRecord(room)
+  if record==nil then return nil,recordErr end
+  return self:_finishPlan({operation="delete_room",target=tostring(room),area_id=record.area,partition=nil,room_ids={room}},issueToken)
+end
+
+function Cleanup:_areaPlan(target,issueToken)
+  local area,resolveErr=resolveArea(self.map,target)
+  if not area then return nil,resolveErr end
+  local record,recordErr=self.map:areaRecord(area)
+  if record==nil then return nil,recordErr end
+  if not record.owned then return nil,"mapper area "..tostring(area).." is not owned by DragonsGateHUD" end
+  local rooms,roomsErr=self.map:roomsInArea(area)
+  if rooms==nil then return nil,roomsErr end
+  return self:_finishPlan({operation="clear_area",target=tostring(target),area_id=area,partition=nil,room_ids=copy(rooms)},issueToken)
+end
+
+function Cleanup:_submapPlan(rootRoomID,issueToken)
+  local root=positiveInteger(rootRoomID)
+  if not root then return nil,"submap root room ID must be a positive integer" end
+  local partition="special:"..tostring(root)
+  local area,resolveErr=resolveArea(self.map,"Dragons Gate - Submap "..tostring(root))
+  if not area then return nil,resolveErr end
+  local record,recordErr=self.map:areaRecord(area)
+  if record==nil then return nil,recordErr end
+  if not record.owned then return nil,"mapper area "..tostring(area).." is not owned by DragonsGateHUD" end
+  local rooms,roomsErr=self.map:roomsInArea(area)
+  if rooms==nil then return nil,roomsErr end
+  return self:_finishPlan({operation="clear_submap",target=tostring(root),area_id=area,partition=partition,room_ids=copy(rooms)},issueToken)
+end
+
+function Cleanup:_preview(builder,...)
+  if self.busy then return nil,"cleanup is already running" end
+  local plan,err=builder(self,...,true)
+  if not plan then return nil,err end
+  self.plan=copy(plan)
+  return copy(plan)
+end
+
+function Cleanup:previewRoom(roomID) return self:_preview(self._roomPlan,roomID) end
+function Cleanup:previewArea(target) return self:_preview(self._areaPlan,target) end
+function Cleanup:previewSubmap(rootRoomID) return self:_preview(self._submapPlan,rootRoomID) end
+
+function Cleanup:pending()
+  return self.plan and copy(self.plan) or nil
+end
+
+function Cleanup:cancel()
+  self.plan=nil
+  return true
+end
+
+function Cleanup:_rebuild(plan)
+  if plan.operation=="delete_room" then return self:_roomPlan(plan.target,false) end
+  if plan.operation=="clear_area" then return self:_areaPlan(plan.target,false) end
+  if plan.operation=="clear_submap" then return self:_submapPlan(plan.target,false) end
+  return nil,"unknown cleanup operation"
+end
+
+local function comparable(plan)
+  return {
+    operation=plan.operation,target=plan.target,area_id=plan.area_id,partition=plan.partition,
+    room_ids=plan.room_ids,ownership=plan.ownership,inbound_sources=plan.inbound_sources,safety=plan.safety,blockers=plan.blockers,
+  }
+end
+
+function Cleanup:confirm(token)
+  if self.busy then return nil,"cleanup is already running" end
+  local plan=self.plan
+  if not plan or tostring(token)~=plan.token then return nil,"cleanup confirmation token is invalid" end
+  self.plan=nil
+  if self.clock()-plan.created_at>self.ttl then return nil,"cleanup confirmation token has expired" end
+  local rebuilt=self:_rebuild(plan)
+  if not rebuilt or not equal(comparable(plan),comparable(rebuilt)) then return nil,"cleanup preview is stale" end
+  self.busy=true
+  local before,beforeErr=self.runtime:beforeDelete(copy(plan))
+  if before==nil or before==false then self.busy=false; return nil,beforeErr or "cleanup preparation failed" end
+  local result={deleted={},failed=nil,untouched={},area_deleted=false}
+  for index,roomID in ipairs(plan.room_ids) do
+    local deleted,deleteErr=self.map:deleteOwnedRoom(roomID)
+    if not deleted then
+      result.failed=roomID; result.error=deleteErr
+      for untouched=index,#plan.room_ids do result.untouched[#result.untouched+1]=plan.room_ids[untouched] end
+      break
+    end
+    result.deleted[#result.deleted+1]=roomID
+  end
+  if not result.failed and plan.operation~="delete_room" then
+    local areaDeleted,areaErr=self.map:deleteEmptyOwnedArea(plan.area_id)
+    if areaDeleted then result.area_deleted=true else result.area_error=areaErr end
+  end
+  local invalidatedArea=result.area_deleted and plan.area_id or nil
+  self.map:invalidateDeleted(copy(result.deleted),invalidatedArea)
+  local after,afterErr=self.runtime:afterDelete(copy(result))
+  if after==nil or after==false then result.lifecycle_error=afterErr or "cleanup reconciliation failed" end
+  self.busy=false
+  return result
+end
+
+return Cleanup

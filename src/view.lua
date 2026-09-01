@@ -91,8 +91,13 @@ function View.equipmentContent(v,items,t,layout)
   local body="Weapon &nbsp; "..ready(v.weapon_readied).."<br>Shield &nbsp; "..ready(v.shield_readied)
   return View.withFont("<span style='color:"..t.accent.."'><b>EQUIPMENT</b></span><br><br>"..body,layout.body_font)
 end
-function View.wealthContent(v,t,layout)
-  return View.withFont("<span style='color:"..t.accent.."'><b>WEALTH</b></span><br><br>Gold &nbsp; <b>"..v.gold.."</b><br>Silver &nbsp; <b>"..v.silver.."</b>",layout.body_font)
+function View.inventoryContent(inventory,vitals,t,layout,capacity)
+  inventory=inventory or {}; vitals=vitals or {}
+  local rows=View.inventoryRows(inventory.items,capacity); local lines={"<span style='color:"..t.accent.."'><b>INVENTORY</b></span>"}
+  for _,item in ipairs(rows) do if item.overflow then lines[#lines+1]="<span style='color:"..t.muted.."'>"..item.label.."</span>" else lines[#lines+1]=esc(item.name).." <span style='color:"..t.muted.."'>"..esc(item.weight or "").." lb</span>" end end
+  if inventory.total_weight then lines[#lines+1]="<br><b>Total "..esc(inventory.total_weight).." lb</b>" end
+  lines[#lines+1]="<span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(vitals.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(vitals.silver or 0).."sp</b></span>"
+  return View.withFont(table.concat(lines,"<br>"),layout.inventory_font)
 end
 local function label(name,parent,style,geyser)
   local item=(geyser or Geyser).Label:new({name=name,x=0,y=0,width=10,height=10},parent); item:setStyleSheet(style or "background:transparent;"); return item
@@ -120,7 +125,6 @@ function View.new(settings)
   self.details=label("DGHUD.Details",self.root,"background:"..t.panel..";border:1px solid "..t.border..";color:"..t.text..";padding:18px;")
   self.left=label("DGHUD.LeftRail",self.root,"background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:18px;")
   self.equipment=label("DGHUD.Equipment",self.root,"background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:14px;")
-  self.wealth=label("DGHUD.Wealth",self.root,"background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:14px;")
   self.inventory=label("DGHUD.Inventory",self.root,"background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:14px;")
   self.right=Geyser.Container:new({name="DGHUD.RightRail",x=0,y=0,width=300,height=500},self.root)
   self.right_bg=label("DGHUD.RightBackground",self.right,"background:"..t.panel..";border-right:1px solid "..t.border..";")
@@ -214,7 +218,7 @@ function View:applyLayout(layout)
   self.identity:setStyleSheet("background:"..t.panel..";border-right:1px solid "..t.border..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.details:setStyleSheet("background:"..t.panel..";border:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.left:setStyleSheet("background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
-  for _,card in ipairs({self.equipment,self.wealth,self.inventory}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
+  for _,card in ipairs({self.equipment,self.inventory}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
   self.right_title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.lower_body_font.."px;font-weight:700;padding:"..lp.."px;")
   self.room:setStyleSheet("background:#101a16;border:1px solid #385044;border-radius:7px;color:"..t.text..";padding:"..lp.."px;font-size:"..layout.lower_body_font.."px;")
   self.bottom:setStyleSheet("background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px "..p.."px;font-size:"..layout.small_font.."px;")
@@ -241,17 +245,17 @@ function View:applyLayout(layout)
     layout.details_columns=2
     self.details:hide()
     local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=2
-    local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18; local wealth_h=layout.heading_font+layout.details_line_height*2+p*2+18
-    place(self.equipment,card_x,top+p,card_w,equipment_h); place(self.wealth,card_x,top+p+equipment_h+12,card_w,wealth_h)
-    local inventory_y=top+p+equipment_h+wealth_h+24; local rail_bottom=(layout.window_height or 800)-bottom-p
-    local minimum_inventory_h=layout.heading_font+layout.inventory_row_height+p*2+30
+    local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18
+    place(self.equipment,card_x,top+p,card_w,equipment_h)
+    local inventory_y=top+p+equipment_h+12; local rail_bottom=(layout.window_height or 800)-bottom-p
+    local minimum_inventory_h=layout.heading_font+layout.inventory_row_height*3+p*2+30
     local right_details_h=layout.details_line_height*Layout.detailsCardRows(layout.details_columns)+p*2+18
     if rail_bottom-inventory_y>=right_details_h+12 then place(self.details,card_x,rail_bottom-right_details_h,card_w,right_details_h); rail_bottom=rail_bottom-right_details_h-12 else self.details:hide() end
     local inventory_h=rail_bottom-inventory_y
-    if inventory_h>=minimum_inventory_h then place(self.inventory,card_x,inventory_y,card_w,inventory_h); self.inventory_capacity=math.max(1,math.floor((inventory_h-layout.heading_font-p*2-30)/layout.inventory_row_height)) else self.inventory:hide(); self.inventory_capacity=0 end
-    View.raiseCards({self.equipment,self.wealth,self.inventory,self.details})
+    if inventory_h>=minimum_inventory_h then place(self.inventory,card_x,inventory_y,card_w,inventory_h); self.inventory_capacity=math.max(1,math.floor((inventory_h-layout.heading_font-p*2-30)/layout.inventory_row_height)-2) else self.inventory:hide(); self.inventory_capacity=0 end
+    View.raiseCards({self.equipment,self.inventory,self.details})
   else
-    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.wealth:hide(); self.inventory:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
+    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
   end
   if layout.mode~="compact" then
     place(self.right_bg,0,0,"100%","100%"); self.right_title:hide()
@@ -292,10 +296,7 @@ function View:renderNavigation(exits)
 end
 function View:renderInventory(s)
   local t=self.settings.theme; local layout=self.layout; if not layout or layout.mode=="compact" then return end
-  local rows=View.inventoryRows(s.inventory.items,self.inventory_capacity or 0); local lines={"<span style='color:"..t.accent.."'><b>INVENTORY</b></span>"}
-  for _,item in ipairs(rows) do if item.overflow then lines[#lines+1]="<span style='color:"..t.muted.."'>"..item.label.."</span>" else lines[#lines+1]=esc(item.name).." <span style='color:"..t.muted.."'>"..esc(item.weight or "").." lb</span>" end end
-  if s.inventory.total_weight then lines[#lines+1]="<br><b>Total "..esc(s.inventory.total_weight).." lb</b>" end
-  self.inventory:echo(View.withFont(table.concat(lines,"<br>"),layout.inventory_font))
+  self.inventory:echo(View.inventoryContent(s.inventory,s.vitals,t,layout,self.inventory_capacity or 0))
 end
 function View:renderChat(entries,categories,activeFilter,savedScroll)
   entries=type(entries)=="table" and entries or {}; categories=type(categories)=="table" and categories or {}
@@ -369,7 +370,7 @@ function View:update(s)
   self.last_state=s; local t=self.settings.theme; local v=s.vitals; local layout=self.layout or {mode="wide",heading_font=20}; local ready=function(x) return x and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:"..t.hp.."'><b>NOT READY</b></span>" end
   self.header:echo(View.headerContent(layout,t,s.character.full_name)); self.attribute_strip:echo(View.attributeStripContent(s.attributes,t,layout))
   self.identity:echo(View.identityContent(s.character,t,layout))
-  self.equipment:echo(View.equipmentContent(v,s.equipment.items,t,layout)); self.wealth:echo(View.wealthContent(v,t,layout))
+  self.equipment:echo(View.equipmentContent(v,s.equipment.items,t,layout))
   self.hp:setValue(v.hp.current,math.max(v.hp.maximum,1),"Health  "..v.hp.current.." / "..v.hp.maximum); self.fatigue:setValue(v.fatigue.current,math.max(v.fatigue.maximum,1),"Fatigue  "..v.fatigue.current.." / "..v.fatigue.maximum); self.carry:setValue(v.carry.current,math.max(v.carry.maximum,1),"Carry  "..v.carry.current.." / "..v.carry.maximum)
   if v.psi.visible then self.psi:setValue(v.psi.current,v.psi.maximum,"PSI  "..v.psi.current.." / "..v.psi.maximum) end; if v.web.visible then self.web:setValue(v.web.current,v.web.maximum,"Web  "..v.web.current.." / "..v.web.maximum) end
   self.room:echo(View.withFont("<span style='color:"..t.accent..";font-size:"..layout.lower_heading_font.."px'><b>"..esc(s.room.name).."</b></span><br><span style='color:"..t.muted.."'>Room "..esc(s.room.num or "—").." · Area "..esc(s.room.area or "—").."</span><br><br>"..esc(s.room.environment).."<br>Players &nbsp; <b>"..#s.room.players.."</b><br>Flags &nbsp; "..esc(table.concat(s.room.flags,", ")),layout.lower_body_font))

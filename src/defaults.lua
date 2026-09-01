@@ -1,11 +1,11 @@
 return {
   schema = 1,
   package_name = "DragonsGateHUD",
-  version = "0.2.51",
+  version = "0.2.52",
   layout = { left_width = 190, right_width = 270, min_console_width = 520 },
   chat = { enabled=true, height_percent=.21, target_height=240, min_height=160, max_height=320, visible_limit=1000, dedupe_seconds=3, timestamps=true },
   mapper = { enabled=true, walk_timeout=12, minimum_height=90, schema=1 },
-  theme = { background="#080b0a", panel="#0d1210", border="#423825", text="#d7d0bf", muted="#75857c", accent="#e0b56c", jade="#79b386", hp="#ba5147", fatigue="#8bad4e" },
+  theme = { background="#080b0a", panel="#0d1210", border="#423825", text="#d7d0bf", muted="#75857c", accent="#e0b56c", jade="#79b386", gold="#e0b84f", silver="#c0c0c0", hp="#ba5147", fatigue="#8bad4e" },
   panels = { character=true, vitals=true, room=true, currency=true },
   github = { owner="wizzydizzy-ctrl", repository="dragons-gate-hud", channel="stable" },
   update = { auto_check=false, auto_apply=false, timeout_seconds=30, manifest_limit=65536, package_limit=10485760 }

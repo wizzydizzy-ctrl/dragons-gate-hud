@@ -10,9 +10,8 @@ test("identity and right rail content remain separate",function()
   local equipment=View.equipmentContent({weapon_readied=true,shield_readied=false,gold=3,silver=9},theme,layout)
   eq(identity:find("Test Tester",1,true)~=nil,true); eq(identity:find("Monitanian",1,true)~=nil,true)
   eq(identity:find("Fighter",1,true)~=nil,true); eq(identity:find("entropy",1,true)~=nil,true)
-  local wealth=View.wealthContent({gold=3,silver=9},theme,layout)
   eq(identity:find("EQUIPMENT",1,true)==nil,true); eq(equipment:find("Test Tester",1,true)==nil,true)
-  eq(equipment:find("EQUIPMENT",1,true)~=nil,true); eq(equipment:find("WEALTH",1,true)==nil,true); eq(wealth:find("WEALTH",1,true)~=nil,true)
+  eq(equipment:find("EQUIPMENT",1,true)~=nil,true); eq(equipment:find("WEALTH",1,true)==nil,true)
 end)
 
 test("visible header removes protocol wording",function()
@@ -22,6 +21,14 @@ end)
 test("inventory truncates without splitting rows",function()
   local rows=View.inventoryRows({{name="One",weight=1},{name="Two",weight=2},{name="Three",weight=3}},2)
   eq(#rows,2); eq(rows[1].name,"One"); eq(rows[2].label,"+2 more"); eq(rows[2].overflow,2)
+end)
+test("inventory footer renders compact colored gold and silver currency",function()
+  local theme={accent="#d8ae53",muted="#91a098",gold="#e0b84f",silver="#c0c0c0"}
+  local html=View.inventoryContent({items={},total_weight=0},{gold=12,silver=34},theme,{inventory_font=18},4)
+  eq(html:find("WEALTH",1,true),nil)
+  eq(html:find("12gp",1,true)~=nil,true); eq(html:find("34sp",1,true)~=nil,true)
+  eq(html:find("color:#e0b84f",1,true)~=nil,true); eq(html:find("color:#c0c0c0",1,true)~=nil,true)
+  eq(html:find("12gp",1,true)<html:find("34sp",1,true),true)
 end)
 test("identity details render while attributes move to the top strip",function()
   local theme={accent="#d8ae53",jade="#72bd82",muted="#91a098"}; local layout={body_font=20,heading_font=25}
@@ -110,6 +117,10 @@ local function chatView()
   Geyser=original
   return view
 end
+
+test("view has no standalone wealth widget",function()
+  local view=chatView(); eq(view.wealth,nil)
+end)
 
 test("native mapper is embedded immediately above the compass",function()
   local layout=require("layout").compute(1920,1080); local view=chatView(); view:applyLayout(layout)

@@ -66,6 +66,16 @@ function View.inventoryRows(items,capacity)
   if capacity>0 then rows[#rows+1]={label="+"..(#items-visible).." more",overflow=#items-visible} end
   return rows
 end
+local function clipped(value,width)
+  value=tostring(value or ""):gsub("%c"," "); width=math.max(1,tonumber(width) or 1)
+  if #value<=width then return value end
+  return width>1 and value:sub(1,width-1).."~" or value:sub(1,1)
+end
+function View.skillHeader(nameWidth) return string.format("%-"..nameWidth.."s %3s %4s","SKILLS","LVL","USES") end
+function View.skillLine(skill,nameWidth)
+  nameWidth=math.max(1,tonumber(nameWidth) or 22); skill=skill or {}
+  return string.format("%-"..nameWidth.."s %3d %4d",clipped(skill.name,nameWidth),tonumber(skill.level) or 0,tonumber(skill.remain) or 0)
+end
 function View.detailsContent(combat,attributes,t,layout,vitals)
   combat=combat or {}; attributes=attributes or {}; local parts={}; local columns=layout.details_columns or 4
   if combat.body_armor then
@@ -126,6 +136,12 @@ function View.new(settings)
   self.left=label("DGHUD.LeftRail",self.root,"background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:18px;")
   self.equipment=label("DGHUD.Equipment",self.root,"background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:14px;")
   self.inventory=label("DGHUD.Inventory",self.root,"background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:14px;")
+  self.inventory_title=label("DGHUD.Inventory.Title",self.root,"background:transparent;color:"..t.accent..";")
+  self.inventory_output=Geyser.MiniConsole:new({name="DGHUD.Inventory.Output",x=0,y=0,width=100,height=100},self.root); self.inventory_output:enableScrollBar(); self.inventory_output:disableHorizontalScrollBar()
+  self.inventory_footer=label("DGHUD.Inventory.Footer",self.root,"background:transparent;color:"..t.text..";")
+  self.skills=label("DGHUD.Skills",self.root,"background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";")
+  self.skills_title=label("DGHUD.Skills.Title",self.root,"background:transparent;color:"..t.accent..";")
+  self.skills_output=Geyser.MiniConsole:new({name="DGHUD.Skills.Output",x=0,y=0,width=100,height=100},self.root); self.skills_output:enableScrollBar(); self.skills_output:disableHorizontalScrollBar()
   self.right=Geyser.Container:new({name="DGHUD.RightRail",x=0,y=0,width=300,height=500},self.root)
   self.right_bg=label("DGHUD.RightBackground",self.right,"background:"..t.panel..";border-right:1px solid "..t.border..";")
   self.right_title=label("DGHUD.RightTitle",self.right,"background:transparent;color:"..t.accent..";font-size:13px;font-weight:700;padding:10px 14px;")
@@ -233,7 +249,10 @@ function View:applyLayout(layout)
   self.identity:setStyleSheet("background:"..t.panel..";border-right:1px solid "..t.border..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.details:setStyleSheet("background:"..t.panel..";border:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.left:setStyleSheet("background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
-  for _,card in ipairs({self.equipment,self.inventory}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
+  for _,card in ipairs({self.equipment,self.inventory,self.skills}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
+  for _,title in ipairs({self.inventory_title,self.skills_title}) do title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.list_font.."px;font-weight:700;") end
+  self.inventory_footer:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.list_font.."px;")
+  for _,output in ipairs({self.inventory_output,self.skills_output}) do if output.setFontSize then output:setFontSize(layout.list_font) end; if output.setWrap then output:setWrap(200) end end
   self.right_title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.lower_body_font.."px;font-weight:700;padding:"..lp.."px;")
   self.room:setStyleSheet("background:#101a16;border:1px solid #385044;border-radius:7px;color:"..t.text..";padding:"..lp.."px;font-size:"..layout.lower_body_font.."px;")
   self.bottom:setStyleSheet("background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px "..p.."px;font-size:"..layout.small_font.."px;")
@@ -257,6 +276,7 @@ function View:applyLayout(layout)
     layout.lower_geometry=lower
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
     local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=2
+    self.skill_character_capacity=math.max(17,math.floor(math.max(1,card_w-p*2-18)/(layout.list_font*.62))); self.skill_name_width=math.max(8,math.min(24,self.skill_character_capacity-9))
     local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18
     local show_psi,show_web=psi_visible,web_visible
     local function vitalsHeight()
@@ -277,14 +297,25 @@ function View:applyLayout(layout)
     self.details:hide()
     place(self.equipment,card_x,top+p,card_w,equipment_h)
     local inventory_y=top+p+equipment_h+12; local rail_bottom=(layout.window_height or 800)-bottom-vitals_h-12
-    local minimum_inventory_h=layout.heading_font+layout.inventory_row_height*3+p*2+30
+    local rows=layout.list_visible_rows or 5; local list_h=layout.list_row_height*rows; local title_h=layout.list_row_height+4; local footer_h=layout.list_row_height*2
+    local inventory_h=p*2+title_h+list_h+footer_h+8; local skills_h=p*2+title_h+list_h+4
     local right_details_h=layout.details_line_height*Layout.detailsCardRows(layout.details_columns)+p*2+18
-    if rail_bottom-inventory_y>=right_details_h+12+minimum_inventory_h then place(self.details,card_x,rail_bottom-right_details_h,card_w,right_details_h); rail_bottom=rail_bottom-right_details_h-12 else self.details:hide() end
-    local inventory_h=rail_bottom-inventory_y
-    if inventory_h>=minimum_inventory_h then place(self.inventory,card_x,inventory_y,card_w,inventory_h); self.inventory_capacity=math.max(1,math.floor((inventory_h-layout.heading_font-p*2-30)/layout.inventory_row_height)-2) else self.inventory:hide(); self.inventory_capacity=0 end
-    View.raiseCards({self.equipment,self.inventory,self.details})
+    local required=inventory_h+12+skills_h
+    if rail_bottom-inventory_y>=required then
+      place(self.inventory,card_x,inventory_y,card_w,inventory_h)
+      place(self.inventory_title,"100%-"..(layout.right-p*2),inventory_y+p,card_w-p*2,title_h)
+      place(self.inventory_output,"100%-"..(layout.right-p*2),inventory_y+p+title_h,card_w-p*2,list_h)
+      place(self.inventory_footer,"100%-"..(layout.right-p*2),inventory_y+p+title_h+list_h+4,card_w-p*2,footer_h)
+      local skills_y=rail_bottom-skills_h
+      if skills_y-(inventory_y+inventory_h)>=right_details_h+24 then place(self.details,card_x,inventory_y+inventory_h+12,card_w,right_details_h) else self.details:hide() end
+      place(self.skills,card_x,skills_y,card_w,skills_h); place(self.skills_title,"100%-"..(layout.right-p*2),skills_y+p,card_w-p*2,title_h); place(self.skills_output,"100%-"..(layout.right-p*2),skills_y+p+title_h,card_w-p*2,list_h)
+    else
+      self.skills:hide(); self.skills_title:hide(); self.skills_output:hide(); self.details:hide()
+      local fallback_h=math.max(0,rail_bottom-inventory_y); if fallback_h>title_h+layout.list_row_height+p*2 then place(self.inventory,card_x,inventory_y,card_w,fallback_h); place(self.inventory_title,"100%-"..(layout.right-p*2),inventory_y+p,card_w-p*2,title_h); place(self.inventory_output,"100%-"..(layout.right-p*2),inventory_y+p+title_h,card_w-p*2,math.max(layout.list_row_height,fallback_h-p*2-title_h-footer_h-8)); place(self.inventory_footer,"100%-"..(layout.right-p*2),rail_bottom-p-footer_h,card_w-p*2,footer_h) else self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide() end
+    end
+    View.raiseCards({self.equipment,self.inventory,self.details,self.skills,self.inventory_title,self.inventory_output,self.inventory_footer,self.skills_title,self.skills_output})
   else
-    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.vitals_right:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
+    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide(); self.vitals_right:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
   end
   if layout.mode~="compact" then
     place(self.right_bg,0,0,"100%","100%"); self.right_title:hide()
@@ -328,7 +359,20 @@ function View:renderNavigation(exits)
 end
 function View:renderInventory(s)
   local t=self.settings.theme; local layout=self.layout; if not layout or layout.mode=="compact" then return end
-  self.inventory:echo(View.inventoryContent(s.inventory,s.vitals,t,layout,self.inventory_capacity or 0))
+  local inventory=s.inventory or {}; local v=s.vitals or {}; local signature={tostring(inventory.total_weight or ""),tostring(v.gold or 0),tostring(v.silver or 0)}
+  for _,item in ipairs(inventory.items or {}) do signature[#signature+1]=tostring(item.name or "").."\31"..tostring(item.weight or "") end
+  signature=table.concat(signature,"\30"); if signature==self.inventory_signature then return end; self.inventory_signature=signature
+  self.inventory_title:echo("<b>INVENTORY</b>")
+  self.inventory_output:clear(); for _,item in ipairs(inventory.items or {}) do self.inventory_output:echo(tostring(item.name or "").."  "..tostring(item.weight or "").." lb\n") end; pcall(function() self.inventory_output:scrollTo(0) end)
+  self.inventory_footer:echo("<b>Total "..esc(inventory.total_weight or 0).." lb</b><br><span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(v.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(v.silver or 0).."sp</b></span>")
+end
+function View:renderSkills(s)
+  local layout=self.layout; if not layout or layout.mode=="compact" then return end
+  local nameWidth=self.skill_name_width or 22; local signature={tostring(nameWidth)}; local items=(s.skills or {}).items or {}
+  for _,skill in ipairs(items) do signature[#signature+1]=tostring(skill.name or "").."\31"..tostring(skill.level or "").."\31"..tostring(skill.remain or "") end
+  signature=table.concat(signature,"\30"); if signature==self.skills_signature then return end; self.skills_signature=signature
+  self.skills_title:echo("<b>"..esc(View.skillHeader(nameWidth)).."</b>")
+  self.skills_output:clear(); for _,skill in ipairs(items) do self.skills_output:echo(View.skillLine(skill,nameWidth).."\n") end; pcall(function() self.skills_output:scrollTo(0) end)
 end
 function View:renderChat(entries,categories,activeFilter,savedScroll)
   entries=type(entries)=="table" and entries or {}; categories=type(categories)=="table" and categories or {}
@@ -408,7 +452,7 @@ function View:update(s)
   self.room:echo(View.withFont("<span style='color:"..t.accent..";font-size:"..layout.lower_heading_font.."px'><b>"..esc(s.room.name).."</b></span><br><span style='color:"..t.muted.."'>Room "..esc(s.room.num or "—").." · Area "..esc(s.room.area or "—").."</span><br><br>"..esc(s.room.environment).."<br>Players &nbsp; <b>"..#s.room.players.."</b><br>Flags &nbsp; "..esc(table.concat(s.room.flags,", ")),layout.lower_body_font))
   self.compact:echo(View.withFont("<b>HP "..v.hp.current.."/"..v.hp.maximum.."</b> &nbsp; FAT "..v.fatigue.current.."/"..v.fatigue.maximum.." &nbsp; WPN "..(v.weapon_readied and "✓" or "×").." &nbsp; SHD "..(v.shield_readied and "✓" or "×").." &nbsp; <span style='color:"..t.accent.."'>"..esc(s.room.name).."</span>",layout.body_font))
   self.bottom:echo(View.withFont("EXITS &nbsp; <b>"..esc(table.concat(s.room.exits,", ")).."</b> &nbsp;&nbsp; | &nbsp;&nbsp; CARRY &nbsp; <b>"..v.carry.current.." / "..v.carry.maximum.."</b> &nbsp;&nbsp; | &nbsp;&nbsp; ROUND &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b>",layout.small_font))
-  if self.layout then self:applyLayout(self.layout); self.details:echo(View.detailsContent(s.combat,s.attributes,t,self.layout,v)); self:renderInventory(s); self:renderNavigation(s.room.exits) end
+  if self.layout then self:applyLayout(self.layout); self.details:echo(View.detailsContent(s.combat,s.attributes,t,self.layout,v)); self:renderInventory(s); self:renderSkills(s); self:renderNavigation(s.room.exits) end
 end
 function View:delete() if self.root then self.root:delete(); self.root=nil end end
 return View

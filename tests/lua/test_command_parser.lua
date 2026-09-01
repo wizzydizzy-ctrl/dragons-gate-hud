@@ -4,6 +4,7 @@ local inventory={"Items carried:","  A wooden torch [1.0 lb].","  A wooden torch
 local stat={"Body Armor: 4%.","OR:  18  DR: 70  Move Rate: 6/6 UDs  Dam Bonus: Good/None  Stance: Aggressive","You are in the center of the area!","You are still protected by the 80 hour novice protection.","  ::: Equipment Readied :::","  A simple spear.","  A wooden shield.",">"}
 local info={"You are Test Tester, a light boned and stocky bodied 28 year old Entropic Male young Monitanian.  You are 6'10\" and weigh 309 lbs.","HP: 201 of 201  Ftg:  69 of  69  Carry: 15.9 of 380.0 lbs."," Str   Int   Wis   Dex   Agi   Con   Cha   Wil   Voi   Per   App","Good  Low   Fair  Fair  Fair  Good  Good  Good  Aver  Fair  Fair",">"}
 local religion={"You are a Novitiate follower of Unknown.","You are Balanced within your Entropic alignment.",">"}
+local skills={"Skill                     Remain Level","Biting                    105    4","Clawing                   276    2","Pole Weapons               42    4","Identify Armor Quality    100    1",">"}
 
 test("parses inventory items without merging duplicates",function()
   local r=assert(Parser.parseInventory(inventory)); eq(#r.items,3); eq(r.items[1].name,"A wooden torch"); eq(r.items[2].weight,0.1); eq(r.total_weight,1.6)
@@ -28,5 +29,20 @@ test("detects completed command responses",function() eq(Parser.isComplete("inve
 test("parses info religion rank deity balance and alignment",function()
   local r=assert(Parser.parseReligion(religion)); eq(r.rank,"Novitiate"); eq(r.deity,"Unknown"); eq(r.balance,"Balanced"); eq(r.alignment,"Entropic"); eq(Parser.isComplete("info religion",religion),true)
 end)
+test("parses every skill and ranks by level then lowest remaining uses",function()
+  local r=assert(Parser.parseSkills(skills)); eq(#r.items,4)
+  eq(r.items[1].name,"Pole Weapons"); eq(r.items[1].level,4); eq(r.items[1].remain,42)
+  eq(r.items[2].name,"Biting"); eq(r.items[3].name,"Clawing"); eq(r.items[4].name,"Identify Armor Quality")
+end)
+test("skill parsing requires a header rows and final prompt",function()
+  eq(Parser.parseSkills({"Skill Remain Level","Biting 100 1"}),nil)
+  eq(Parser.parseSkills({"Biting 100 1",">"}),nil)
+  eq(Parser.isComplete("skill",skills),true)
+end)
+test("skill parsing ignores a stale prompt before its header",function()
+  local contaminated={"You are Balanced within your Entropic alignment.",">","Skill                     Remain Level","Biting                    105    4","Clawing                   276    2"}
+  eq(Parser.parseSkills(contaminated),nil); contaminated[#contaminated+1]=">"
+  local r=assert(Parser.parseSkills(contaminated)); eq(#r.items,2)
+end)
 
-return {inventory=inventory,stat=stat,info=info,religion=religion}
+return {inventory=inventory,stat=stat,info=info,religion=religion,skills=skills}

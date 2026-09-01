@@ -1,7 +1,7 @@
 local Collector={}; Collector.__index=Collector
-local SPECS={inventory={parser="parseInventory",snapshot="inventory"},stat={parser="parseStat",snapshot="stat"},info={parser="parseInfo",snapshot="info"},["info religion"]={parser="parseReligion",snapshot="religion"}}
+local SPECS={inventory={parser="parseInventory",snapshot="inventory"},stat={parser="parseStat",snapshot="stat"},info={parser="parseInfo",snapshot="info"},["info religion"]={parser="parseReligion",snapshot="religion"},skill={parser="parseSkills",snapshot="skills"}}
 function Collector.new(adapter,parser,onChange,onRoundtime)
-  return setmetatable({adapter=adapter,parser=parser,onChange=onChange,onRoundtime=onRoundtime,snapshot={},sequence={"inventory","stat","info","info religion"},runtime={triggers={},events={}},started=false,refreshed=false},Collector)
+  return setmetatable({adapter=adapter,parser=parser,onChange=onChange,onRoundtime=onRoundtime,snapshot={},sequence={"inventory","stat","info","info religion","skill"},runtime={triggers={},events={}},started=false,refreshed=false},Collector)
 end
 function Collector:cancelActive()
   if self.timeout then self.adapter:cancelTimer(self.timeout); self.timeout=nil end

@@ -30,6 +30,11 @@ test("inventory footer renders compact colored gold and silver currency",functio
   eq(html:find("color:#e0b84f",1,true)~=nil,true); eq(html:find("color:#c0c0c0",1,true)~=nil,true)
   eq(html:find("12gp",1,true)<html:find("34sp",1,true),true)
 end)
+test("skill rows use stable aligned name level and remaining columns",function()
+  local header=View.skillHeader(24); local short=View.skillLine({name="Biting",level=4,remain=105},24); local long=View.skillLine({name="Identify Armor Quality",level=1,remain=7},24)
+  eq(header:find("LVL",1,true)~=nil,true); eq(header:find("USES",1,true)~=nil,true)
+  eq(short:find("4",1,true),long:find("1",1,true)); eq(short:find("105",1,true)+2,long:find("7",1,true))
+end)
 test("identity details render while attributes move to the top strip",function()
   local theme={accent="#d8ae53",jade="#72bd82",muted="#91a098"}; local layout={body_font=20,heading_font=25}
   local identity=View.identityContent({full_name="Test Tester",race="Monitanian",class="Fighter",alignment="entropy",physical={age=28,sex="Male",height="6'10\""}},theme,layout)
@@ -90,7 +95,7 @@ local function fakeGeyser()
       self.hechoes=self.hechoes or {}
       self.hechoes[#self.hechoes+1]=value
     end
-    function item:clear() self.echoes={}; self.hechoes={}; self.lastLine=0; self.renderedEntries={} end
+    function item:clear() self.clearCalls=(self.clearCalls or 0)+1; self.echoes={}; self.hechoes={}; self.lastLine=0; self.renderedEntries={} end
     function item:setWrap(value) self.wrap=value; return true end
     function item:setFontSize(value) self.fontSize=value end
     function item:enableScrollBar() self.scrollBar=true end
@@ -121,6 +126,44 @@ end
 
 test("view has no standalone wealth widget",function()
   local view=chatView(); eq(view.wealth,nil)
+end)
+
+test("inventory and skills own five-row scrollable consoles",function()
+  local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
+  eq(view.inventory_output.scrollBar,true); eq(view.inventory_output.horizontalScrollBar,false)
+  eq(view.skills_output.scrollBar,true); eq(view.skills_output.horizontalScrollBar,false)
+  eq(view.inventory_output.height,layout.list_row_height*5); eq(view.skills_output.height,layout.list_row_height*5)
+end)
+test("responsive skill columns fit both wide and medium right rails",function()
+  for _,size in ipairs({{1920,1080},{1200,800},{1200,650}}) do
+    local view=chatView(); local layout=require("layout").compute(size[1],size[2]); view:applyLayout(layout)
+    eq(view.skill_name_width>=8,true); eq(#View.skillLine({name=string.rep("Long Skill ",5),level=30,remain=7},view.skill_name_width)<=view.skill_character_capacity,true)
+  end
+end)
+
+test("scrollable cards render every inventory item and every ranked skill",function()
+  local view=chatView(); view:applyLayout(require("layout").compute(1920,1080))
+  local items,skills={},{}; for i=1,12 do items[i]={name="Item "..i,weight=i}; skills[i]={name="Skill "..i,level=20-i,remain=i} end
+  view:update({character={full_name="Test",race="Monitanian",class="Fighter",alignment="entropy",physical={}},attributes={},combat={},equipment={items={}},inventory={items=items,total_weight=78},skills={items=skills},vitals={hp={current=1,maximum=1},fatigue={current=1,maximum=1},carry={current=1,maximum=1},psi={visible=false},web={visible=false},gold=2,silver=3,roundtime=0,position=0,weapon_readied=false,shield_readied=false},room={name="Room",num=1,area=1,environment="Plain",players={},flags={},exits={}}})
+  eq(#view.inventory_output.echoes,12); eq(#view.skills_output.echoes,12)
+  eq(view.skills_output.echoes[1]:find("Skill 1",1,true)~=nil,true); eq(view.inventory_footer.message:find("2gp",1,true)~=nil,true)
+end)
+
+test("unchanged HUD refreshes preserve inventory and skill scroll positions",function()
+  local view=chatView(); view:applyLayout(require("layout").compute(1920,1080))
+  local state={character={full_name="Test",race="M",class="F",alignment="e",physical={}},attributes={},combat={},equipment={items={}},inventory={items={{name="One",weight=1}},total_weight=1},skills={items={{name="Biting",level=4,remain=10}}},vitals={hp={current=1,maximum=1},fatigue={current=1,maximum=1},carry={current=1,maximum=1},psi={visible=false},web={visible=false},gold=0,silver=0,roundtime=0,position=0},room={name="R",players={},flags={},exits={}}}
+  view:update(state); view.inventory_output.currentScroll=3; view.skills_output.currentScroll=4; local inventoryClears=view.inventory_output.clearCalls; local skillClears=view.skills_output.clearCalls
+  view:update(state); eq(view.inventory_output.currentScroll,3); eq(view.skills_output.currentScroll,4); eq(view.inventory_output.clearCalls,inventoryClears); eq(view.skills_output.clearCalls,skillClears)
+  state.skills.items={{name="Clawing",level=5,remain=2}}; view:update(state); eq(view.skills_output.currentScroll,0); eq(view.skills_output.clearCalls,skillClears+1)
+end)
+
+test("right rail orders inventory combat skills and vitals without overlap",function()
+  for _,size in ipairs({{1920,1080},{1200,800},{1200,650}}) do
+    local layout=require("layout").compute(size[1],size[2]); local view=chatView(); view.last_state={vitals={psi={visible=false},web={visible=false}},equipment={items={}}}; view:applyLayout(layout)
+    eq(view.inventory.visible,true); eq(view.skills.visible,true)
+    if view.details.visible then eq(view.inventory.y+view.inventory.height<=view.details.y,true); eq(view.details.y+view.details.height<=view.skills.y,true) else eq(view.inventory.y+view.inventory.height<=view.skills.y,true) end
+    eq(view.skills.y+view.skills.height<=layout.window_height-view.vitals_right.height,true)
+  end
 end)
 
 test("native mapper is embedded immediately above the compass",function()

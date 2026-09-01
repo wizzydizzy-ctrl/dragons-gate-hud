@@ -62,8 +62,29 @@ function Parser.parseReligion(lines)
   return result
 end
 
+function Parser.parseSkills(lines)
+  local result={items={}}; local header=false; local complete=false
+  for _,raw in ipairs(lines or {}) do
+    local line=clean(raw)
+    if line:match("^%s*Skill%s+Remain%s+Level%s*$") then header=true
+    elseif header and line:match("^>%s*$") then complete=true
+    elseif header then
+      local name,remain,level=line:match("^%s*(.-)%s+(%d+)%s+(%d+)%s*$")
+      if name and name~="" then result.items[#result.items+1]={name=name,remain=tonumber(remain),level=tonumber(level)} end
+    end
+  end
+  if not complete then return nil,"incomplete skill response" end
+  if not header or #result.items==0 then return nil,"unrecognized skill response" end
+  table.sort(result.items,function(a,b)
+    if a.level~=b.level then return a.level>b.level end
+    if a.remain~=b.remain then return a.remain<b.remain end
+    return a.name:lower()<b.name:lower()
+  end)
+  return result
+end
+
 function Parser.isComplete(command,lines)
-  local fn={inventory=Parser.parseInventory,stat=Parser.parseStat,info=Parser.parseInfo,["info religion"]=Parser.parseReligion}
+  local fn={inventory=Parser.parseInventory,stat=Parser.parseStat,info=Parser.parseInfo,["info religion"]=Parser.parseReligion,skill=Parser.parseSkills}
   return fn[command] and (command=="info" or hasPrompt(lines)) and fn[command](lines)~=nil or false
 end
 return Parser

@@ -77,6 +77,7 @@ local function metrics(width,height,layout,chatSettings,mapperSettings)
   layout.room_height=layout.heading_font+layout.body_font*6+54; layout.exit_height=layout.small_font+16
   layout.identity_height=layout.heading_font+layout.body_font*6+56
   layout.inventory_font=clamp(layout.body_font-2,14,20); layout.inventory_row_height=layout.inventory_font+10
+  layout.list_font=clamp(layout.inventory_font-1,13,17); layout.list_row_height=layout.list_font+4; layout.list_visible_rows=5
   layout.details_line_height=layout.body_font+6; layout.compass_font=clamp(layout.body_font,16,22); layout.compass_cell=layout.compass_font+14
   layout.utility_font=clamp(layout.body_font-4,12,18); layout.utility_height=layout.utility_font+12
   local function scaled(value) return math.floor(value*.8+.5) end

@@ -20,3 +20,9 @@ end)
 test("unknown parsed fields remain absent",function()
   local result=State.normalize({},{}); eq(result.combat.body_armor,nil); eq(result.character.religion,nil); eq(result.character.deity,nil); eq(#result.inventory.items,0)
 end)
+
+test("normalized state retains the complete sorted skill list",function()
+  local items={{name="Pole Weapons",level=4,remain=42},{name="Biting",level=4,remain=105}}
+  local result=State.normalize({}, {skills={items=items}})
+  eq(#result.skills.items,2); eq(result.skills.items[1].name,"Pole Weapons"); eq(result.skills.items[2].remain,105)
+end)

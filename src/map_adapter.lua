@@ -93,9 +93,10 @@ function MapAdapter:clearOwnedRoomNames()
   if rooms==nil then return nil,roomsErr end
   if type(rooms)~="table" then return nil,"Mudlet mapper API getRooms returned invalid data" end
   local ids={}
-  for key,value in pairs(rooms) do
-    local keyID=positiveInteger(key); if keyID then ids[keyID]=true end
-    local valueID=positiveInteger(value); if valueID then ids[valueID]=true end
+  for key in pairs(rooms) do
+    local id=type(key)=="number" and positiveInteger(key) or nil
+    if not id then return nil,"Mudlet mapper API getRooms returned invalid data" end
+    ids[id]=true
   end
   local changed=0
   for id in pairs(ids) do

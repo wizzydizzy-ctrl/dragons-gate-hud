@@ -110,6 +110,16 @@ test("legacy label cleanup consumes documented room IDs and reports read failure
   local count,err=Adapter.new(api):clearOwnedRoomNames(); eq(count,nil); eq(err,"getRooms rejected")
 end)
 
+test("legacy label cleanup never interprets a numeric room name as an ID",function()
+  local api=fakeMapApi({
+    [50]={name="100",user={["dghud.owner"]="DragonsGateHUD"}},
+    [100]={name="Keep room 100",user={["dghud.owner"]="DragonsGateHUD"}},
+  })
+  api.getRooms=function() return {[50]="100"} end
+  local count=assert(Adapter.new(api):clearOwnedRoomNames())
+  eq(count,1); eq(api.rooms[50].name,""); eq(api.rooms[100].name,"Keep room 100")
+end)
+
 test("reuses a persisted owned area after adapter reload",function()
   local api=fakeMapApi(); assert(Adapter.new(api):ensureRoom(descriptor(1,"Castle"),{})); local area=api.rooms[1].area
   assert(Adapter.new(api):ensureRoom(descriptor(2,"Castle"),{})); eq(api.rooms[2].area,area); eq(api.nextArea,2)

@@ -40,9 +40,9 @@ function View.chatLine(entry,t,timestamps)
   local stamp=""
   if timestamps~=false then
     local time=tostring(entry.timestamp or ""):match("T(%d%d:%d%d)")
-    if time then stamp="<#"..t.muted:gsub("^#","")..">["..time.."]<reset> " end
+    if time then stamp="#"..t.muted:gsub("^#","").."["..time.."]#r " end
   end
-  local prefix=stamp.."<#"..tostring(color):gsub("^#","")..">"..safeText(category).."<reset>"
+  local prefix=stamp.."#"..tostring(color):gsub("^#","")..safeText(category).."#r"
   return prefix," "..safeChatText(entry.line or entry.message).."\n"
 end
 function View.identityContent(character,t,layout)

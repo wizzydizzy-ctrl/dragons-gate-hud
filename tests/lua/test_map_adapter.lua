@@ -53,7 +53,7 @@ local function fakeMapApi(seed)
     return grouped
   end
   function api.getRoomCoordinates(id) local ok,e=gate("getRoomCoordinates"); if not ok then return nil,e end; local r=api.rooms[id]; return r and r.x,r and r.y,r and r.z end
-  function api.getRooms() local ok,e=gate("getRooms"); if not ok then return nil,e end; local out={}; for id,r in pairs(api.rooms) do out[r.name or ("Room "..id)]=id end; return out end
+  function api.getRooms() local ok,e=gate("getRooms"); if not ok then return nil,e end; local out={}; for id,r in pairs(api.rooms) do out[id]=r.name or ("Room "..id) end; return out end
   function api.getRoomsByPosition(area,x,y,z) local ok,e=gate("getRoomsByPosition"); if not ok then return nil,e end; local out,i={},0; for id,r in pairs(api.rooms) do if r.area==area and r.x==x and r.y==y and r.z==z then out[i]=id;i=i+1 end end; return out end
   function api.getMapZoom(area) local ok,e=gate("getMapZoom"); if not ok then return nil,e end; return api.zoom[area] end
   function api.setMapZoom(value,area) local ok,e=gate("setMapZoom"); if not ok then return nil,e end; api.zoom[area]=value; return true end
@@ -100,10 +100,10 @@ test("legacy label cleanup changes only HUD-owned rooms",function()
   eq(count,1); eq(api.rooms[10].name,""); eq(api.rooms[11].name,"Personal room"); eq(api.rooms[12].name,"Other package")
 end)
 
-test("legacy label cleanup deduplicates room ids and reports read failures",function()
+test("legacy label cleanup consumes documented room IDs and reports read failures",function()
   local api=fakeMapApi({[10]={name="Old",user={["dghud.owner"]="DragonsGateHUD"}}})
   local nativeGetRooms=api.getRooms
-  api.getRooms=function() return {Old=10,Duplicate="10",invalid="nope"} end
+  api.getRooms=function() return {[10]="Old"} end
   eq(Adapter.new(api):clearOwnedRoomNames(),1)
   api.getRooms=nativeGetRooms
   api.fail.getRooms=true
@@ -411,12 +411,27 @@ end)
 test("area inspection and membership use persisted state and normalized sorted IDs",function()
   local api=fakeMapApi(); local map=Adapter.new(api)
   local area=assert(map:ensureArea("Owned"))
-  api.getAreaRooms1=function(id) eq(id,area); return {[0]="12",[1]=10,[2]=12,[3]=0,[4]="bad",extra=11} end
+  api.getAreaRooms1=function(id) eq(id,area); return {[0]=12,[1]=10,[2]=12,[3]=11} end
   local record=assert(map:areaRecord(area)); eq(record.id,area); eq(record.exists,true); eq(record.owned,true); eq(record.owner,"DragonsGateHUD")
   local rooms=assert(map:roomsInArea(area)); eq(#rooms,3); eq(rooms[1],10); eq(rooms[2],11); eq(rooms[3],12)
 
   local missing,e=map:areaRecord(999)
   eq(missing,nil); eq(e,"mapper area 999 does not exist")
+end)
+
+test("numeric room names never replace documented getRooms ID keys",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(100,"A"),{x=0,y=0,z=0}))
+  api.rooms[50]={name="100",area=9,user={},exits={n=100},stubs={}}
+  local sources=assert(map:inboundSources({100}))
+  eq(#sources,1); eq(sources[1],50)
+  eq(api.rooms[50].exits.n,100); eq(api.rooms[100]~=nil,true); eq(#api.deletedRooms,0)
+end)
+
+test("malformed getRooms entries fail closed before exit inspection",function()
+  local api=fakeMapApi(); api.getRooms=function() return {[50]="Personal",bad="Room 60"} end
+  local sources,e=Adapter.new(api):inboundSources({100})
+  eq(sources,nil); eq(e,"Mudlet mapper API getRooms returned invalid data")
 end)
 
 test("unowned ordinary and special inbound sources are reported without mutation",function()
@@ -448,6 +463,24 @@ test("empty area deletion requires persisted ownership and current emptiness",fu
   ok,e=map:deleteEmptyOwnedArea(owned)
   eq(ok,nil); eq(e,"mapper area "..owned.." is not empty"); eq(api.areas["Dragons Gate - Owned"],owned); eq(#api.deletedAreas,0)
   api.rooms[100]=nil; eq(map:deleteEmptyOwnedArea(owned),true); eq(api.areas["Dragons Gate - Owned"],nil); eq(api.deletedAreas[1],owned)
+end)
+
+test("malformed area membership blocks deletion with zero mutation",function()
+  local malformed={
+    {[0]=0},
+    {[0]=-1},
+    {[0]=1.5},
+    {[0]="12"},
+    {extra=12},
+    {[0]=12,[2]=13},
+  }
+  for _,membership in ipairs(malformed) do
+    local api=fakeMapApi(); local map=Adapter.new(api); local area=assert(map:ensureArea("Owned"))
+    api.getAreaRooms1=function() return membership end
+    local ok,e=map:deleteEmptyOwnedArea(area)
+    eq(ok,nil); eq(e,"Mudlet mapper API getAreaRooms1 returned invalid data")
+    eq(api.areas["Dragons Gate - Owned"],area); eq(#api.deletedAreas,0)
+  end
 end)
 
 test("deleted map objects are invalidated from adapter caches",function()

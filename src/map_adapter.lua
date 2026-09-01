@@ -206,11 +206,16 @@ function MapAdapter:roomsInArea(areaID)
   local rooms,roomsErr=read(self.api,"getAreaRooms1",area)
   if rooms==nil then return nil,roomsErr or "Mudlet mapper API getAreaRooms1 failed" end
   if type(rooms)~="table" then return nil,"Mudlet mapper API getAreaRooms1 returned invalid data" end
-  local unique={}
-  for _,value in pairs(rooms) do
-    local room=positiveInteger(value)
-    if room then unique[room]=true end
+  local unique={}; local count=0; local minimum; local maximum
+  for index,value in pairs(rooms) do
+    local room=type(value)=="number" and positiveInteger(value) or nil
+    if type(index)~="number" or index%1~=0 or index<0 or not room then
+      return nil,"Mudlet mapper API getAreaRooms1 returned invalid data"
+    end
+    count=count+1; minimum=minimum and math.min(minimum,index) or index; maximum=maximum and math.max(maximum,index) or index
+    unique[room]=true
   end
+  if count>0 and (minimum>1 or count~=maximum-minimum+1) then return nil,"Mudlet mapper API getAreaRooms1 returned invalid data" end
   local normalized={}
   for room in pairs(unique) do normalized[#normalized+1]=room end
   table.sort(normalized)
@@ -228,14 +233,10 @@ function MapAdapter:inboundSources(roomIDs)
   if rooms==nil then return nil,roomsErr or "Mudlet mapper API getRooms failed" end
   if type(rooms)~="table" then return nil,"Mudlet mapper API getRooms returned invalid data" end
   local existing={}
-  for key,value in pairs(rooms) do
-    local valueID=positiveInteger(value)
-    if valueID then
-      existing[valueID]=true
-    else
-      local keyID=positiveInteger(key)
-      if keyID then existing[keyID]=true end
-    end
+  for roomID,roomName in pairs(rooms) do
+    local source=type(roomID)=="number" and positiveInteger(roomID) or nil
+    if not source or type(roomName)~="string" then return nil,"Mudlet mapper API getRooms returned invalid data" end
+    existing[source]=true
   end
   local inbound={}
   for source in pairs(existing) do

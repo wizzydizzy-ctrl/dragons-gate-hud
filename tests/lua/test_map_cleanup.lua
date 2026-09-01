@@ -1,4 +1,5 @@
 local Cleanup=require("map_cleanup")
+local MapAdapter=require("map_adapter")
 
 local function listEq(actual,expected)
   eq(#actual,#expected)
@@ -197,4 +198,155 @@ end)
 test("area deletion failure is reported after all rooms are deleted",function()
   local cleanup,map,runtime=fixture(); function map:deleteEmptyOwnedArea() self.areaDeleteCalls=self.areaDeleteCalls+1; return nil,"area delete failed" end
   local result=assert(cleanup:confirm(assert(cleanup:previewArea(8)).token)); listEq(result.deleted,{200,201}); eq(result.failed,nil); eq(result.area_deleted,false); eq(result.area_error,"area delete failed"); eq(runtime.afterCalls,1)
+end)
+
+local function eqRunningRejections(calls)
+  eq(calls.preview.result,nil); eq(calls.preview.error,"cleanup is already running")
+  eq(calls.cancel.result,nil); eq(calls.cancel.error,"cleanup is already running")
+  eq(calls.confirm.result,nil); eq(calls.confirm.error,"cleanup is already running")
+end
+
+local function attemptReentry(cleanup,token)
+  local calls={}
+  calls.preview={}; calls.preview.result,calls.preview.error=cleanup:previewRoom(100)
+  calls.cancel={}; calls.cancel.result,calls.cancel.error=cleanup:cancel()
+  calls.confirm={}; calls.confirm.result,calls.confirm.error=cleanup:confirm(token)
+  return calls
+end
+
+test("valid confirmation consumes its token and locks before final rebuild",function()
+  local cleanup,map,runtime=fixture(); local preview=assert(cleanup:previewRoom(100)); local calls
+  local original=runtime.safetySnapshot; local count=0
+  function runtime:safetySnapshot(ids)
+    count=count+1
+    if count==1 then calls=attemptReentry(cleanup,preview.token) end
+    return original(self,ids)
+  end
+  assert(cleanup:confirm(preview.token)); eqRunningRejections(calls)
+  local repeated,err=cleanup:confirm(preview.token); eq(repeated,nil); eq(err,"cleanup confirmation token is invalid"); eq(map.deleteCalls,1)
+end)
+
+test("cleanup remains locked throughout before and after lifecycle callbacks",function()
+  local cleanup,_,runtime=fixture(); local preview=assert(cleanup:previewRoom(100)); local beforeCalls,afterCalls
+  function runtime:beforeDelete() beforeCalls=attemptReentry(cleanup,preview.token); return true end
+  function runtime:afterDelete() afterCalls=attemptReentry(cleanup,preview.token); return true end
+  assert(cleanup:confirm(preview.token)); eqRunningRejections(beforeCalls); eqRunningRejections(afterCalls)
+end)
+
+test("expiry and clock exceptions consume the token and release the lock",function()
+  local cleanup,map=fixture(); local preview=assert(cleanup:previewRoom(100)); local original=cleanup.clock
+  function cleanup.clock() error("clock exploded") end
+  local result,err=cleanup:confirm(preview.token); eq(result,nil); eq(err,"cleanup confirmation failed: clock exploded"); eq(map.deleteCalls,0)
+  result,err=cleanup:confirm(preview.token); eq(result,nil); eq(err,"cleanup confirmation token is invalid")
+  cleanup.clock=original; assert(cleanup:previewRoom(100))
+
+  local cleanup2,map2,_,setNow=fixture(); local expired=assert(cleanup2:previewRoom(100)); setNow(1031)
+  result,err=cleanup2:confirm(expired.token); eq(result,nil); eq(err,"cleanup confirmation token has expired"); eq(map2.deleteCalls,0)
+  assert(cleanup2:previewRoom(100))
+end)
+
+test("every final rebuild dependency exception consumes the token unlocks and performs zero mutation",function()
+  local cases={
+    {name="room record",preview="room",install=function(cleanup,map) local original=map.roomRecord; function map:roomRecord() error("room record exploded") end; return function() map.roomRecord=original end end},
+    {name="inbound",preview="room",install=function(cleanup,map) local original=map.inboundSources; function map:inboundSources() error("inbound exploded") end; return function() map.inboundSources=original end end},
+    {name="safety",preview="room",install=function(cleanup,map,runtime) local original=runtime.safetySnapshot; function runtime:safetySnapshot() error("safety exploded") end; return function() runtime.safetySnapshot=original end end},
+    {name="area table",preview="area",expected="cleanup preview is stale",install=function(cleanup,map) local original=map.api.getAreaTable; function map.api.getAreaTable() error("area table exploded") end; return function() map.api.getAreaTable=original end end},
+    {name="area record",preview="area",install=function(cleanup,map) local original=map.areaRecord; function map:areaRecord() error("area record exploded") end; return function() map.areaRecord=original end end},
+    {name="area rooms",preview="area",install=function(cleanup,map) local original=map.roomsInArea; function map:roomsInArea() error("area rooms exploded") end; return function() map.roomsInArea=original end end},
+  }
+  for _,case in ipairs(cases) do
+    local cleanup,map,runtime=fixture()
+    local preview=case.preview=="area" and assert(cleanup:previewArea("Alpha")) or assert(cleanup:previewRoom(100))
+    local restore=case.install(cleanup,map,runtime)
+    local result,err=cleanup:confirm(preview.token)
+    eq(result,nil); eq(err,case.expected or ("cleanup confirmation failed: "..case.name.." exploded")); eq(map.deleteCalls,0); eq(runtime.beforeCalls,0); eq(runtime.afterCalls,0)
+    result,err=cleanup:confirm(preview.token); eq(result,nil); eq(err,"cleanup confirmation token is invalid")
+    restore(); assert(cleanup:previewRoom(100))
+  end
+end)
+
+test("beforeDelete returned failures and exceptions release the lock without map mutation",function()
+  for _,throws in ipairs({false,true}) do
+    local cleanup,map,runtime=fixture(); local preview=assert(cleanup:previewRoom(100))
+    function runtime:beforeDelete()
+      if throws then error("before exploded") end
+      return nil,"before rejected"
+    end
+    local result,err=cleanup:confirm(preview.token); eq(result,nil); eq(err,throws and "cleanup confirmation failed: before exploded" or "before rejected")
+    eq(map.deleteCalls,0); eq(runtime.afterCalls,0); assert(cleanup:previewRoom(100))
+  end
+end)
+
+test("thrown room deletion reports exact partial state calls afterDelete and unlocks",function()
+  local cleanup,map,runtime=fixture(); local original=map.deleteOwnedRoom
+  function map:deleteOwnedRoom(id) if id==201 then error("room delete exploded") end; return original(self,id) end
+  local result=assert(cleanup:confirm(assert(cleanup:previewArea(8)).token))
+  listEq(result.deleted,{200}); eq(result.failed,201); eq(result.error,"room delete exploded"); listEq(result.untouched,{201}); eq(result.area_deleted,false)
+  eq(runtime.afterCalls,1); listEq(runtime.afterResult.deleted,{200}); eq(runtime.afterResult.failed,201)
+  assert(cleanup:previewRoom(201))
+end)
+
+test("thrown area deletion is reported finalized and unlocked",function()
+  local cleanup,map,runtime=fixture(); function map:deleteEmptyOwnedArea() error("area delete exploded") end
+  local result=assert(cleanup:confirm(assert(cleanup:previewArea(8)).token))
+  listEq(result.deleted,{200,201}); eq(result.area_deleted,false); eq(result.area_error,"area delete exploded"); eq(runtime.afterCalls,1)
+  eq(cleanup:cancel(),true)
+end)
+
+test("invalidation returned failures and exceptions prevent clean success and still finalize",function()
+  for _,throws in ipairs({false,true}) do
+    local cleanup,map,runtime=fixture()
+    function map:invalidateDeleted()
+      if throws then error("invalidate exploded") end
+      return nil,"invalidate rejected"
+    end
+    local result=assert(cleanup:confirm(assert(cleanup:previewRoom(100)).token))
+    listEq(result.deleted,{100}); eq(result.invalidation_error,throws and "invalidate exploded" or "invalidate rejected"); eq(result.error,result.invalidation_error)
+    eq(runtime.afterCalls,1); eq(runtime.afterResult.invalidation_error,result.invalidation_error)
+    eq(cleanup:cancel(),true)
+  end
+end)
+
+test("afterDelete returned failures and exceptions are reported and release the lock",function()
+  for _,throws in ipairs({false,true}) do
+    local cleanup,_,runtime=fixture()
+    function runtime:afterDelete()
+      self.afterCalls=self.afterCalls+1
+      if throws then error("after exploded") end
+      return nil,"after rejected"
+    end
+    local result=assert(cleanup:confirm(assert(cleanup:previewRoom(100)).token))
+    eq(result.lifecycle_error,throws and "after exploded" or "after rejected"); eq(result.error,result.lifecycle_error); eq(runtime.afterCalls,1)
+    eq(cleanup:cancel(),true)
+  end
+end)
+
+local function realAdapterWithPersonalInbound(kind)
+  local rooms={
+    [50]={owner=nil,area=1,exits={},special={}},
+    [100]={owner="DragonsGateHUD",area=2,exits={},special={}},
+  }
+  if kind=="ordinary" then rooms[50].exits.n=100 else rooms[50].special[100]={portal=true} end
+  local api={
+    roomExists=function(id) return rooms[id]~=nil end,
+    getRoomUserData=function(id,key) if key=="dghud.owner" then return rooms[id] and rooms[id].owner end end,
+    getRoomArea=function(id) return rooms[id] and rooms[id].area end,
+    getRoomCoordinates=function() return 0,0,0 end,
+    getRooms=function() return {[50]="Personal",[100]="HUD"} end,
+    getRoomExits=function(id) return rooms[id].exits end,
+    getSpecialExits=function(id) return rooms[id].special end,
+  }
+  return MapAdapter.new(api),rooms
+end
+
+test("real map adapter ordinary personal inbound exits block cleanup",function()
+  local map,rooms=realAdapterWithPersonalInbound("ordinary"); local runtime=fakeRuntime()
+  local cleanup=Cleanup.new(map,runtime,function() return 1000 end,function() return "ordinary" end,30)
+  local result,err=cleanup:previewRoom(100); eq(result,nil); eq(err,"unowned room 50 has an inbound exit"); eq(rooms[100]~=nil,true); eq(rooms[50].exits.n,100)
+end)
+
+test("real map adapter special personal inbound exits block cleanup",function()
+  local map,rooms=realAdapterWithPersonalInbound("special"); local runtime=fakeRuntime()
+  local cleanup=Cleanup.new(map,runtime,function() return 1000 end,function() return "special" end,30)
+  local result,err=cleanup:previewRoom(100); eq(result,nil); eq(err,"unowned room 50 has an inbound exit"); eq(rooms[100]~=nil,true); eq(rooms[50].special[100].portal,true)
 end)

@@ -181,6 +181,7 @@ function Cleanup:pending()
 end
 
 function Cleanup:cancel()
+  if self.busy then return nil,"cleanup is already running" end
   self.plan=nil
   return true
 end
@@ -199,36 +200,103 @@ local function comparable(plan)
   }
 end
 
+local function exceptionMessage(value)
+  local message=tostring(value)
+  return message:match(":%d+: (.*)$") or message
+end
+
+local function protectedCall(fn)
+  local first,second
+  local ok,err=xpcall(function() first,second=fn() end,exceptionMessage)
+  if not ok then return false,nil,err end
+  return true,first,second
+end
+
+local function appendUntouched(result,roomIDs,index)
+  for untouched=index,#roomIDs do result.untouched[#result.untouched+1]=roomIDs[untouched] end
+end
+
 function Cleanup:confirm(token)
   if self.busy then return nil,"cleanup is already running" end
   local plan=self.plan
   if not plan or tostring(token)~=plan.token then return nil,"cleanup confirmation token is invalid" end
   self.plan=nil
-  if self.clock()-plan.created_at>self.ttl then return nil,"cleanup confirmation token has expired" end
-  local rebuilt=self:_rebuild(plan)
-  if not rebuilt or not equal(comparable(plan),comparable(rebuilt)) then return nil,"cleanup preview is stale" end
   self.busy=true
-  local before,beforeErr=self.runtime:beforeDelete(copy(plan))
-  if before==nil or before==false then self.busy=false; return nil,beforeErr or "cleanup preparation failed" end
   local result={deleted={},failed=nil,untouched={},area_deleted=false}
-  for index,roomID in ipairs(plan.room_ids) do
-    local deleted,deleteErr=self.map:deleteOwnedRoom(roomID)
-    if not deleted then
-      result.failed=roomID; result.error=deleteErr
-      for untouched=index,#plan.room_ids do result.untouched[#result.untouched+1]=plan.room_ids[untouched] end
-      break
+  local executionStarted=false
+  local failureError
+  local activeRoomIndex
+  local bodyOK,bodyError=xpcall(function()
+    local clockOK,now,clockError=protectedCall(self.clock)
+    if not clockOK then failureError="cleanup confirmation failed: "..clockError; return end
+    if now-plan.created_at>self.ttl then failureError="cleanup confirmation token has expired"; return end
+
+    local rebuildOK,rebuilt,rebuildError=protectedCall(function() return self:_rebuild(plan) end)
+    if not rebuildOK then
+      failureError="cleanup confirmation failed: "..tostring(rebuildError)
+      return
     end
-    result.deleted[#result.deleted+1]=roomID
+    if not rebuilt or not equal(comparable(plan),comparable(rebuilt)) then failureError="cleanup preview is stale"; return end
+
+    local beforeOK,before,beforeError=protectedCall(function() return self.runtime:beforeDelete(copy(plan)) end)
+    if not beforeOK then failureError="cleanup confirmation failed: "..beforeError; return end
+    if before==nil or before==false then failureError=beforeError or "cleanup preparation failed"; return end
+    executionStarted=true
+
+    for index,roomID in ipairs(plan.room_ids) do
+      activeRoomIndex=index
+      local callOK,deleted,deleteError=protectedCall(function() return self.map:deleteOwnedRoom(roomID) end)
+      if not callOK then deleted=nil end
+      if not deleted then
+        result.failed=roomID; result.error=deleteError or "room deletion failed"
+        appendUntouched(result,plan.room_ids,index)
+        break
+      end
+      result.deleted[#result.deleted+1]=roomID
+      activeRoomIndex=nil
+    end
+    if not result.failed and plan.operation~="delete_room" then
+      local callOK,areaDeleted,areaError=protectedCall(function() return self.map:deleteEmptyOwnedArea(plan.area_id) end)
+      if not callOK then areaDeleted=nil end
+      if areaDeleted then
+        result.area_deleted=true
+      else
+        result.area_error=areaError or "area deletion failed"
+        result.error=result.area_error
+      end
+    end
+
+    local invalidatedArea=result.area_deleted and plan.area_id or nil
+    local invalidateOK,invalidated,invalidateError=protectedCall(function() return self.map:invalidateDeleted(copy(result.deleted),invalidatedArea) end)
+    if not invalidateOK then invalidated=nil end
+    if invalidated==nil or invalidated==false then
+      result.invalidation_error=invalidateError or "map cache invalidation failed"
+      result.error=result.error or result.invalidation_error
+    end
+  end,exceptionMessage)
+
+  if not bodyOK then
+    if executionStarted then
+      result.error=result.error or bodyError
+      if activeRoomIndex and not result.failed then
+        result.failed=plan.room_ids[activeRoomIndex]
+        appendUntouched(result,plan.room_ids,activeRoomIndex)
+      end
+    else
+      failureError="cleanup confirmation failed: "..bodyError
+    end
   end
-  if not result.failed and plan.operation~="delete_room" then
-    local areaDeleted,areaErr=self.map:deleteEmptyOwnedArea(plan.area_id)
-    if areaDeleted then result.area_deleted=true else result.area_error=areaErr end
+
+  if executionStarted then
+    local afterOK,after,afterError=protectedCall(function() return self.runtime:afterDelete(copy(result)) end)
+    if not afterOK then after=nil end
+    if after==nil or after==false then
+      result.lifecycle_error=afterError or "cleanup reconciliation failed"
+      result.error=result.error or result.lifecycle_error
+    end
   end
-  local invalidatedArea=result.area_deleted and plan.area_id or nil
-  self.map:invalidateDeleted(copy(result.deleted),invalidatedArea)
-  local after,afterErr=self.runtime:afterDelete(copy(result))
-  if after==nil or after==false then result.lifecycle_error=afterErr or "cleanup reconciliation failed" end
   self.busy=false
+  if not executionStarted then return nil,failureError or "cleanup confirmation failed" end
   return result
 end
 

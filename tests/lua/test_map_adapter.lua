@@ -192,12 +192,12 @@ test("fresh adapter recovers an owned room after its provisional state write fai
 end)
 
 test("fresh automapper retry places an owner-only special destination in its destination submap",function()
-  local api=fakeMapApi(); local rejectProvisional=false; local nativeUserData=api.setRoomUserData
+  local api=fakeMapApi(); local rejectProvisional=false; local nativeUserData=api.setRoomUserData; local statuses={}
   api.setRoomUserData=function(id,key,value)
     if rejectProvisional and id==900 and key=="dghud.state" and value=="provisional" then return nil,"provisional state rejected" end
     return nativeUserData(id,key,value)
   end
-  local first=Automapper.new(Model,Adapter.new(api),function() end)
+  local first=Automapper.new(Model,Adapter.new(api),function(kind,message) statuses[#statuses+1]={kind=kind,message=message} end)
   assert(first:onRoom(gmcpRoom(100,1,"Outside")))
   assert(first:onSpecialTransition({from=100,to=900,command="go gate",kind="special"}))
   rejectProvisional=true
@@ -205,6 +205,14 @@ test("fresh automapper retry places an owner-only special destination in its des
   eq(api.rooms[900].area,-1); eq(api.rooms[900].x,0); eq(api.rooms[900].y,0); eq(api.rooms[900].z,0)
 
   rejectProvisional=false
+  ok,e=first:onRoom(gmcpRoom(900,1,"Inside refreshed"))
+  eq(ok,nil); eq(e,"room 900 placement requires an observed transition")
+  eq(statuses[#statuses].kind,"invalid_room"); eq(statuses[#statuses].message,e)
+  local stillInterrupted=assert(Adapter.new(api):roomRecord(900))
+  eq(stillInterrupted.placement_needed,true); eq(stillInterrupted.state,nil); eq(stillInterrupted.partition,nil)
+  eq(stillInterrupted.area,-1); eq(stillInterrupted.coordinates.x,0); eq(stillInterrupted.coordinates.y,0); eq(stillInterrupted.coordinates.z,0)
+  eq(first:currentRoom(),100); eq(api.special[100],nil)
+
   local retried=Automapper.new(Model,Adapter.new(api),function() end)
   assert(retried:onRoom(gmcpRoom(100,1,"Outside")))
   assert(retried:onSpecialTransition({from=100,to=900,command="go gate",kind="special"}))
@@ -217,11 +225,11 @@ test("fresh automapper retry places an owner-only special destination in its des
 end)
 
 test("fresh automapper retry derives coordinates for a provisional directional continuation",function()
-  local api=fakeMapApi()
+  local api=fakeMapApi(); local statuses={}
   assert(Adapter.new(api):ensureRoom(descriptor(900,"1","Root"),{x=0,y=0,z=0},"special:900"))
   local submapArea=api.areas["Dragons Gate - Submap 900"]
 
-  local first=Automapper.new(Model,Adapter.new(api),function() end)
+  local first=Automapper.new(Model,Adapter.new(api),function(kind,message) statuses[#statuses+1]={kind=kind,message=message} end)
   assert(first:onRoom(gmcpRoom(900,1,"Root",{"north"})))
   assert(first:onOutgoing("north"))
   api.fail.setRoomCoordinates=true
@@ -233,6 +241,15 @@ test("fresh automapper retry derives coordinates for a provisional directional c
   eq(interrupted.coordinates.x,0); eq(interrupted.coordinates.y,0); eq(interrupted.coordinates.z,0)
 
   api.fail.setRoomCoordinates=nil
+  ok,e=first:onRoom(gmcpRoom(901,1,"Hall refreshed",{"south"}))
+  eq(ok,nil); eq(e,"room 901 placement requires an observed transition")
+  eq(statuses[#statuses].kind,"invalid_room"); eq(statuses[#statuses].message,e)
+  local stillInterrupted=assert(Adapter.new(api):roomRecord(901))
+  eq(stillInterrupted.placement_needed,true); eq(stillInterrupted.state,"provisional")
+  eq(stillInterrupted.partition,"special:900"); eq(stillInterrupted.area,submapArea)
+  eq(stillInterrupted.coordinates.x,0); eq(stillInterrupted.coordinates.y,0); eq(stillInterrupted.coordinates.z,0)
+  eq(first:currentRoom(),900); eq(api.rooms[900].exits.n,nil); eq(api.rooms[901].exits.s,nil)
+
   local retried=Automapper.new(Model,Adapter.new(api),function() end)
   assert(retried:onRoom(gmcpRoom(900,1,"Root",{"north"})))
   assert(retried:onOutgoing("north"))

@@ -105,6 +105,22 @@ function Automapper:coordinatesFor(room,partition,record)
   return coordinates
 end
 
+local function hasObservedPlacementIntent(self,room)
+  local pending=self.pending
+  if not pending or pending.from==room.id or self.current_id~=pending.from then return false end
+  local special=pending.kind=="special" and pending.to==room.id
+  local directional=pending.kind==nil and pending.direction~=nil
+  if not special and not directional then return false end
+  local origin,originErr=self:roomRecord(pending.from)
+  if origin==nil then return nil,originErr end
+  if not origin.exists or not origin.owned then return false end
+  if directional then
+    local coordinates,coordinatesErr=self.map:coordinates(pending.from)
+    if not coordinates then return nil,coordinatesErr end
+  end
+  return true
+end
+
 function Automapper:onRoom(raw)
   local room,normalizeErr=self.model.normalizeRoom(raw)
   if not room then self.pending=nil; self:status("invalid_room",normalizeErr); return nil,normalizeErr end
@@ -118,6 +134,14 @@ function Automapper:onRoom(raw)
   if not record then
     if not sameOrigin or specialArrival then self.pending=nil end
     self:status("invalid_room",recordErr); return nil,recordErr
+  end
+  if record.exists and record.placement_needed then
+    local hasIntent,intentErr=hasObservedPlacementIntent(self,room)
+    if not hasIntent then
+      local err=intentErr or ("room "..tostring(room.id).." placement requires an observed transition")
+      if not sameOrigin or specialArrival then self.pending=nil end
+      self:status("invalid_room",err); return nil,err
+    end
   end
   local partition,partitionErr=self:partitionFor(room,record)
   if not partition then

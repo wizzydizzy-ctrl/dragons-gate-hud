@@ -2,6 +2,10 @@ local View=require("view"); local Storage=require("chat_storage")
 local Adapter={}; Adapter.__index=Adapter
 function Adapter.updateBase(home) return home.."/DGHUDUpdater" end
 function Adapter.updateArchivePath(home) return Adapter.updateBase(home).."/staging/DragonsGateHUD.mpackage" end
+function Adapter.manifestUrl(github,nonce)
+  return "https://github.com/"..github.owner.."/"..github.repository.."/releases/latest/download/manifest.json?dghud="..tostring(nonce)
+end
+local updateNonce=0
 function Adapter.new() return setmetatable({},Adapter) end
 function Adapter:getBorders() return getBorderLeft(),getBorderTop(),getBorderRight(),getBorderBottom() end
 function Adapter:getWindowSize() return getMainWindowSize() end
@@ -81,7 +85,8 @@ function Adapter:startUpdate(updater)
     end
   end)
   updater.expected_path=manifestPath
-  local latest="https://github.com/"..github.owner.."/"..github.repository.."/releases/latest/download/manifest.json"
+  updateNonce=updateNonce+1
+  local latest=Adapter.manifestUrl(github,tostring(os.time()).."-"..tostring(updateNonce))
   downloadFile(manifestPath,latest)
   timeoutId=tempTimer(policy.timeout_seconds or 30,function() timeoutId=nil; if updater.lock then fail("download timed out") end end)
   return true

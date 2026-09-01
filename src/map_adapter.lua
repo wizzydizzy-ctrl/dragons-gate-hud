@@ -1,5 +1,6 @@
 local MapAdapter={}
 MapAdapter.__index=MapAdapter
+local MapperModel=require("mapper_model")
 local unpackValues=table.unpack or unpack
 
 local reverse={n="s",ne="sw",e="w",se="nw",s="n",sw="ne",w="e",nw="se",up="down",down="up",["in"]="out",out="in"}
@@ -275,6 +276,13 @@ function MapAdapter:specialExitMatches(fromID,toID,command)
   if exits==nil then return nil,exitsErr end
   local destination=exits[to] or exits[tostring(to)]
   return type(destination)=="table" and destination[normalized]~=nil
+end
+
+function MapAdapter:validateRouteStep(fromID,toID,command)
+  local direction=MapperModel.direction(command)
+  if direction then return true,direction end
+  if self:isOwned(fromID) and self:isOwned(toID) and self:specialExitMatches(fromID,toID,command) then return true,command end
+  return nil,"special exit is not confirmed from "..tostring(fromID).." to "..tostring(toID)
 end
 
 function MapAdapter:connectSpecial(fromID,toID,command)

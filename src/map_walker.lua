@@ -62,16 +62,29 @@ function Walker:start(route,destination)
   if type(route)~="table" or type(route.rooms)~="table" or type(route.commands)~="table" then return nil,"invalid route" end
   if #route.rooms~=#route.commands+1 then return nil,"route rooms and commands do not match" end
   if #route.commands==0 then return nil,"route has no movement commands" end
-  for _,roomID in ipairs(route.rooms) do
+  local rooms={}
+  for index,roomID in ipairs(route.rooms) do
     local numeric=tonumber(roomID)
     if not numeric or numeric<=0 or numeric%1~=0 then return nil,"invalid route room "..tostring(roomID) end
+    rooms[index]=numeric
   end
-  for _,command in ipairs(route.commands) do if not direction(command) then return nil,"unsupported route command "..tostring(command) end end
   destination=tonumber(destination or route.rooms[#route.rooms])
   if not destination or tonumber(route.rooms[#route.rooms])~=destination then return nil,"route destination does not match "..tostring(destination) end
-  self.route={rooms={},commands={}}
-  for i,value in ipairs(route.rooms) do self.route.rooms[i]=tonumber(value) end
-  for i,value in ipairs(route.commands) do self.route.commands[i]=direction(value) end
+  local commands={}
+  for index,command in ipairs(route.commands) do
+    local canonical=direction(command)
+    if canonical then
+      commands[index]=canonical
+    else
+      local validate=self.adapter and self.adapter.validateStep
+      if type(validate)~="function" then return nil,"special exit is not confirmed from "..rooms[index].." to "..rooms[index+1] end
+      local callOk,confirmed,err=pcall(validate,self.adapter,rooms[index],rooms[index+1],command)
+      if not callOk then return nil,confirmed end
+      if not confirmed then return nil,err or "special exit is not confirmed from "..rooms[index].." to "..rooms[index+1] end
+      commands[index]=command
+    end
+  end
+  self.route={rooms=rooms,commands=commands}
   self.destination=destination; self.index=1
   self:status("walking","Walking to "..tostring(destination))
   return self:sendNext()
@@ -102,7 +115,7 @@ end
 
 function Walker:onWrongDirection() if self.route then return self:stop("wrong direction",true) end; return true end
 function Walker:onManualMovement(command,generated)
-  if self.route and not generated and direction(command) then return self:stop("manual movement") end
+  if self.route and not generated then return self:stop("manual movement") end
   return true
 end
 function Walker:shutdown() if self.route then return self:stop("shutdown") end; return true end

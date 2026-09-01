@@ -167,14 +167,15 @@ function Main:start()
   self.special_transition=SpecialTransition.new(MapperModel,self.adapter,(self.settings.mapper and self.settings.mapper.special_timeout) or 3)
   local walkerAdapter={owner=self}
   function walkerAdapter:sendCommand(command)
-    self.owner.generated_movement=MapperModel.direction(command)
+    self.owner.generated_command=command
     local ok,err=self.owner.adapter:sendCommand(command)
-    if ok==false or err~=nil then self.owner.generated_movement=nil; return nil,err or "movement command failed" end
+    if ok==false or err~=nil then self.owner.generated_command=nil; return nil,err or "movement command failed" end
     return true
   end
+  function walkerAdapter:validateStep(fromID,toID,command) return self.owner.map:validateRouteStep(fromID,toID,command) end
   function walkerAdapter:schedule(delay,callback) return self.owner.adapter:schedule(delay,callback) end
   function walkerAdapter:cancelTimer(id) return self.owner.adapter:cancelTimer(id) end
-  function walkerAdapter:clearGenerated() self.owner.generated_movement=nil end
+  function walkerAdapter:clearGenerated() self.owner.generated_command=nil end
   self.walker=MapWalker.new(walkerAdapter,function(kind,message,isError) self:mapperStatus(kind,message,isError) end,(self.settings.mapper and self.settings.mapper.walk_timeout) or 12)
   local initialVitals=self.adapter:getGMCP(); initialVitals=initialVitals and initialVitals.Char and initialVitals.Char.Vitals
   self.walker:onRoundtime(initialVitals and initialVitals.roundtime or 0)
@@ -202,8 +203,8 @@ function Main:start()
   end)
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.wrong,function(_,direction) self:callSpecialTransition("cancel","wrong_direction"); self.automapper:onWrongDirection(direction); self.walker:onWrongDirection(); self:refresh() end)
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.outgoing,function(_,command)
-    local canonical=MapperModel.direction(command); local generated=canonical~=nil and canonical==self.generated_movement
-    if generated then self.generated_movement=nil end
+    local canonical=MapperModel.direction(command); local generated=command==self.generated_command
+    if generated then self.generated_command=nil end
     self.walker:onManualMovement(command,generated)
     if self:mapperEnabled() then
       self.automapper:onOutgoing(command)
@@ -226,7 +227,7 @@ function Main:shutdown()
   if self.roundtime_timer then self.adapter:cancelTimer(self.roundtime_timer); self.roundtime_timer=nil end
   local chat=self.chat; self.chat=nil; if chat then chat:shutdown() end
   if self.collector then self.collector:shutdown(); self.collector=nil end
-  if self.walker then self.walker:shutdown(); self.walker=nil end; self.generated_movement=nil; self:removeMapClickHook()
+  if self.walker then self.walker:shutdown(); self.walker=nil end; self.generated_command=nil; self:removeMapClickHook()
   if self.special_transition then self:callSpecialTransition("shutdown"); self.special_transition=nil end
   if self.automapper then self.automapper:shutdown(); self.automapper=nil end; self.map=nil
   for _,id in ipairs(self.runtime.events) do self.adapter:killEvent(id) end; for _,id in ipairs(self.runtime.aliases) do self.adapter:killAlias(id) end

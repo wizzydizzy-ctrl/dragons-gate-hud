@@ -80,10 +80,44 @@ test("generated movement does not cancel itself and shutdown cancels exactly onc
   walker:shutdown(); eq(#adapter.canceled,1)
 end)
 
-test("walker rejects malformed routes and unsupported special exits",function()
+test("walker sends a confirmed special command exactly and waits for its exact room",function()
+  local adapter=fakeAdapter(); local validated={}
+  function adapter:validateStep(from,to,command)
+    validated[#validated+1]={from=from,to=to,command=command}
+    return from==1 and to==2 and command=="Go Gate"
+  end
+  local walker=Walker.new(adapter,function() end)
+  assert(walker:start({rooms={1,2,3},commands={"Go Gate","north"}},3))
+  eq(#validated,1); eq(validated[1].from,1); eq(validated[1].to,2); eq(validated[1].command,"Go Gate")
+  eq(adapter.sent[1].command,"Go Gate"); eq(adapter.sent[2],nil)
+  assert(walker:onRoom(2)); eq(adapter.sent[2].command,"n")
+end)
+
+test("walker validates every special edge before activation",function()
+  local adapter=fakeAdapter(); local validated={}
+  function adapter:validateStep(from,to,command)
+    validated[#validated+1]={from=from,to=to,command=command}
+    if from==1 and to==2 and command=="go gate" then return true end
+    return nil,"special exit is not confirmed from "..from.." to "..to
+  end
+  local walker=Walker.new(adapter,function() end)
+  local ok,err=walker:start({rooms={1,2,3},commands={"go gate","pull lever"}},3)
+  eq(ok,nil); eq(err,"special exit is not confirmed from 2 to 3")
+  eq(#validated,2); eq(#adapter.sent,0); eq(walker:active(),false)
+end)
+
+test("walker rejects unconfirmed special route commands and contains validator exceptions",function()
+  local adapter=fakeAdapter(); function adapter:validateStep() return nil,"special exit is not confirmed" end
+  local ok,err=Walker.new(adapter,function() end):start({rooms={1,2},commands={"pull lever"}},2)
+  eq(ok,nil); eq(err,"special exit is not confirmed")
+  function adapter:validateStep() error("validation exploded") end
+  ok,err=Walker.new(adapter,function() end):start({rooms={1,2},commands={"pull lever"}},2)
+  eq(ok,nil); eq(tostring(err):find("validation exploded",1,true)~=nil,true)
+end)
+
+test("walker rejects malformed routes",function()
   local walker=Walker.new(fakeAdapter(),function() end)
-  local ok,err=walker:start({rooms={1,2},commands={"go portal"}},2); eq(ok,nil); eq(err,"unsupported route command go portal")
-  ok,err=walker:start({rooms={1},commands={"n"}},2); eq(ok,nil); eq(err,"route rooms and commands do not match")
+  local ok,err=walker:start({rooms={1},commands={"n"}},2); eq(ok,nil); eq(err,"route rooms and commands do not match")
   ok,err=walker:start({rooms={1,2},commands={"n"}},3); eq(ok,nil); eq(err,"route destination does not match 3")
   ok,err=walker:start({rooms={1,2.5},commands={"n"}},2.5); eq(ok,nil); eq(err,"invalid route room 2.5")
 end)

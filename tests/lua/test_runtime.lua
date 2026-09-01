@@ -1,5 +1,6 @@
 local Main=require("main")
 local MudletAdapter=require("mudlet_adapter")
+local MapAdapter=require("map_adapter")
 local function fake()
   local f={next=0,killed={},deleted=0,borders={10,20,30,40},set_borders={},callbacks={},layouts={},triggers={},timers={},timer_delays={},timer_cancels={},events={},aliases={}}
   function f:getBorders() return self.borders[1],self.borders[2],self.borders[3],self.borders[4] end
@@ -78,6 +79,12 @@ local function fake()
     function map:route(fromID,toID)
       if f.routeError then return nil,f.routeError end
       return f.route or {rooms={fromID,toID},commands={"n"}}
+    end
+    function map:validateRouteStep(from,to,command)
+      for _,exit in ipairs(self.special) do
+        if exit.from==from and exit.to==to and exit.command==tostring(command):lower():match("^%s*(.-)%s*$") and self:isOwned(from) and self:isOwned(to) then return true,command end
+      end
+      return nil,"special exit is not confirmed from "..from.." to "..to
     end
     self.createdMaps=(self.createdMaps or 0)+1; self.map=map; return map
   end
@@ -342,7 +349,7 @@ test("walk failures emit one stopped status and clear generated marker",function
     if boundary=="send" then function f:sendCommand() error("send exploded") end
     else function f:schedule() error("schedule exploded") end end
     local hud=Main.new(f,{layout={}}); assert(hud:start()); local before=#(f.mapperStatuses or {})
-    local ok=aliasCallback(f,"^walkto\\s+(\\d+)$")("2"); eq(ok,nil); eq(hud.walker:active(),false); eq(hud.generated_movement,nil)
+    local ok=aliasCallback(f,"^walkto\\s+(\\d+)$")("2"); eq(ok,nil); eq(hud.walker:active(),false); eq(hud.generated_command,nil)
     local stopped=0; for index=before+1,#f.mapperStatuses do if f.mapperStatuses[index][1]=="stopped" then stopped=stopped+1 end end
     eq(stopped,1); eq(f.mapperStatuses[#f.mapperStatuses][1],"stopped"); hud:shutdown()
   end
@@ -360,6 +367,69 @@ test("walk aliases validate current room route safely and share one walker",func
   mapcenter(); eq(f.map.centered,175)
 end)
 
+test("map adapter validates exact owned route steps and preserves special command syntax",function()
+  local owners={[1]="DragonsGateHUD",[2]="DragonsGateHUD",[3]="DragonsGateHUD"}
+  local adapter=MapAdapter.new({
+    getRoomUserData=function(id,key) if key=="dghud.owner" then return owners[id] or "" end end,
+    getSpecialExits=function(from,listAll) eq(from,1); eq(listAll,true); return {[2]={['go gate']="0"}} end,
+  })
+  local ok,command=adapter:validateRouteStep(1,2,"Go Gate")
+  eq(ok,true); eq(command,"Go Gate")
+  ok,command=adapter:validateRouteStep(1,3,"Go Gate")
+  eq(ok,nil); eq(command,"special exit is not confirmed from 1 to 3")
+  ok,command=adapter:validateRouteStep(1,2,"leave gate")
+  eq(ok,nil); eq(command,"special exit is not confirmed from 1 to 2")
+  owners[2]="Personal"
+  ok,command=adapter:validateRouteStep(1,2,"Go Gate")
+  eq(ok,nil); eq(command,"special exit is not confirmed from 1 to 2")
+end)
+
+test("walkto crosses a confirmed special exit one command at a time around roundtime",function()
+  local f=fake(); f.gmcp=gmcpRoom(1); f.route={rooms={1,2,3},commands={"Go Gate","north"}}
+  local hud=Main.new(f,{layout={}}); assert(hud:start())
+  hud.map.rooms[2]={}; hud.map.rooms[3]={}; hud.map.special[1]={from=1,to=2,command="go gate"}
+  local walkto=assert(aliasCallback(f,"^walkto\\s+(\\d+)$")); assert(walkto("3"))
+  eq(f.sentCommands[1],"Go Gate"); eq(f.sentCommands[2],nil); eq(hud.generated_command,"Go Gate")
+  f.callbacks["sysDataSendRequest"](nil,"Go Gate"); eq(hud.generated_command,nil); eq(hud.walker:active(),true)
+  f.gmcp=gmcpRoom(2); f.gmcp.Char.Vitals.roundtime=4; f.callbacks["gmcp.Room.Info"]()
+  eq(#f.sentCommands,1); eq(hud.walker.waiting_roundtime,true)
+  f.gmcp.Char.Vitals.roundtime=0; f.callbacks["gmcp.Char.Vitals"]()
+  eq(f.sentCommands[2],"n"); eq(f.sentCommands[3],nil)
+  f.callbacks["sysDataSendRequest"](nil,"n"); f.gmcp=gmcpRoom(3); f.callbacks["gmcp.Room.Info"]()
+  eq(hud.walker:active(),false); eq(hud.generated_command,nil)
+end)
+
+test("native map click crosses a confirmed special exit with exact generated isolation",function()
+  local oldHook,oldPath,oldDir=_G.doSpeedWalk,_G.speedWalkPath,_G.speedWalkDir
+  local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start())
+  hud.map.rooms[2]={}; hud.map.rooms[3]={}; hud.map.special[1]={from=1,to=2,command="go gate"}
+  _G.speedWalkPath={1,2,3}; _G.speedWalkDir={"go gate","east"}; assert(_G.doSpeedWalk())
+  eq(f.sentCommands[1],"go gate"); eq(hud.generated_command,"go gate")
+  f.callbacks["sysDataSendRequest"](nil,"go gate"); f.gmcp=gmcpRoom(2); f.callbacks["gmcp.Room.Info"]()
+  eq(f.sentCommands[2],"e"); eq(f.sentCommands[3],nil)
+  hud:shutdown(); _G.doSpeedWalk=oldHook; _G.speedWalkPath=oldPath; _G.speedWalkDir=oldDir
+end)
+
+test("special walking stops on an unexpected room and movement timeout",function()
+  local f=fake(); f.gmcp=gmcpRoom(1); f.route={rooms={1,2},commands={"go gate"}}
+  local hud=Main.new(f,{layout={}}); assert(hud:start()); hud.map.rooms[2]={}; hud.map.special[1]={from=1,to=2,command="go gate"}
+  local walkto=assert(aliasCallback(f,"^walkto\\s+(\\d+)$")); assert(walkto("2"))
+  f.callbacks["sysDataSendRequest"](nil,"go gate"); f.gmcp=gmcpRoom(99); f.callbacks["gmcp.Room.Info"]()
+  eq(hud.walker:active(),false); eq(hud.last_mapper_status,"Walk stopped: unexpected room 99")
+  f.gmcp=gmcpRoom(1); hud.automapper.current_id=1; assert(walkto("2")); local timeout=hud.walker.timeout
+  local callback=assert(f.timers[timeout]); f.timers[timeout]=nil; callback()
+  eq(hud.walker:active(),false); eq(hud.generated_command,nil); eq(hud.last_mapper_status,"Walk stopped: movement timed out")
+end)
+
+test("manually typed non-direction command replaces a generated special walk",function()
+  local f=fake(); f.gmcp=gmcpRoom(1); f.route={rooms={1,2},commands={"go gate"}}
+  local hud=Main.new(f,{layout={}}); assert(hud:start()); hud.map.rooms[2]={}; hud.map.special[1]={from=1,to=2,command="go gate"}
+  assert(aliasCallback(f,"^walkto\\s+(\\d+)$")("2")); eq(hud.generated_command,"go gate")
+  f.callbacks["sysDataSendRequest"](nil,"pull lever")
+  eq(hud.walker:active(),false); eq(hud.generated_command,nil); eq(hud.last_mapper_status,"Walk stopped: manual movement")
+  eq(hud.special_transition:pending().command,"pull lever")
+end)
+
 test("routine walking stops are statuses and do not overwrite mapper errors",function()
   local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}; f.route={rooms={175,176},commands={"north"}}
   local hud=Main.new(f,{layout={}}); assert(hud:start()); hud.last_mapper_error="earlier failure"
@@ -370,11 +440,11 @@ test("routine walking stops are statuses and do not overwrite mapper errors",fun
   hud:shutdown(); eq(hud.last_mapper_error,"earlier failure")
 end)
 
-test("walkto rejects missing current rooms route errors and special exits",function()
+test("walkto rejects missing current rooms route errors and unconfirmed special exits",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start())
   local walkto=assert(aliasCallback(f,"^walkto\\s+(\\d+)$")); local ok,err=walkto("20"); eq(ok,nil); eq(err,"current room is unavailable")
   hud.automapper.current_id=10; f.routeError="no route"; ok,err=walkto("20"); eq(ok,nil); eq(err,"no route")
-  f.routeError=nil; f.route={rooms={10,20},commands={"go portal"}}; ok,err=walkto("20"); eq(ok,nil); eq(err,"unsupported route command go portal")
+  f.routeError=nil; f.route={rooms={10,20},commands={"go portal"}}; ok,err=walkto("20"); eq(ok,nil); eq(err,"special exit is not confirmed from 10 to 20")
 end)
 
 test("native map click uses walker route and restores the previous global hook",function()

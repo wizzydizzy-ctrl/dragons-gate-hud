@@ -1,4 +1,5 @@
 local Main=require("main")
+local MudletAdapter=require("mudlet_adapter")
 local function fake()
   local f={next=0,killed={},deleted=0,borders={10,20,30,40},set_borders={},callbacks={},layouts={},triggers={},timers={},events={},aliases={}}
   function f:getBorders() return self.borders[1],self.borders[2],self.borders[3],self.borders[4] end
@@ -9,6 +10,8 @@ local function fake()
     applyLayout=function(self,layout) f.layouts[#f.layouts+1]=layout end,
     renderChat=function(self,entries,categories,filter) f.chatRenders=(f.chatRenders or 0)+1; f.renderedChat={entries=entries,categories=categories,filter=filter} end,
     setChatFilterCallback=function(self,callback) f.chatFilterCallback=callback end,
+    setMapCenterCallback=function(self,callback) f.mapCenterCallback=callback end,
+    centerMap=function(self,roomID) f.centeredRooms=f.centeredRooms or {}; f.centeredRooms[#f.centeredRooms+1]=roomID; return true end,
     delete=function() f.deleted=f.deleted+1 end,
   } end
   function f:addEvent(name,fn) self.next=self.next+1; self.callbacks[name]=fn; local id="event-"..self.next; self.events[id]=name; return id end
@@ -53,7 +56,8 @@ local function fake()
     function map:ensureRoom(room,coordinates) self.rooms[room.id]={room=room,coordinates=coordinates}; return true end
     function map:ensureStub() return true end
     function map:connect(from,to,direction,reverse) self.links[#self.links+1]={from=from,to=to,direction=direction,reverse=reverse}; return true end
-    function map:setCurrent(id) self.current=id; return true end
+    function map:setCurrent(id) self.current=id; return self:center(id) end
+    function map:center(id) self.centered=id; f.mapCenterCalls=(f.mapCenterCalls or 0)+1; return true end
     function map:coordinates(id) local item=self.rooms[id]; return item and item.coordinates end
     function map:roomsAt() return {} end
     self.createdMaps=(self.createdMaps or 0)+1; self.map=map; return map
@@ -61,6 +65,22 @@ local function fake()
   function f:reportMapperStatus(kind,message) self.mapperStatuses=self.mapperStatuses or {}; self.mapperStatuses[#self.mapperStatuses+1]={kind,message} end
   return f
 end
+
+test("successful room ingestion centers the embedded mapper",function()
+  local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="Training grounds.",area=1,exits={"west"}}}}
+  local hud=Main.new(f,{layout={}}); assert(hud:start())
+  eq(f.mapCenterCalls,1); eq(f.map.centered,175)
+end)
+test("Mudlet adapter centers and refreshes the native map after selecting an owned room",function()
+  local calls={}
+  local api={
+    getRoomUserData=function(id,key) if id==175 and key=="dghud.owner" then return "DragonsGateHUD" end end,
+    centerview=function(id) calls[#calls+1]={"center",id}; return true end,
+    updateMap=function() calls[#calls+1]={"update"}; return true end,
+  }
+  local adapter=MudletAdapter.new(); local map=adapter:createMapAdapter(api)
+  eq(map:setCurrent(175),true); eq(calls[1][1],"center"); eq(calls[1][2],175); eq(calls[2][1],"update")
+end)
 test("startup is idempotent and shutdown owns exact runtime IDs",function()
   local f=fake(); local hud=Main.new(f,{layout={left_width=190,right_width=270}}); eq(hud:start(),true); local first=f.next; eq(hud:start(),true); eq(f.next,first); eq(hud:shutdown(),true); eq(f.deleted,1); eq(f.set_borders[1],0); eq(f.set_borders[2],0); eq(f:count(f.events),0); eq(f:count(f.aliases),0); eq(f:count(f.triggers),0); eq(f:count(f.timers),0)
 end)

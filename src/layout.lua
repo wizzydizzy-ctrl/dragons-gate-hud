@@ -1,4 +1,45 @@
 local Layout={}
+function Layout.lowerPanelGeometry(layout,psiVisible,webVisible)
+  local available=math.max(0,(layout.window_height or 0)-(layout.header_height or 0)-(layout.bottom or 0))
+  local requested={}
+  if psiVisible then requested[#requested+1]="psi" end
+  if webVisible then requested[#requested+1]="web" end
+  local inset=layout.lower_panel_padding
+  local compass=layout.lower_compass_cell*3
+  local utility=layout.lower_utility_height*2+5
+  local fixed_bottom=inset+utility+6+compass
+  local function contentTop(optional,status)
+    return (3+optional)*(layout.lower_gauge_height+layout.lower_row_gap)+status+13
+  end
+  local room=layout.lower_room_height
+  local status=layout.lower_status_height
+  local mapper=layout.mapper_visible and layout.lower_mapper_height or 0
+  local mapper_min=layout.lower_mapper_min_height or 0
+  local room_min=layout.lower_room_min_height or 1
+  local status_min=layout.lower_status_min_height or status
+  local optional=#requested
+  local function required(r,s,m)
+    return contentTop(optional,s)+r+layout.lower_row_gap+fixed_bottom+(m>0 and (m+layout.lower_mapper_gap) or 0)
+  end
+  while optional>0 and required(room,status,mapper)>available do optional=optional-1 end
+  local pressure=math.max(0,required(room,status,mapper)-available)
+  local cut=math.min(pressure,room-room_min); room=room-cut; pressure=pressure-cut
+  cut=math.min(pressure,status-status_min); status=status-cut; pressure=pressure-cut
+  cut=math.min(pressure,math.max(0,mapper-mapper_min)); mapper=mapper-cut; pressure=pressure-cut
+  if pressure>0 and mapper>0 then mapper=0; pressure=math.max(0,required(room,status,mapper)-available) end
+  cut=math.min(pressure,room-room_min); room=room-cut; pressure=pressure-cut
+  cut=math.min(pressure,status-status_min); status=status-cut; pressure=pressure-cut
+  local panel=math.min(available,required(room,status,mapper))
+  local gauge_y=(3+optional)*(layout.lower_gauge_height+layout.lower_row_gap)
+  local content_top=gauge_y+status+13
+  local utility_y=panel-inset-utility
+  local compass_y=utility_y-6-compass
+  local mapper_y=mapper>0 and compass_y-layout.lower_mapper_gap-mapper or compass_y
+  return {panel_height=panel,optional_count=optional,show_psi=psiVisible and optional>=1,
+    show_web=webVisible and optional>=(psiVisible and 2 or 1),status_height=status,room_height=room,
+    mapper_height=mapper,content_top=content_top,mapper_y=mapper_y,compass_y=compass_y,
+    utility_y=utility_y,compass_height=compass,utility_height=utility}
+end
 function Layout.detailsPlacement(available_height,line_height,left_width)
   local enough_height=(tonumber(available_height) or 0)>=(tonumber(line_height) or 0)*8
   local enough_width=left_width==nil or (tonumber(left_width) or 0)>=420
@@ -58,10 +99,25 @@ local function metrics(width,height,layout,chatSettings)
   layout.lower_body_font=scaled(layout.body_font); layout.lower_small_font=layout.lower_body_font; layout.lower_heading_font=scaled(layout.heading_font)
   layout.lower_panel_padding=scaled(layout.panel_padding); layout.lower_gauge_height=layout.lower_small_font+14; layout.lower_row_gap=scaled(layout.row_gap)
   layout.lower_title_height=0; layout.lower_status_height=scaled(layout.status_height); layout.lower_room_height=scaled(layout.room_height)
+  layout.lower_status_min_height=math.max(layout.lower_body_font*2+20,48)
+  layout.lower_room_min_height=math.max(layout.lower_heading_font+layout.lower_body_font+20,56)
   layout.lower_compass_font=scaled(layout.compass_font); layout.lower_compass_cell=scaled(layout.compass_cell)
   layout.lower_utility_font=scaled(layout.utility_font); layout.lower_utility_height=scaled(layout.utility_height); layout.lower_section_gap=scaled(44)
   layout.bottom=0; layout.window_height=height
-  return chatMetrics(width,height,layout,chatSettings)
+  chatMetrics(width,height,layout,chatSettings)
+  layout.lower_mapper_gap=layout.lower_row_gap
+  if layout.mode=="compact" then
+    layout.mapper_visible=false; layout.lower_mapper_height=0; layout.lower_mapper_min_height=0; layout.lower_room_visible_height=0
+  else
+    local minimum=layout.mode=="wide" and 140 or 90
+    layout.lower_mapper_min_height=minimum
+    local available=math.max(0,height-layout.top)
+    local desired=clamp(available*.22,minimum,220)
+    layout.mapper_visible=available>=minimum+180
+    layout.lower_mapper_height=layout.mapper_visible and desired or 0
+    layout.lower_room_visible_height=layout.lower_room_height
+  end
+  return layout
 end
 function Layout.compute(width,height,chatSettings)
   width=tonumber(width) or 1200; height=tonumber(height) or 800

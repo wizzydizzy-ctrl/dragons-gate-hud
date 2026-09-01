@@ -20,7 +20,13 @@ local function fakeMapApi(seed)
   function api.setRoomName(id,v) local ok,e=gate("setRoomName"); if not ok then return nil,e end; api.rooms[id].name=v; return true end
   function api.setRoomCoordinates(id,x,y,z) local ok,e=gate("setRoomCoordinates"); if not ok then return nil,e end; local r=api.rooms[id]; r.x=x;r.y=y;r.z=z; return true end
   function api.setRoomUserData(id,k,v) local ok,e=gate("setRoomUserData"); if not ok then return nil,e end; api.rooms[id].user[k]=v; return true end
-  function api.getRoomUserData(id,k) local ok,e=gate("getRoomUserData"); if not ok then return nil,e end; return api.rooms[id] and api.rooms[id].user[k] end
+  function api.getRoomUserData(id,k)
+    local ok,e=gate("getRoomUserData"); if not ok then return nil,e end
+    local room=api.rooms[id]
+    if not room then return "" end
+    local value=room.user[k]
+    return value==nil and "" or value
+  end
   function api.setExitStub(id,d) local ok,e=gate("setExitStub"); if not ok then return nil,e end; api.rooms[id].stubs[d]=true; return true end
   function api.setExit(id,to,d) local ok,e=gate("setExit"); if not ok then return nil,e end; api.rooms[id].exits[d]=to; return true end
   function api.getRoomCoordinates(id) local ok,e=gate("getRoomCoordinates"); if not ok then return nil,e end; local r=api.rooms[id]; return r and r.x,r and r.y,r and r.z end
@@ -152,6 +158,9 @@ test("fresh adapter recovers an owned room after its provisional state write fai
   eq(api.rooms[22].user["dghud.state"],nil); eq(api.rooms[22].user["dghud.mapper_schema"],nil); eq(api.rooms[22].user["dghud.environment"],nil)
   eq(api.rooms[22].user["dghud.flags"],nil); eq(api.rooms[22].user["dghud.partition"],nil); eq(api.rooms[22].user["dghud.game_area"],nil)
   eq(api.rooms[22].area,-1); eq(api.rooms[22].x,0); eq(api.rooms[22].y,0); eq(api.rooms[22].z,0); eq(#api.deletedRooms,0)
+  local interrupted=assert(Adapter.new(api):roomRecord(22))
+  eq(interrupted.state,nil); eq(interrupted.mapper_schema,nil); eq(interrupted.environment,nil)
+  eq(interrupted.flags,nil); eq(interrupted.partition,nil); eq(interrupted.game_area,nil)
 
   rejectProvisional=false
   local mutations={}; local nativeArea=api.setRoomArea; local nativeCoordinates=api.setRoomCoordinates

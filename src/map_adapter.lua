@@ -32,6 +32,13 @@ local function read(api,name,...)
   return a,b,c
 end
 
+local function optionalRoomUserData(api,roomID,key)
+  local value,valueErr=read(api,"getRoomUserData",roomID,key)
+  if value==nil and valueErr~=nil then return nil,valueErr end
+  if value==nil or tostring(value)=="" then return nil end
+  return tostring(value)
+end
+
 local function requireCapabilities(api,names)
   for _,name in ipairs(names) do
     if type(api[name])~="function" then return missing(name) end
@@ -104,24 +111,24 @@ function MapAdapter:roomRecord(roomID)
   local owner,ownerErr=read(self.api,"getRoomUserData",roomID,"dghud.owner")
   if owner==nil and ownerErr~=nil then return nil,ownerErr end
   record.owned=owner==self.owner
-  local state,stateErr=read(self.api,"getRoomUserData",roomID,"dghud.state")
-  if state==nil and stateErr~=nil then return nil,stateErr end
-  if state~=nil and tostring(state)~="" then record.state=tostring(state) end
-  local mapperSchema,schemaErr=read(self.api,"getRoomUserData",roomID,"dghud.mapper_schema")
-  if mapperSchema==nil and schemaErr~=nil then return nil,schemaErr end
-  if mapperSchema~=nil then record.mapper_schema=mapperSchema end
-  local environment,environmentErr=read(self.api,"getRoomUserData",roomID,"dghud.environment")
-  if environment==nil and environmentErr~=nil then return nil,environmentErr end
-  if environment~=nil then record.environment=environment end
-  local flags,flagsErr=read(self.api,"getRoomUserData",roomID,"dghud.flags")
-  if flags==nil and flagsErr~=nil then return nil,flagsErr end
-  if flags~=nil then record.flags=flags end
-  local partition,partitionErr=read(self.api,"getRoomUserData",roomID,"dghud.partition")
-  if partition==nil and partitionErr~=nil then return nil,partitionErr end
-  if partition~=nil and tostring(partition)~="" then record.partition=tostring(partition) end
-  local gameArea,gameAreaErr=read(self.api,"getRoomUserData",roomID,"dghud.game_area")
-  if gameArea==nil and gameAreaErr~=nil then return nil,gameAreaErr end
-  if gameArea~=nil then record.game_area=gameArea end
+  local state,stateErr=optionalRoomUserData(self.api,roomID,"dghud.state")
+  if stateErr then return nil,stateErr end
+  record.state=state
+  local mapperSchema,schemaErr=optionalRoomUserData(self.api,roomID,"dghud.mapper_schema")
+  if schemaErr then return nil,schemaErr end
+  record.mapper_schema=mapperSchema
+  local environment,environmentErr=optionalRoomUserData(self.api,roomID,"dghud.environment")
+  if environmentErr then return nil,environmentErr end
+  record.environment=environment
+  local flags,flagsErr=optionalRoomUserData(self.api,roomID,"dghud.flags")
+  if flagsErr then return nil,flagsErr end
+  record.flags=flags
+  local partition,partitionErr=optionalRoomUserData(self.api,roomID,"dghud.partition")
+  if partitionErr then return nil,partitionErr end
+  record.partition=partition
+  local gameArea,gameAreaErr=optionalRoomUserData(self.api,roomID,"dghud.game_area")
+  if gameAreaErr then return nil,gameAreaErr end
+  record.game_area=gameArea
   local area,areaErr=read(self.api,"getRoomArea",roomID)
   if area==nil and areaErr~=nil then return nil,areaErr end
   record.area=area
@@ -212,8 +219,7 @@ function MapAdapter:ensureRoom(room,coordinates,partitionKey)
     {"setRoomName",room.id,tostring(room.name or ("Room "..tostring(room.id)))},
   }
   if not record.partition then operations[#operations+1]={"setRoomUserData",room.id,"dghud.partition",effectiveKey} end
-  local gameArea=record.game_area
-  if gameArea==nil or tostring(gameArea)=="" then operations[#operations+1]={"setRoomUserData",room.id,"dghud.game_area",tostring(room.area_key)} end
+  if record.game_area==nil then operations[#operations+1]={"setRoomUserData",room.id,"dghud.game_area",tostring(room.area_key)} end
   if needsPlacement then
     operations[#operations+1]={"setRoomArea",room.id,area}
     operations[#operations+1]={"setRoomCoordinates",room.id,tonumber(coordinates.x) or 0,tonumber(coordinates.y) or 0,tonumber(coordinates.z) or 0}

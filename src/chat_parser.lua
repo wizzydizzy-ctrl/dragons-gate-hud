@@ -51,6 +51,8 @@ local rules={
   {category="ESP",pattern='^'..name..' %(ESP%): "(.*)"$',speaker=1,message=2},
   {category="STAFF",pattern='^'..name..' %(ELDER%): "(.*)"$',speaker=1,message=2},
   {category="STAFF",pattern='^%[GUIDE%] '..name..': (.+)$',speaker=1,message=2},
+  {category="STAFF",pattern='^%[GM%] '..name..': (.+)$',speaker=1,message=2},
+  {category="STAFF",pattern='^You hear the voice of '..name..' say, "(.*)"$',speaker=1,message=2},
   {category="DRAGON",pattern="^You pick up "..name.."'s mental link, \"(.*)\"$",speaker=1,message=2},
   {category="CONTACT",pattern="^You pick up "..name.."'s thoughts echoing through the area, \"(.*)\"$",speaker=1,message=2},
 }

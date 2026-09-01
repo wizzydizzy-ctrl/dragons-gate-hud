@@ -308,18 +308,43 @@ test("cleanup preview cancellation expiry and success preserve personal map byte
   local unchanged=stable(world); local safeRoom=stable(world.rooms[1]); local safeArea=stable(world.area_records[10])
   local preview=assert(findAlias(f,"^dghud map clear submap (\\d+)$")({"","900"}))
   eq(table.concat(preview.room_ids,","),"900,901"); eq(stable(world),unchanged)
+  local cancelledToken=preview.token
   assert(findAlias(f,"^dghud map cancel$")()); eq(stable(world),unchanged)
+  local cancelled,cancelledErr=findAlias(f,"^dghud map confirm (\\S+)$")({"",cancelledToken})
+  eq(cancelled,nil); eq(cancelledErr,"cleanup confirmation token is invalid"); eq(stable(world),unchanged)
 
   preview=assert(findAlias(f,"^dghud map clear submap (\\d+)$")({"","900"})); f.now=1031
   local expired,expiryErr=findAlias(f,"^dghud map confirm (\\S+)$")({"",preview.token})
   eq(expired,nil); eq(expiryErr,"cleanup confirmation token has expired"); eq(stable(world),unchanged)
+  expired,expiryErr=findAlias(f,"^dghud map confirm (\\S+)$")({"",preview.token})
+  eq(expired,nil); eq(expiryErr,"cleanup confirmation token is invalid"); eq(stable(world),unchanged)
 
   f.now=1040; preview=assert(findAlias(f,"^dghud map clear submap (\\d+)$")({"","900"}))
   local result=assert(findAlias(f,"^dghud map confirm (\\S+)$")({"",preview.token}))
   eq(table.concat(result.deleted,","),"900,901"); eq(result.area_deleted,true); eq(world.rooms[900],nil); eq(world.rooms[901],nil); eq(world.area_records[42],nil)
   eq(personalBytes(world),before); eq(stable(world.rooms[1]),safeRoom); eq(stable(world.area_records[10]),safeArea); eq(f.map_refreshes,1)
 
-  arrive(f,900,{"north"}); eq(world.rooms[900].owner,"DragonsGateHUD"); eq(world.rooms[900].name,"Room 900"); eq(personalBytes(world),before)
+  observeCommand(f,"go gate"); arrive(f,900,{"north"})
+  observeCommand(f,"north"); arrive(f,901,{"south"})
+  eq(world.rooms[900].owner,"DragonsGateHUD"); eq(world.rooms[901].owner,"DragonsGateHUD")
+  eq(world.rooms[900].partition,"special:900"); eq(world.rooms[901].partition,"special:900"); eq(world.rooms[900].area,world.rooms[901].area)
+  eq(world.links["900:n"],901); eq(world.links["901:s"],900); eq(world.special["1:900:go gate"],true); eq(personalBytes(world),before)
+end)
+
+test("cleanup confirmation rejects stale ownership and membership without touching personal map bytes",function()
+  local cases={
+    {name="ownership",mutate=function(world) world.rooms[901].owner="personal" end},
+    {name="membership",mutate=function(world) world.rooms[901].area=43 end},
+  }
+  for _,case in ipairs(cases) do
+    local world=cleanupWorld(); local personalBefore=personalBytes(world); local f=runtime(world)
+    f.gmcp.Room.Info={num=1,name="Safe room",area=1,environment="Plain",flags={},exits={}}
+    local hud=Main.new(f,Defaults); assert(hud:start())
+    local preview=assert(findAlias(f,"^dghud map clear submap (\\d+)$")({"","900"})); case.mutate(world); local changed=stable(world)
+    local result,err=findAlias(f,"^dghud map confirm (\\S+)$")({"",preview.token})
+    eq(result,nil); eq(err,"cleanup preview is stale"); eq(stable(world),changed); eq(personalBytes(world),personalBefore)
+    eq(world.rooms[900]~=nil,true); eq(world.rooms[901]~=nil,true); eq(world.area_records[42]~=nil,true)
+  end
 end)
 
 test("cleanup partial failure preserves personal bytes surviving HUD rooms and owned area",function()

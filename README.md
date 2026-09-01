@@ -128,6 +128,8 @@ The HUD tags only its own rooms and areas with `dghud.owner=DragonsGateHUD`. It 
 
 ### Safe map cleanup
 
+Cleanup previews require secure token entropy from `/dev/urandom`. If that source is unavailable, preview creation fails closed without changing the map. Standard Windows environments are unsupported for cleanup previews until a supported secure entropy source is added; mapping itself remains available.
+
 To repair incorrectly generated HUD map content, first move out of the affected room, submap, or area and run `walkstop`. Preview exactly one scope:
 
 ```text

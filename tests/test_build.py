@@ -14,4 +14,6 @@ class BuildTest(unittest.TestCase):
                 xml=z.read(names[0]).decode(); self.assertIn('<name>DragonsGateHUD</name>',xml); self.assertIn('DGHUD.start',xml)
                 self.assertIn('package.preload[&quot;layout&quot;]',xml)
                 self.assertIn('package.preload[&quot;chat_controller&quot;]',xml)
+                self.assertNotIn('&lt;/green&gt;',xml)
+                self.assertIn('[DGHUD Update]&lt;reset&gt; Installed version',xml)
 if __name__=='__main__': unittest.main()

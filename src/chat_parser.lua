@@ -112,6 +112,8 @@ function Parser.parse(line,character,now)
   if message then return builtIn("OWN",message,{speaker=trim(character)},character,now,line) end
   local speaker,message=line:match("^"..name.." whispers to you, \"(.*)\"$")
   if speaker then return builtIn("WHISPER",message,{speaker=speaker,target=trim(character)},character,now,line) end
+  speaker,message=line:match("^"..name.." whispers, \"(.*)\"$")
+  if speaker then return builtIn("WHISPER",message,{speaker=speaker,target=trim(character)},character,now,line) end
   local target
   target,message=line:match("^You whisper to "..name..", \"(.*)\"$")
   if target then return builtIn("WHISPER",message,{speaker=trim(character),target=target},character,now,line) end

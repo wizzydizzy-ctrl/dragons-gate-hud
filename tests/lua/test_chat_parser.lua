@@ -34,6 +34,8 @@ test("parses active character speech and unquoted own output",function()
 end)
 
 test("parses incoming and outgoing whispers",function()
+  local direct=assert(Parser.parse('Kaida whispers, "hello"',"Dace Alterac"))
+  eq(direct.category,"WHISPER"); eq(direct.speaker,"Kaida"); eq(direct.target,"Dace Alterac"); eq(direct.message,"hello")
   local incoming=assert(Parser.parse('Ocinaiya whispers to you, "Keep this quiet."',"Dace Alterac"))
   eq(incoming.category,"WHISPER"); eq(incoming.speaker,"Ocinaiya"); eq(incoming.target,"Dace Alterac")
   local outgoing=assert(Parser.parse('You whisper to Ocinaiya, "I will."',"Dace Alterac"))

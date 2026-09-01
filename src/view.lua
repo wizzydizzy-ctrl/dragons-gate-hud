@@ -3,6 +3,11 @@ local Layout=require("layout")
 local View={}; View.__index=View
 function View.withFont(text,size) return "<span style='font-size:"..tonumber(size).."px'>"..text.."</span>" end
 function View.raiseCards(cards) for _,card in ipairs(cards or {}) do if card and card.raise then card:raise() end end end
+function View.monospaceFont(available)
+  available=type(available)=="table" and available or {}
+  for _,name in ipairs({"DejaVu Sans Mono","Liberation Mono","Consolas","Menlo","Monaco","Courier New","Courier","Monospace"}) do if available[name] then return name end end
+  return "Courier New"
+end
 local function esc(v) return tostring(v or ""):gsub("&","&amp;"):gsub("<","&lt;"):gsub(">","&gt;") end
 local function safeText(v) return esc(tostring(v or ""):gsub("%c"," ")) end
 local function safeChatText(v) return tostring(v or ""):gsub("%c"," ") end
@@ -120,6 +125,8 @@ end
 local function place(item,x,y,w,h) item:move(x,y); item:resize(w,h); item:show() end
 function View.new(settings)
   local self=setmetatable({settings=settings,geyser=Geyser,direction_buttons={},utility_buttons={},exit_available={}},View); local t=settings.theme
+  local available={}; if type(rawget(_G,"getAvailableFonts"))=="function" then local ok,value=pcall(getAvailableFonts); if ok and type(value)=="table" then available=value end end
+  self.list_font_family=View.monospaceFont(available)
   self.root=Geyser.Container:new({name="DGHUD.Root",x=0,y=0,width="100%",height="100%"})
   self.header=label("DGHUD.Header",self.root,"background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px 18px;")
   self.attribute_strip=label("DGHUD.AttributeStrip",self.root,"background:transparent;color:"..t.text..";padding:10px 12px;")
@@ -144,6 +151,8 @@ function View.new(settings)
   self.skills_title=label("DGHUD.Skills.Title",self.root,"background:transparent;color:"..t.accent..";")
   self.skills_output=Geyser.ScrollBox:new({name="DGHUD.Skills.Output",x=0,y=0,width=100,height=100},self.root)
   self.skills_content=label("DGHUD.Skills.Content",self.skills_output,"background:#101713;color:"..t.text..";")
+  self.list_measure=label("DGHUD.List.Measure",self.root,"background:transparent;color:transparent;")
+  self.list_measure:move(-1000,-1000); self.list_measure:hide()
   self.right=Geyser.Container:new({name="DGHUD.RightRail",x=0,y=0,width=300,height=500},self.root)
   self.right_bg=label("DGHUD.RightBackground",self.right,"background:"..t.panel..";border-right:1px solid "..t.border..";")
   self.right_title=label("DGHUD.RightTitle",self.right,"background:transparent;color:"..t.accent..";font-size:13px;font-weight:700;padding:10px 14px;")
@@ -254,13 +263,21 @@ function View:applyLayout(layout)
   for _,card in ipairs({self.equipment,self.inventory,self.skills}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
   for _,title in ipairs({self.inventory_title,self.skills_title}) do title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.list_font.."px;font-weight:700;") end
   self.inventory_footer:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.list_font.."px;")
-  for _,content in ipairs({self.inventory_content,self.skills_content}) do content:setStyleSheet("background:#101713;color:"..t.text..";font-family:'Courier New','Monospace';font-size:"..layout.list_font.."px;") end
+  for _,widget in ipairs({self.inventory_title,self.skills_title,self.inventory_content,self.skills_content,self.list_measure}) do
+    if widget.setFont then widget:setFont(self.list_font_family) end
+    if widget.setFontSize then widget:setFontSize(layout.list_font) end
+  end
+  self.list_measure:echo("Ag")
+  local measured; if self.list_measure.getSizeHint then local ok,_,height=pcall(self.list_measure.getSizeHint,self.list_measure); if ok then measured=tonumber(height) end end
+  layout.list_row_height=math.max(math.ceil(layout.list_font*1.3),math.ceil(measured or 0))
+  self.list_row_height=layout.list_row_height
+  for _,content in ipairs({self.inventory_content,self.skills_content}) do content:setStyleSheet("background:#101713;color:"..t.text..";font-family:'"..self.list_font_family.."';font-size:"..layout.list_font.."px;") end
   self.right_title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.lower_body_font.."px;font-weight:700;padding:"..lp.."px;")
   self.room:setStyleSheet("background:#101a16;border:1px solid #385044;border-radius:7px;color:"..t.text..";padding:"..lp.."px;font-size:"..layout.lower_body_font.."px;")
   self.bottom:setStyleSheet("background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px "..p.."px;font-size:"..layout.small_font.."px;")
   self.compact:setStyleSheet("background:"..t.panel..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
   for _,g in ipairs({self.hp,self.fatigue,self.carry,self.psi,self.web}) do g.text:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.lower_small_font.."px;font-weight:700;"); if g.text.setFontSize then g.text:setFontSize(layout.lower_small_font) end end
-  place(self.header,0,0,"100%",top); place(self.attribute_strip,layout.left,0,layout.console_width,top); self.attribute_strip:raise(); self.bottom:hide()
+  place(self.header,0,0,"100%",top); place(self.attribute_strip,layout.console_left or layout.left,0,layout.console_width,top); self.attribute_strip:raise(); self.bottom:hide()
   place(self.chat_container,layout.chat_x or layout.left,top,layout.chat_width or layout.console_width,layout.chat_height or 240)
   place(self.chat_bg,0,0,"100%","100%")
   place(self.chat_tabs,0,0,"100%",32)
@@ -280,8 +297,10 @@ function View:applyLayout(layout)
     local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=2
     self.list_content_width=math.max(1,card_w-p*2-24)
     self.skill_character_capacity=math.max(17,math.floor(self.list_content_width/(layout.list_font*.62))); self.skill_name_width=math.max(8,math.min(24,self.skill_character_capacity-9))
-    self.inventory_content:resize(self.list_content_width,tonumber(self.inventory_content.height) or layout.list_row_height*5)
-    self.skills_content:resize(self.list_content_width,tonumber(self.skills_content.height) or layout.list_row_height*5)
+    local inventory_rows=self.last_state and self.last_state.inventory and #(self.last_state.inventory.items or {}) or 0
+    local skill_rows=self.last_state and self.last_state.skills and #(self.last_state.skills.items or {}) or 0
+    self.inventory_content:resize(self.list_content_width,math.max(layout.list_row_height*5,inventory_rows*layout.list_row_height))
+    self.skills_content:resize(self.list_content_width,math.max(layout.list_row_height*5,skill_rows*layout.list_row_height))
     local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18
     local show_psi,show_web=psi_visible,web_visible
     local function vitalsHeight()
@@ -369,7 +388,7 @@ function View:renderInventory(s)
   signature=table.concat(signature,"\30"); if signature==self.inventory_signature then return end; self.inventory_signature=signature
   self.inventory_title:echo("<b>INVENTORY</b>")
   local lines={}; for _,item in ipairs(inventory.items or {}) do lines[#lines+1]=esc(item.name or "").."  <span style='color:"..t.muted.."'>"..esc(item.weight or "").." lb</span>" end
-  self.inventory_content:echo("<div style='white-space:nowrap;font-family:monospace'>"..table.concat(lines,"<br>").."</div>"); self.inventory_content:move(0,0); self.inventory_content:resize(self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.inventory_content:show()
+  self.inventory_content:echo("<div style='white-space:nowrap'>"..table.concat(lines,"<br>").."</div>"); self.inventory_content:move(0,0); self.inventory_content:resize(self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.inventory_content:show()
   self.inventory_footer:echo("<b>Total "..esc(inventory.total_weight or 0).." lb</b><br><span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(v.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(v.silver or 0).."sp</b></span>")
 end
 function View:renderSkills(s)
@@ -380,7 +399,7 @@ function View:renderSkills(s)
   local function fixed(value) return (esc(value):gsub(" ","&nbsp;")) end
   self.skills_title:echo("<b>"..fixed(View.skillHeader(nameWidth)).."</b>")
   local lines={}; for _,skill in ipairs(items) do lines[#lines+1]=fixed(View.skillLine(skill,nameWidth)) end
-  self.skills_content:echo("<div style='white-space:nowrap;font-family:monospace'>"..table.concat(lines,"<br>").."</div>"); self.skills_content:move(0,0); self.skills_content:resize(self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.skills_content:show()
+  self.skills_content:echo("<div style='white-space:nowrap'>"..table.concat(lines,"<br>").."</div>"); self.skills_content:move(0,0); self.skills_content:resize(self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.skills_content:show()
 end
 function View:renderChat(entries,categories,activeFilter,savedScroll)
   entries=type(entries)=="table" and entries or {}; categories=type(categories)=="table" and categories or {}

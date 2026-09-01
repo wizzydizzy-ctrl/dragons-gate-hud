@@ -1,10 +1,10 @@
 local Layout=require("layout")
 test("wide screens reserve seventeen percent for each HUD rail",function()
-  local r=Layout.compute(1920,1080); eq(r.mode,"wide"); eq(r.left,326); eq(r.right,326); eq(r.console_width,1268); eq(r.header_height,74); eq(r.show_character_rail,true); eq(r.vitals_side,"right")
+  local r=Layout.compute(1920,1080); eq(r.mode,"wide"); eq(r.left,326); eq(r.right,326); eq(r.console_gutter,10); eq(r.console_left,336); eq(r.console_width,1248); eq(r.header_height,74); eq(r.show_character_rail,true); eq(r.vitals_side,"right")
 end)
 test("chatbox aligns exactly with center console",function()
   local r=Layout.compute(1920,1080)
-  eq(r.chat_x,r.left); eq(r.chat_width,r.console_width); eq(r.chat_height,240)
+  eq(r.chat_x,r.console_left); eq(r.chat_width,r.console_width); eq(r.chat_height,240)
   eq(r.console_top,r.header_height+r.chat_height); eq(r.top,r.console_top)
 end)
 test("chat height scales and clamps",function()
@@ -64,7 +64,7 @@ test("chat height follows supplied percentage while retaining reference target",
   eq(default.chat_height,240); eq(taller.chat_height>default.chat_height,true)
 end)
 test("medium screens preserve the seventeen sixty-six seventeen split",function()
-  local r=Layout.compute(1200,800); eq(r.mode,"medium"); eq(r.left,204); eq(r.right,204); eq(r.console_width,792); eq(r.header_height,66); eq(r.show_character_rail,true); eq(r.show_room_compass,true); eq(r.vitals_side,"right")
+  local r=Layout.compute(1200,800); eq(r.mode,"medium"); eq(r.left,204); eq(r.right,204); eq(r.console_gutter,6); eq(r.console_left,210); eq(r.console_width,780); eq(r.header_height,66); eq(r.show_character_rail,true); eq(r.show_room_compass,true); eq(r.vitals_side,"right")
 end)
 test("compact screens move all status out of side rails",function()
   local r=Layout.compute(760,700); eq(r.mode,"compact"); eq(r.left,0); eq(r.right,0); eq(r.header_height,116); eq(r.bottom,0); eq(r.show_room_compass,false)
@@ -72,8 +72,8 @@ end)
 test("duplicate bottom information row reserves no console space",function()
   for _,size in ipairs({{760,700},{1200,800},{2560,1400}}) do eq(Layout.compute(size[1],size[2]).bottom,0) end
 end)
-test("layout leaves sixty-six percent of rail layouts for the main console",function()
-  for _,w in ipairs({1000,1024,1366,1400,1600,1920,2056,2560,3840}) do local r=Layout.compute(w,900); eq(r.console_width>=w*.66,true) end
+test("layout leaves sixty-five percent plus two half-percent gutters between rails",function()
+  for _,w in ipairs({1000,1024,1366,1400,1600,1920,2056,2560,3840}) do local r=Layout.compute(w,900); eq(r.console_width>=math.floor(w*.65),true); eq(r.console_gutter,math.floor(w*.005+.5)) end
 end)
 test("responsive typography remains readable at every breakpoint",function()
   local compact=Layout.compute(760,700); local medium=Layout.compute(1200,800); local wide=Layout.compute(2056,1177); local ultra=Layout.compute(3840,2160)
@@ -97,7 +97,7 @@ end)
 
 test("new cards derive dimensions from responsive fonts",function()
   for _,size in ipairs({{760,700},{1200,800},{2056,1177},{3840,2160}}) do
-    local r=Layout.compute(size[1],size[2]); eq(r.inventory_row_height>=r.inventory_font+8,true); eq(r.details_line_height>=r.body_font+4,true); eq(r.compass_cell>=r.compass_font+10,true); eq(r.utility_height>=r.utility_font+10,true); eq(r.console_width>=size[1]*.66,true)
+    local r=Layout.compute(size[1],size[2]); eq(r.inventory_row_height>=r.inventory_font+8,true); eq(r.details_line_height>=r.body_font+4,true); eq(r.compass_cell>=r.compass_font+10,true); eq(r.utility_height>=r.utility_font+10,true); eq(r.console_width>=math.floor(size[1]*.65),true)
   end
 end)
 test("combat details stay in the right rail",function()

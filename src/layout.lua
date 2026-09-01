@@ -54,7 +54,7 @@ local function chatMetrics(width,height,layout,settings)
   layout.minimum_console_remainder=minimum_console_remainder
   layout.chat_functional_minimum=chat_functional_minimum
   layout.chat_height=math.min(configured_height,available_chat)
-  layout.chat_x=layout.left
+  layout.chat_x=layout.console_left
   layout.chat_width=layout.console_width
   layout.chat_padding=8
   layout.chat_scrollbar_allowance=18
@@ -69,7 +69,10 @@ local function chatMetrics(width,height,layout,settings)
   return layout
 end
 local function metrics(width,height,layout,chatSettings,mapperSettings)
-  layout.console_width=width-layout.left-layout.right
+  layout.console_gutter=layout.mode=="compact" and 0 or math.floor(width*.005+.5)
+  layout.console_left=layout.left+layout.console_gutter
+  layout.console_right=layout.right+layout.console_gutter
+  layout.console_width=width-layout.console_left-layout.console_right
   layout.body_font=clamp(width/100,16,22); layout.small_font=clamp((layout.body_font-2)*2,28,40); layout.heading_font=clamp(layout.body_font+5,21,27)
   layout.attribute_strip_font=clamp(layout.console_width/100,10,14)
   layout.panel_padding=clamp(width/120,12,22); layout.gauge_height=clamp(layout.small_font+10,38,50); layout.row_gap=clamp(layout.body_font*.7,11,15)
@@ -77,7 +80,7 @@ local function metrics(width,height,layout,chatSettings,mapperSettings)
   layout.room_height=layout.heading_font+layout.body_font*6+54; layout.exit_height=layout.small_font+16
   layout.identity_height=layout.heading_font+layout.body_font*6+56
   layout.inventory_font=clamp(layout.body_font-2,14,20); layout.inventory_row_height=layout.inventory_font+10
-  layout.list_font=clamp(layout.inventory_font-1,13,17); layout.list_row_height=layout.list_font+4; layout.list_visible_rows=5
+  layout.list_font=clamp(layout.inventory_font-1,13,17); layout.list_row_height=math.ceil(layout.list_font*1.3); layout.list_visible_rows=5
   layout.details_line_height=layout.body_font+6; layout.compass_font=clamp(layout.body_font,16,22); layout.compass_cell=layout.compass_font+14
   layout.utility_font=clamp(layout.body_font-4,12,18); layout.utility_height=layout.utility_font+12
   local function scaled(value) return math.floor(value*.8+.5) end

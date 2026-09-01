@@ -2,6 +2,11 @@ local View=require("view")
 test("rich text receives an explicit responsive font size",function()
   eq(View.withFont("Status",20),"<span style='font-size:20px'>Status</span>")
 end)
+test("portable list font selection chooses an available fixed-width family",function()
+  eq(View.monospaceFont({Menlo=true}),"Menlo")
+  eq(View.monospaceFont({Consolas=true,["Courier New"]=true}),"Consolas")
+  eq(View.monospaceFont({}),"Courier New")
+end)
 
 test("identity and right rail content remain separate",function()
   local theme={accent="#d8ae53",jade="#72bd82",muted="#91a098"}; local layout={body_font=20,heading_font=25}
@@ -98,6 +103,8 @@ local function fakeGeyser()
     function item:clear() self.clearCalls=(self.clearCalls or 0)+1; self.echoes={}; self.hechoes={}; self.lastLine=0; self.renderedEntries={} end
     function item:setWrap(value) self.wrap=value; return true end
     function item:setFontSize(value) self.fontSize=value end
+    function item:setFont(value) self.font=value end
+    function item:getSizeHint() return math.ceil((self.fontSize or 8)*.65),math.ceil((self.fontSize or 8)*1.6) end
     function item:enableScrollBar() self.scrollBar=true end
     function item:disableHorizontalScrollBar() self.horizontalScrollBar=false end
     function item:getScroll() return self.currentScroll end
@@ -134,6 +141,11 @@ test("inventory and skills own five-row scrollable consoles",function()
   eq(view.inventory_output.kind,"scrollbox"); eq(view.skills_output.kind,"scrollbox")
   eq(view.inventory_content.parent,view.inventory_output); eq(view.skills_content.parent,view.skills_output)
   eq(view.inventory_output.height,layout.list_row_height*5); eq(view.skills_output.height,layout.list_row_height*5)
+  eq(view.inventory_content.fontSize,layout.list_font); eq(view.skills_content.fontSize,layout.list_font)
+  eq(view.inventory_content.font,view.list_font_family); eq(view.skills_content.font,view.list_font_family)
+  eq(view.inventory_title.fontSize,layout.list_font); eq(view.skills_title.fontSize,layout.list_font)
+  eq(view.skills_title.font,view.skills_content.font)
+  eq(view.inventory_output.height,view.list_row_height*5); eq(view.skills_output.height,view.list_row_height*5)
 end)
 test("scrollable list content uses resolved numeric widths",function()
   local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
@@ -155,8 +167,10 @@ test("scrollable cards render every inventory item and every ranked skill",funct
   local items,skills={},{}; for i=1,12 do items[i]={name="Item "..i,weight=i}; skills[i]={name="Skill "..i,level=20-i,remain=i} end
   view:update({character={full_name="Test",race="Monitanian",class="Fighter",alignment="entropy",physical={}},attributes={},combat={},equipment={items={}},inventory={items=items,total_weight=78},skills={items=skills},vitals={hp={current=1,maximum=1},fatigue={current=1,maximum=1},carry={current=1,maximum=1},psi={visible=false},web={visible=false},gold=2,silver=3,roundtime=0,position=0,weapon_readied=false,shield_readied=false},room={name="Room",num=1,area=1,environment="Plain",players={},flags={},exits={}}})
   eq(view.inventory_content.message:find("Item 12",1,true)~=nil,true); eq(view.skills_content.message:find("Skill&nbsp;12",1,true)~=nil,true)
-  eq(view.inventory_content.height>=layout.list_row_height*12,true); eq(view.skills_content.height>=layout.list_row_height*12,true); eq(view.inventory_footer.message:find("2gp",1,true)~=nil,true)
+  eq(view.inventory_content.height>=view.list_row_height*12,true); eq(view.skills_content.height>=view.list_row_height*12,true); eq(view.inventory_content.height>view.inventory_output.height,true); eq(view.skills_content.height>view.skills_output.height,true); eq(view.inventory_footer.message:find("2gp",1,true)~=nil,true)
   eq(view.skills_content.message:find("white-space:pre",1,true),nil); eq(view.skills_content.message:find("&nbsp;",1,true)~=nil,true)
+  local resized=require("layout").compute(1200,800); view:applyLayout(resized)
+  eq(view.inventory_content.height,view.list_row_height*12); eq(view.skills_content.height,view.list_row_height*12)
 end)
 
 test("unchanged HUD refreshes preserve inventory and skill scroll positions",function()
@@ -170,9 +184,13 @@ end)
 test("right rail orders inventory combat skills and vitals without overlap",function()
   for _,size in ipairs({{1920,1080},{1200,800},{1200,650}}) do
     local layout=require("layout").compute(size[1],size[2]); local view=chatView(); view.last_state={vitals={psi={visible=false},web={visible=false}},equipment={items={}}}; view:applyLayout(layout)
-    eq(view.inventory.visible,true); eq(view.skills.visible,true)
-    if view.details.visible then eq(view.inventory.y+view.inventory.height<=view.details.y,true); eq(view.details.y+view.details.height<=view.skills.y,true) else eq(view.inventory.y+view.inventory.height<=view.skills.y,true) end
-    eq(view.skills.y+view.skills.height<=layout.window_height-view.vitals_right.height,true)
+    if view.inventory.visible and view.skills.visible then
+      if view.details.visible then eq(view.inventory.y+view.inventory.height<=view.details.y,true); eq(view.details.y+view.details.height<=view.skills.y,true) else eq(view.inventory.y+view.inventory.height<=view.skills.y,true) end
+      eq(view.skills.y+view.skills.height<=layout.window_height-view.vitals_right.height,true)
+    else
+      eq(view.skills.visible,false)
+      if view.inventory.visible then eq(view.inventory.y+view.inventory.height<=layout.window_height-view.vitals_right.height,true) end
+    end
   end
 end)
 
@@ -315,7 +333,7 @@ end)
 
 test("attribute strip spans the center header above the chatbox",function()
   local layout=require("layout").compute(1920,1080); local view=chatView(); view:applyLayout(layout)
-  eq(view.attribute_strip.x,layout.left); eq(view.attribute_strip.y,0)
+  eq(view.attribute_strip.x,layout.console_left); eq(view.attribute_strip.y,0)
   eq(view.attribute_strip.width,layout.console_width); eq(view.attribute_strip.height,layout.header_height)
   eq(layout.attribute_strip_font>=10,true); eq(layout.attribute_strip_font<=14,true)
 end)
@@ -386,16 +404,16 @@ test("chat wrap uses live MiniConsole metrics after resize and font application"
   view:applyLayout(layout)
   eq(layout.chat_wrap_columns==52,false)
   eq(output.metricFontSeen,layout.chat_font)
-  eq(output.wrap,52)
+  eq(output.wrap,51)
 
   local entries={}
   for index=1,20 do entries[index]={category="ESP",timestamp="2026-08-31T13:00:00-04:00",line=string.rep("entry-"..index.." ",40)} end
   view:renderChat(entries,{"ESP"},"ESP"); output.currentScroll=output.renderedEntries[10].first+1
   output.metricWidth=16; view:applyLayout(layout)
   local anchored=output.renderedEntries[10]
-  eq(output.wrap,39); eq(output.currentScroll>=anchored.first and output.currentScroll<=anchored.last,true)
+  eq(output.wrap,38); eq(output.currentScroll>=anchored.first and output.currentScroll<=anchored.last,true)
   output.currentScroll=output.lastLine; output.metricWidth=10; view:applyLayout(layout)
-  eq(output.wrap,62); eq(output.scrollCalls[#output.scrollCalls],"bottom")
+  eq(output.wrap,61); eq(output.scrollCalls[#output.scrollCalls],"bottom")
 end)
 
 test("chat wrap accepts legacy Geyser setters that return no value",function()

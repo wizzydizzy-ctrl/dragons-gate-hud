@@ -63,7 +63,7 @@ function Main:onRoundtime(value)
 end
 function Main:applyResponsiveLayout()
   local width,height=self.adapter:getWindowSize(); local layout=Layout.compute(width,height,self.settings.chat,self.settings.mapper); self.current_layout=layout
-  self.adapter:setBorders(layout.left,layout.top,layout.right,layout.bottom)
+  self.adapter:setBorders(layout.console_left or layout.left,layout.top,layout.console_right or layout.right,layout.bottom)
   if self.view and self.view.applyLayout then self.view:applyLayout(layout) end; return layout
 end
 function Main:mapperEnabled() return not (self.settings.mapper and self.settings.mapper.enabled==false) end

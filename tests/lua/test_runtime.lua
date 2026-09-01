@@ -143,7 +143,7 @@ test("health check requires root handlers and an owned chat trigger",function()
   local hud=Main.new(fake(),{layout={left_width=190,right_width=270}}); eq(hud:healthCheck(),nil); hud:start(); eq(hud:healthCheck(),true); hud.chat.trigger=nil; eq(hud:healthCheck(),nil)
 end)
 test("window resize recomputes absolute borders and view layout",function()
-  local f=fake(); f.borders={1290,234,1610,120}; local hud=Main.new(f,{layout={}}); hud:start(); eq(f.layouts[#f.layouts].mode,"wide"); eq(f.set_borders[1],326); eq(f.set_borders[2],314); eq(f.set_borders[3],326); f.width=760; f.height=700; f.callbacks["sysWindowResizeEvent"](); eq(f.layouts[#f.layouts].mode,"compact"); eq(f.set_borders[1],0); eq(f.set_borders[2],276); eq(f.set_borders[3],0); eq(f.set_borders[4],0)
+  local f=fake(); f.borders={1290,234,1610,120}; local hud=Main.new(f,{layout={}}); hud:start(); eq(f.layouts[#f.layouts].mode,"wide"); eq(f.set_borders[1],336); eq(f.set_borders[2],314); eq(f.set_borders[3],336); f.width=760; f.height=700; f.callbacks["sysWindowResizeEvent"](); eq(f.layouts[#f.layouts].mode,"compact"); eq(f.set_borders[1],0); eq(f.set_borders[2],276); eq(f.set_borders[3],0); eq(f.set_borders[4],0)
 end)
 test("runtime wires one mapper toolbar callback across resize and reports zoom outcomes",function()
   local f=fake(); f.gmcp=gmcpRoom(175); f.zoomResult=17.5
@@ -358,7 +358,7 @@ test("repeated resize changes typography without growing runtime",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); local runtime=f:count(f.events)+f:count(f.triggers)+f:count(f.aliases)
   for _,size in ipairs({{2056,1177},{1200,800},{760,700},{3840,2160},{1200,800}}) do
     f.width,f.height=size[1],size[2]; f.callbacks["sysWindowResizeEvent"](); local r=f.layouts[#f.layouts]
-    eq(r.inventory_row_height>=r.inventory_font+8,true); eq(r.details_line_height>=r.body_font+4,true); eq(r.console_width>=size[1]*.66,true); eq(f:count(f.events)+f:count(f.triggers)+f:count(f.aliases),runtime)
+    eq(r.inventory_row_height>=r.inventory_font+8,true); eq(r.details_line_height>=r.body_font+4,true); eq(r.console_width>=math.floor(size[1]*.65),true); eq(f:count(f.events)+f:count(f.triggers)+f:count(f.aliases),runtime)
   end
 end)
 test("chat trigger registration failure rolls back partial HUD runtime",function()

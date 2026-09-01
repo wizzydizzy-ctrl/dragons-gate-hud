@@ -107,9 +107,21 @@ function MapAdapter:roomRecord(roomID)
   local state,stateErr=read(self.api,"getRoomUserData",roomID,"dghud.state")
   if state==nil and stateErr~=nil then return nil,stateErr end
   if state~=nil and tostring(state)~="" then record.state=tostring(state) end
+  local mapperSchema,schemaErr=read(self.api,"getRoomUserData",roomID,"dghud.mapper_schema")
+  if mapperSchema==nil and schemaErr~=nil then return nil,schemaErr end
+  if mapperSchema~=nil then record.mapper_schema=mapperSchema end
+  local environment,environmentErr=read(self.api,"getRoomUserData",roomID,"dghud.environment")
+  if environment==nil and environmentErr~=nil then return nil,environmentErr end
+  if environment~=nil then record.environment=environment end
+  local flags,flagsErr=read(self.api,"getRoomUserData",roomID,"dghud.flags")
+  if flags==nil and flagsErr~=nil then return nil,flagsErr end
+  if flags~=nil then record.flags=flags end
   local partition,partitionErr=read(self.api,"getRoomUserData",roomID,"dghud.partition")
   if partition==nil and partitionErr~=nil then return nil,partitionErr end
   if partition~=nil and tostring(partition)~="" then record.partition=tostring(partition) end
+  local gameArea,gameAreaErr=read(self.api,"getRoomUserData",roomID,"dghud.game_area")
+  if gameArea==nil and gameAreaErr~=nil then return nil,gameAreaErr end
+  if gameArea~=nil then record.game_area=gameArea end
   local area,areaErr=read(self.api,"getRoomArea",roomID)
   if area==nil and areaErr~=nil then return nil,areaErr end
   record.area=area
@@ -155,7 +167,7 @@ function MapAdapter:ensureRoom(room,coordinates,partitionKey)
   if exists and not record.owned and self.createdRooms[room.id]~=true then
     return nil,"room "..tostring(room.id).." is not owned by DragonsGateHUD"
   end
-  local ownerOnlyInterrupted=record.owned and record.state==nil and record.area==nil and record.partition==nil and record.coordinates==nil
+  local ownerOnlyInterrupted=record.owned and record.state==nil and record.mapper_schema==nil and record.environment==nil and record.flags==nil and record.partition==nil and record.game_area==nil
   local continuingCreation=exists and (self.createdRooms[room.id]==true or (record.owned and record.state=="provisional") or ownerOnlyInterrupted)
   local needsPlacement=not exists or continuingCreation
   local effectiveKey
@@ -200,8 +212,7 @@ function MapAdapter:ensureRoom(room,coordinates,partitionKey)
     {"setRoomName",room.id,tostring(room.name or ("Room "..tostring(room.id)))},
   }
   if not record.partition then operations[#operations+1]={"setRoomUserData",room.id,"dghud.partition",effectiveKey} end
-  local gameArea,gameAreaErr=read(self.api,"getRoomUserData",room.id,"dghud.game_area")
-  if gameArea==nil and gameAreaErr~=nil then return nil,gameAreaErr end
+  local gameArea=record.game_area
   if gameArea==nil or tostring(gameArea)=="" then operations[#operations+1]={"setRoomUserData",room.id,"dghud.game_area",tostring(room.area_key)} end
   if needsPlacement then
     operations[#operations+1]={"setRoomArea",room.id,area}

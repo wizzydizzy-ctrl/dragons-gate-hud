@@ -8,7 +8,7 @@ local function fakeMapApi(seed)
     return true
   end
   function api.roomExists(id) local ok,e=gate("roomExists"); if not ok then return nil,e end; return api.rooms[id]~=nil end
-  function api.addRoom(id) local ok,e=gate("addRoom"); if not ok then return nil,e end; api.rooms[id]={user={},exits={},stubs={}}; return true end
+  function api.addRoom(id) local ok,e=gate("addRoom"); if not ok then return nil,e end; api.rooms[id]={area=-1,x=0,y=0,z=0,user={},exits={},stubs={}}; return true end
   function api.deleteRoom(id) local ok,e=gate("deleteRoom"); if not ok then return nil,e end; api.rooms[id]=nil; api.deletedRooms[#api.deletedRooms+1]=id; return true end
   function api.getAreaTable() local ok,e=gate("getAreaTable"); if not ok then return nil,e end; local t={}; for n,id in pairs(api.areas) do t[n]=id end; return t end
   function api.addAreaName(name) local ok,e=gate("addAreaName"); if not ok then return nil,e end; if api.areas[name] then return nil,"area already exists" end; local id=api.nextArea; api.nextArea=id+1; api.areas[name]=id; api.areaUser[id]={}; return id end
@@ -149,21 +149,38 @@ test("fresh adapter recovers an owned room after its provisional state write fai
   end
   local ok,e=Adapter.new(api):ensureRoom(descriptor(22,"Castle"),{x=1,y=2,z=3},"special:22")
   eq(ok,nil); eq(e,"provisional state rejected"); assert(api.rooms[22]); eq(api.rooms[22].user["dghud.owner"],"DragonsGateHUD")
-  eq(api.rooms[22].user["dghud.state"],nil); eq(api.rooms[22].area,nil); eq(#api.deletedRooms,0)
+  eq(api.rooms[22].user["dghud.state"],nil); eq(api.rooms[22].user["dghud.mapper_schema"],nil); eq(api.rooms[22].user["dghud.environment"],nil)
+  eq(api.rooms[22].user["dghud.flags"],nil); eq(api.rooms[22].user["dghud.partition"],nil); eq(api.rooms[22].user["dghud.game_area"],nil)
+  eq(api.rooms[22].area,-1); eq(api.rooms[22].x,0); eq(api.rooms[22].y,0); eq(api.rooms[22].z,0); eq(#api.deletedRooms,0)
 
   rejectProvisional=false
+  local mutations={}; local nativeArea=api.setRoomArea; local nativeCoordinates=api.setRoomCoordinates
+  api.setRoomUserData=function(id,k,v) mutations[#mutations+1]=k.."="..v; return native(id,k,v) end
+  api.setRoomArea=function(id,v) mutations[#mutations+1]="area="..v; return nativeArea(id,v) end
+  api.setRoomCoordinates=function(id,x,y,z) mutations[#mutations+1]="coordinates="..x..","..y..","..z; return nativeCoordinates(id,x,y,z) end
   assert(Adapter.new(api):ensureRoom(descriptor(22,"Castle"),{x=1,y=2,z=3},"special:22"))
-  eq(api.rooms[22].area,api.areas["Dragons Gate - Submap 22"])
+  local intendedArea=api.areas["Dragons Gate - Submap 22"]; eq(api.rooms[22].area,intendedArea)
   eq(api.rooms[22].user["dghud.partition"],"special:22"); eq(api.rooms[22].user["dghud.game_area"],"Castle")
   eq(api.rooms[22].x,1); eq(api.rooms[22].y,2); eq(api.rooms[22].z,3); eq(api.rooms[22].user["dghud.state"],"ready")
+  eq(mutations[#mutations-4],"dghud.partition=special:22"); eq(mutations[#mutations-3],"dghud.game_area=Castle")
+  eq(mutations[#mutations-2],"area="..intendedArea); eq(mutations[#mutations-1],"coordinates=1,2,3"); eq(mutations[#mutations],"dghud.state=ready")
   eq(#api.deletedRooms,0)
+end)
+
+test("mature owned legacy room without state is never relocated",function()
+  local existing={name="Legacy",area=41,x=3,y=4,z=1,user={["dghud.owner"]="DragonsGateHUD",["dghud.mapper_schema"]="1"},exits={},stubs={}}
+  local api=fakeMapApi({[24]=existing}); api.areas["Dragons Gate - Castle"]=41; api.areaUser[41]={["dghud.owner"]="DragonsGateHUD"}; api.nextArea=42
+  assert(Adapter.new(api):ensureRoom(descriptor(24,"2","Refreshed"),{x=8,y=8,z=4},"special:24"))
+  eq(existing.area,41); eq(existing.x,3); eq(existing.y,4); eq(existing.z,1); eq(existing.name,"Refreshed")
+  eq(existing.user["dghud.partition"],"Castle"); eq(existing.user["dghud.game_area"],"2"); eq(existing.user["dghud.state"],"ready")
+  eq(api.nextArea,42); eq(#api.deletedRooms,0)
 end)
 
 test("fresh adapter finishes provisional coordinates before marking the room ready",function()
   local api=fakeMapApi(); api.fail.setRoomCoordinates=true
   local ok,e=Adapter.new(api):ensureRoom(descriptor(23,"Castle"),{x=1,y=2,z=3},"special:23")
   eq(ok,nil); eq(e,"setRoomCoordinates rejected"); eq(api.rooms[23].user["dghud.state"],"provisional")
-  assert(api.rooms[23].area); eq(api.rooms[23].x,nil); eq(#api.deletedRooms,0)
+  assert(api.rooms[23].area); eq(api.rooms[23].x,0); eq(api.rooms[23].y,0); eq(api.rooms[23].z,0); eq(#api.deletedRooms,0)
   local record=assert(Adapter.new(api):roomRecord(23)); eq(record.state,"provisional")
 
   ok,e=Adapter.new(api):ensureRoom(descriptor(23,"Castle"),{x=7,y=8,z=9},"special:23")

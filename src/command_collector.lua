@@ -1,17 +1,27 @@
 local Collector={}; Collector.__index=Collector
 local SPECS={inventory={parser="parseInventory",snapshot="inventory"},stat={parser="parseStat",snapshot="stat"},info={parser="parseInfo",snapshot="info"},["info religion"]={parser="parseReligion",snapshot="religion"},skill={parser="parseSkills",snapshot="skills"}}
+local PROMPT_NUDGE={inventory=true,stat=true,["info religion"]=true,skill=true}
 function Collector.new(adapter,parser,onChange,onRoundtime,onCharacterEntry)
-  return setmetatable({adapter=adapter,parser=parser,onChange=onChange,onRoundtime=onRoundtime,onCharacterEntry=onCharacterEntry,snapshot={},sequence={"inventory","stat","info","info religion","skill"},runtime={triggers={},events={}},started=false,refreshed=false},Collector)
+  return setmetatable({adapter=adapter,parser=parser,onChange=onChange,onRoundtime=onRoundtime,onCharacterEntry=onCharacterEntry,snapshot={},sequence={"inventory","stat","info","info religion","skill"},runtime={triggers={},events={}},started=false,refreshed=false,prompt_nudge_delay=.15},Collector)
 end
 function Collector:cancelActive()
   if self.timeout then self.adapter:cancelTimer(self.timeout); self.timeout=nil end
+  if self.prompt_nudge then self.adapter:cancelTimer(self.prompt_nudge); self.prompt_nudge=nil end
   self.active=nil; self.sequence_index=nil
+end
+function Collector:schedulePromptNudge(command)
+  if not PROMPT_NUDGE[command] then return end
+  self.prompt_nudge=self.adapter:schedule(self.prompt_nudge_delay,function()
+    self.prompt_nudge=nil
+    if self.active and self.active.command==command then self.adapter:sendCommand("") end
+  end)
 end
 function Collector:begin(command,startup)
   if self.active then return false end
   self.active={command=command,lines={},startup=startup==true}
   self.timeout=self.adapter:schedule(30,function() self.timeout=nil; self:finish(nil) end)
   if startup then self.adapter:sendCommand(command) end
+  self:schedulePromptNudge(command)
   return true
 end
 function Collector:refresh()
@@ -27,6 +37,7 @@ end
 function Collector:finish(lines)
   local active=self.active; if not active then return end
   if self.timeout then self.adapter:cancelTimer(self.timeout); self.timeout=nil end
+  if self.prompt_nudge then self.adapter:cancelTimer(self.prompt_nudge); self.prompt_nudge=nil end
   self.active=nil
   if lines then
     local spec=SPECS[active.command]; local fn=spec and self.parser[spec.parser]

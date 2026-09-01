@@ -6,23 +6,34 @@ local info={"You are Test Tester, a stocky bodied 28 year old Entropic Male youn
 local religion={"You are a Novitiate follower of Unknown.","You are Balanced within your Entropic alignment.",">"}
 local skills={"Skill                     Remain Level","Biting                    105    4","Clawing                   276    2",">"}
 local function fake()
-  local f={next=0,triggers={},events={},timers={},sent={}}
+  local f={next=0,triggers={},events={},timers={},timer_delays={},sent={}}
   local function id(self,prefix) self.next=self.next+1; return prefix..self.next end
   function f:addLineTrigger(fn) local key=id(self,"t"); self.triggers[key]=fn; return key end
   function f:killTrigger(key) self.triggers[key]=nil end
   function f:addEvent(name,fn) local key=id(self,"e"); self.events[key]={name=name,fn=fn}; return key end
   function f:killEvent(key) self.events[key]=nil end
-  function f:schedule(delay,fn) self.last_delay=delay; local key=id(self,"m"); self.timers[key]=fn; return key end
-  function f:cancelTimer(key) self.timers[key]=nil end
+  function f:schedule(delay,fn) self.last_delay=delay; local key=id(self,"m"); self.timers[key]=fn; self.timer_delays[key]=delay; return key end
+  function f:cancelTimer(key) self.timers[key]=nil; self.timer_delays[key]=nil end
   function f:sendCommand(command) self.sent[#self.sent+1]=command end
   function f:line(value) for _,fn in pairs(self.triggers) do fn(value) end end
   function f:lines(values) for _,value in ipairs(values) do self:line(value) end end
   function f:outgoing(command) for _,event in pairs(self.events) do if event.name=="sysDataSendRequest" then event.fn(nil,command) end end end
   function f:disconnect() for _,event in pairs(self.events) do if event.name=="sysDisconnectionEvent" then event.fn() end end end
   function f:fireTimer() local key,fn=next(self.timers); if key then self.timers[key]=nil; fn() end end
+  function f:fireDelay(delay) for key,value in pairs(self.timer_delays) do if value==delay then local fn=self.timers[key]; self.timers[key]=nil; self.timer_delays[key]=nil; fn(); return true end end return false end
+  function f:hasDelay(delay) for _,value in pairs(self.timer_delays) do if value==delay then return true end end return false end
   function f:owned() local n=0; for _ in pairs(self.triggers) do n=n+1 end; for _ in pairs(self.events) do n=n+1 end; for _ in pairs(self.timers) do n=n+1 end; return n end
   return f
 end
+
+test("tracked commands send one delayed blank prompt nudge",function()
+  local f=fake(); local c=Collector.new(f,Parser,function() end); c:start(); f:outgoing("skill")
+  eq(#f.sent,0); eq(f:fireDelay(.15),true); eq(#f.sent,1); eq(f.sent[1],""); eq(f:fireDelay(.15),false)
+end)
+test("completed output cancels its pending blank prompt nudge",function()
+  local f=fake(); local c=Collector.new(f,Parser,function() end); c:start(); f:outgoing("inventory"); f:lines(inventory)
+  eq(c.snapshot.inventory.total_weight,1); eq(f:fireDelay(.15),false); eq(#f.sent,0)
+end)
 
 test("collector runs one sequential refresh after character entry",function()
   local f=fake(); local changes=0; local c=Collector.new(f,Parser,function() changes=changes+1 end); c:start()
@@ -36,7 +47,7 @@ test("collector runs one sequential refresh after character entry",function()
 end)
 test("collector can refresh after an in-session package install",function()
   local f=fake(); local c=Collector.new(f,Parser,function() end); c:start()
-  eq(c:refresh(),true); eq(f.sent[1],"inventory"); eq(c.refreshed,true); eq(f.last_delay>=20,true)
+  eq(c:refresh(),true); eq(f.sent[1],"inventory"); eq(c.refreshed,true); eq(f:hasDelay(30),true)
   eq(c:refresh(),false); eq(#f.sent,1)
 end)
 test("collector force refresh bypasses the session guard without overlapping a sequence",function()
@@ -62,7 +73,7 @@ test("collector reports explicit game delay lines",function()
   local f=fake(); local delay; local c=Collector.new(f,Parser,function() end,function(value) delay=value end); c:start(); f:line("[8 sec. delay]"); eq(delay,8)
 end)
 test("collector timeout preserves old data and advances startup",function()
-  local f=fake(); local c=Collector.new(f,Parser,function() end); c.snapshot.inventory={total_weight=7}; c:start(); f:line("Welcome to Dragon's Gate, Test!"); f:fireTimer(); eq(c.snapshot.inventory.total_weight,7); eq(f.sent[2],"stat")
+  local f=fake(); local c=Collector.new(f,Parser,function() end); c.snapshot.inventory={total_weight=7}; c:start(); f:line("Welcome to Dragon's Gate, Test!"); f:fireDelay(30); eq(c.snapshot.inventory.total_weight,7); eq(f.sent[2],"stat")
 end)
 test("disconnect permits one refresh after re-entry",function()
   local f=fake(); local c=Collector.new(f,Parser,function() end); c:start(); f:line("Welcome to Dragon's Gate, Test!"); f:disconnect(); f:line("Welcome to Dragon's Gate, Test!"); eq(f.sent[#f.sent],"inventory")

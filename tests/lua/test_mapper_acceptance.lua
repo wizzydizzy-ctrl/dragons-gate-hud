@@ -3,6 +3,20 @@ local Defaults=require("defaults")
 local MapperModel=require("mapper_model")
 
 local function count(values) local n=0; for _ in pairs(values) do n=n+1 end; return n end
+local function stable(value)
+  if type(value)~="table" then return type(value)..":"..tostring(value) end
+  local keys={}; for key in pairs(value) do keys[#keys+1]=key end
+  table.sort(keys,function(a,b) return type(a)==type(b) and tostring(a)<tostring(b) or type(a)<type(b) end)
+  local parts={"{"}; for _,key in ipairs(keys) do parts[#parts+1]=stable(key).."="..stable(value[key])..";" end; parts[#parts+1]="}"
+  return table.concat(parts)
+end
+local function personalBytes(world)
+  return stable({
+    areas={[90]=world.area_records and world.area_records[90]},
+    rooms={[800]=world.rooms[800],[801]=world.rooms[801]},
+    labels=world.labels and {[90]=world.labels[90]},
+  })
+end
 local function runtime(world)
   local f={next=0,events={},aliases={},triggers={},timers={},world=world,statuses={},gmcp={Char={Vitals={hp=10,hp_max=10}},Room={Info={num=176,name="Start",area=1,exits={"north"}}}}}
   function f:getWindowSize() return 1920,1080 end
@@ -18,6 +32,10 @@ local function runtime(world)
   function f:killTrigger(id) self.triggers[id]=nil end
   function f:createChatStorage() return {loadRecent=function() return {} end,append=function() return true end,close=function() return true end,characterKey=function() return "test" end} end
   function f:epoch() return 1 end
+  function f:cleanupClock() return self.now or 1000 end
+  function f:cleanupToken() self.token_number=(self.token_number or 0)+1; return "accept"..self.token_number end
+  function f:refreshMap() self.map_refreshes=(self.map_refreshes or 0)+1; return true end
+  function f:reportMapCleanup(message,isError) self.cleanup_reports=self.cleanup_reports or {}; self.cleanup_reports[#self.cleanup_reports+1]={message=message,error=isError}; return true end
   function f:timestamp() return "2026-08-31T12:00:00-04:00" end
   function f:schedule(_,fn) self.next=self.next+1; local id="timer-"..self.next; self.timers[id]=fn; return id end
   function f:cancelTimer(id) self.timers[id]=nil; return true end
@@ -25,7 +43,7 @@ local function runtime(world)
   function f:reportMapperStatus(kind,message) self.statuses[#self.statuses+1]={kind=kind,message=message}; return true end
   function f:reportMapStatus(status) self.map_status=status; return status end
   function f:createMapAdapter()
-    local map={world=self.world}
+    local map={world=self.world,api={}}
     local directions={"n","ne","e","se","s","sw","w","nw","up","down","in","out"}
     local reverse={n="s",ne="sw",e="w",se="nw",s="n",sw="ne",w="e",nw="se",up="down",down="up",["in"]="out",out="in"}
     local function normalize(command) return tostring(command or ""):match("^%s*(.-)%s*$") end
@@ -40,8 +58,49 @@ local function runtime(world)
     function map:roomRecord(id)
       local room=self.world.rooms[id]
       if not room then return {exists=false,owned=false,placement_needed=true} end
-      return {exists=true,owned=room.owner=="DragonsGateHUD",partition=room.partition,game_area=tostring(room.game_area or ""),area=room.area,coordinates=room.coordinates,placement_needed=false}
+      return {exists=true,owned=room.owner=="DragonsGateHUD",owner=room.owner,partition=room.partition,game_area=tostring(room.game_area or ""),area=room.area,coordinates=room.coordinates,placement_needed=false}
     end
+    function map.api.getAreaTable() local result={}; for id,area in pairs(map.world.area_records or {}) do result[area.name]=id end; return result end
+    function map:areaRecord(id)
+      local area=self.world.area_records and self.world.area_records[tonumber(id)]
+      if not area then return {id=tonumber(id),exists=false,owned=false} end
+      return {id=tonumber(id),exists=true,owned=area.owner=="DragonsGateHUD",owner=area.owner}
+    end
+    function map:roomsInArea(id)
+      local result={}; for roomID,room in pairs(self.world.rooms) do if room.area==tonumber(id) then result[#result+1]=roomID end end
+      table.sort(result); return result
+    end
+    function map:inboundSources(ids)
+      local selected={}; for _,id in ipairs(ids) do selected[id]=true end
+      local result={}
+      for source,room in pairs(self.world.rooms) do
+        if not selected[source] then
+          local inbound=false
+          for _,destination in pairs(room.exits or {}) do if selected[destination] then inbound=true end end
+          for destination in pairs(room.special_exits or {}) do if selected[destination] then inbound=true end end
+          if inbound then result[#result+1]=source end
+        end
+      end
+      table.sort(result); return result
+    end
+    function map:deleteOwnedRoom(id)
+      local room=self.world.rooms[id]
+      if not room or room.owner~="DragonsGateHUD" then return nil,"room is not HUD-owned" end
+      if self.world.fail_delete==id then return nil,"injected deletion failure" end
+      self.world.rooms[id]=nil
+      for _,source in pairs(self.world.rooms) do
+        for direction,destination in pairs(source.exits or {}) do if destination==id then source.exits[direction]=nil end end
+        if source.special_exits then source.special_exits[id]=nil end
+      end
+      return true
+    end
+    function map:deleteEmptyOwnedArea(id)
+      local area=self.world.area_records and self.world.area_records[id]
+      if not area or area.owner~="DragonsGateHUD" then return nil,"area is not HUD-owned" end
+      if #self:roomsInArea(id)>0 then return nil,"area is not empty" end
+      self.world.area_records[id]=nil; if self.world.labels then self.world.labels[id]=nil end; return true
+    end
+    function map:invalidateDeleted(ids,areaID) self.world.invalidated={ids=ids,area=areaID}; return true end
     function map:effectivePartition(id)
       local room=self.world.rooms[id]
       if room then return room.partition end
@@ -221,4 +280,55 @@ test("mapper settings control walking timeout and diagnostics enabled state",fun
   local settings=require("settings").merge(Defaults,{mapper={enabled=false,walk_timeout=23,minimum_height=150}})
   local f=runtime({rooms={},stubs={},links={}}); local hud=Main.new(f,settings); assert(hud:start())
   eq(hud.walker.timeout_seconds,23); eq(hud.current_layout.lower_mapper_min_height,150); eq(findAlias(f,"^dghud mapstatus$")().enabled,false); hud:shutdown()
+end)
+
+local function cleanupWorld()
+  return {
+    rooms={
+      [1]={name="Safe room",owner="DragonsGateHUD",area=10,partition="1",coordinates={x=0,y=0,z=0},exits={},special_exits={},metadata={zone="safe"}},
+      [900]={name="HUD Gate",owner="DragonsGateHUD",area=42,partition="special:900",coordinates={x=4,y=5,z=0},exits={n=901},special_exits={[901]={"climb arch"}},metadata={root="900",color="bronze"}},
+      [901]={name="HUD Hall",owner="DragonsGateHUD",area=42,partition="special:900",coordinates={x=4,y=6,z=0},exits={s=900},special_exits={},metadata={note="generated"}},
+      [800]={name="Personal's Room",owner="personal",area=90,partition="private",coordinates={x=-8,y=12,z=3},exits={e=801},special_exits={[801]={"open secret panel"}},metadata={description="unchanged\0bytes",custom="alpha"}},
+      [801]={name="Personal Annex",owner="personal",area=90,partition="private",coordinates={x=-7,y=12,z=3},exits={w=800},special_exits={},metadata={custom="beta"}},
+    },
+    area_records={
+      [10]={name="Dragons Gate - 1",owner="DragonsGateHUD",metadata={kind="normal"}},
+      [42]={name="Dragons Gate - Submap 900",owner="DragonsGateHUD",metadata={root="900"}},
+      [90]={name="My Private Map",owner="personal",metadata={palette="violet",notes="keep exactly"}},
+    },
+    labels={[42]={{text="HUD label",x=4,y=5}},[90]={{text="Personal label",x=-8,y=12,metadata={font="serif"}}}},
+    stubs={},links={},special={},areas={},zoom={},creations={},sent={},
+  }
+end
+
+test("cleanup preview cancellation expiry and success preserve personal map bytes end to end",function()
+  local world=cleanupWorld(); local before=personalBytes(world); local f=runtime(world)
+  f.gmcp.Room.Info={num=1,name="Safe room",area=1,environment="Plain",flags={},exits={}}
+  local hud=Main.new(f,Defaults); assert(hud:start())
+  local unchanged=stable(world); local safeRoom=stable(world.rooms[1]); local safeArea=stable(world.area_records[10])
+  local preview=assert(findAlias(f,"^dghud map clear submap (\\d+)$")({"","900"}))
+  eq(table.concat(preview.room_ids,","),"900,901"); eq(stable(world),unchanged)
+  assert(findAlias(f,"^dghud map cancel$")()); eq(stable(world),unchanged)
+
+  preview=assert(findAlias(f,"^dghud map clear submap (\\d+)$")({"","900"})); f.now=1031
+  local expired,expiryErr=findAlias(f,"^dghud map confirm (\\S+)$")({"",preview.token})
+  eq(expired,nil); eq(expiryErr,"cleanup confirmation token has expired"); eq(stable(world),unchanged)
+
+  f.now=1040; preview=assert(findAlias(f,"^dghud map clear submap (\\d+)$")({"","900"}))
+  local result=assert(findAlias(f,"^dghud map confirm (\\S+)$")({"",preview.token}))
+  eq(table.concat(result.deleted,","),"900,901"); eq(result.area_deleted,true); eq(world.rooms[900],nil); eq(world.rooms[901],nil); eq(world.area_records[42],nil)
+  eq(personalBytes(world),before); eq(stable(world.rooms[1]),safeRoom); eq(stable(world.area_records[10]),safeArea); eq(f.map_refreshes,1)
+
+  arrive(f,900,{"north"}); eq(world.rooms[900].owner,"DragonsGateHUD"); eq(world.rooms[900].name,"Room 900"); eq(personalBytes(world),before)
+end)
+
+test("cleanup partial failure preserves personal bytes surviving HUD rooms and owned area",function()
+  local world=cleanupWorld(); local before=personalBytes(world); world.fail_delete=901; local f=runtime(world)
+  f.gmcp.Room.Info={num=1,name="Safe room",area=1,environment="Plain",flags={},exits={}}
+  local hud=Main.new(f,Defaults); assert(hud:start())
+  local preview=assert(findAlias(f,"^dghud map clear submap (\\d+)$")({"","900"}))
+  local result=assert(findAlias(f,"^dghud map confirm (\\S+)$")({"",preview.token}))
+  eq(table.concat(result.deleted,","),"900"); eq(result.failed,901); eq(table.concat(result.untouched,","),"901"); eq(result.area_deleted,false)
+  eq(world.rooms[900],nil); eq(world.rooms[901]~=nil,true); eq(world.area_records[42]~=nil,true); eq(world.labels[42]~=nil,true)
+  eq(personalBytes(world),before); eq(f.map_refreshes,1)
 end)

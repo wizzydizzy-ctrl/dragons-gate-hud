@@ -126,4 +126,22 @@ The mapper toolbar owns three controls: `−` zooms out, the center control rece
 
 The HUD tags only its own rooms and areas with `dghud.owner=DragonsGateHUD`. It refuses to rewrite an existing unowned room or area and never deletes personal map data. The only internal deletion is transactional rollback of the exact brand-new room or area whose creation cannot receive its first ownership tag; preexisting and successfully owned map data is never eligible. Discovered canonical rooms, partitions, observed exits, coordinates, and native per-area zoom remain when the HUD reloads, updates, or is uninstalled. `dghud mapstatus` reports only whether mapping is enabled, the current room, the number of rooms managed during the HUD session, an active walking destination, the latest mapper status, and the latest actual mapper error. Routine stops such as `walkstop`, manual movement, route replacement, and shutdown update the status but do not overwrite the last error. It does not dump room names, routes, personal map records, or unrelated data.
 
+### Safe map cleanup
+
+To repair incorrectly generated HUD map content, first move out of the affected room, submap, or area and run `walkstop`. Preview exactly one scope:
+
+```text
+dghud map delete room 176
+dghud map clear submap 900
+dghud map clear area Dragons Gate - Training Grounds
+```
+
+Inspect the resolved area and every exact room ID in the preview. If anything is unexpected, run `dghud map cancel`. Otherwise, confirm with the printed one-use command within 30 seconds:
+
+```text
+dghud map confirm <token>
+```
+
+The HUD refuses cleanup when ownership, map membership, inbound personal exits, or movement state is unsafe or has changed since preview. There is no force option. After successful cleanup, revisit the deleted canonical rooms to let normal GMCP exploration map them again. If deletion stops partway, keep the exact deleted, failed, and untouched IDs from the result, move to a safe room, and create a fresh preview before retrying.
+
 Updating with `dghud update` replaces only the `DragonsGateHUD` package code. It preserves native map records, chat logs, user settings, and unrelated Mudlet scripts, aliases, triggers, packages, and map content.

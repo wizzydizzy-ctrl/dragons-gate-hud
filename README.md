@@ -90,7 +90,9 @@ Run `dghud chatstatus` to print the active filter, the current visible-entry cou
 
 ## Embedded automapper
 
-The native Mudlet map is embedded in the lower-left HUD immediately above the compass. While the mapper is enabled, each valid `gmcp.Room.Info.num` becomes the canonical Dragons Gate room ID. Walking through the twelve standard directions (`n`, `ne`, `e`, `se`, `s`, `sw`, `w`, `nw`, `up`, `down`, `in`, and `out`) discovers rooms, creates advertised exit stubs, and confirms links only after the destination room arrives through GMCP. Teleports do not invent links.
+The native Mudlet map is embedded in the lower-left HUD immediately above the compass. While the mapper is enabled, each valid `gmcp.Room.Info.num` is the canonical Dragons Gate room ID. Revisiting that GMCP number refreshes safe descriptive data on the same native room; it never creates a duplicate or relocates its saved area, partition, or coordinates. Walking through the twelve standard directions (`n`, `ne`, `e`, `se`, `s`, `sw`, `w`, `nw`, `up`, `down`, `in`, and `out`) discovers rooms, creates advertised exit stubs, and confirms links only after the destination room arrives through GMCP. Teleports do not invent links.
+
+Every confirmed non-direction travel command starts a destination-rooted sub-map such as `special:900`; directional exploration remains in that partition while the Dragons Gate area is unchanged. A command is confirmed only when a different canonical GMCP room arrives within three seconds. A later command replaces the candidate, and expiry, wrong direction, disconnect, reload, shutdown, or mapper disablement clears it. Standard directions and conservative non-travel/control commands—`dghud`, `walkto`, `walkstop`, `mapcenter`, `inventory`/`inv`, `stat`, `info`, `look`/`l`, `who`, `say`, `whisper`, and `link`, including argument forms—never become special exits. The mapper records only the exact observed one-way command. It does not invent a reverse special connection; the return edge appears only after its own command and destination are observed.
 
 The default mapper settings are:
 
@@ -100,6 +102,10 @@ mapper = {
   walk_timeout = 12,
   minimum_height = 90,
   schema = 1,
+  special_timeout = 3,
+  zoom_step = 2.5,
+  zoom_min = 3.0,
+  zoom_max = 60.0,
 }
 ```
 
@@ -114,8 +120,10 @@ mapcenter
 dghud mapstatus
 ```
 
-Walking sends exactly one standard movement command at a time and waits for the expected GMCP room number. After arrival, nonzero GMCP roundtime pauses the route until a later Vitals update reports zero. The per-step movement timeout is canceled while paused because no command is in flight; a fresh timeout starts only when the next direction is sent. Wrong directions, unexpected rooms, manual movement, disconnection, timeout, and shutdown stop the route. Automatic special-exit traversal is intentionally excluded from this release; portal, door, gate, arch, and other nonstandard transitions must be used manually.
+Walking sends exactly one command at a time and waits for the expected GMCP room number. Standard directions are normalized; a non-direction route step is sent only when its exact origin, destination, and command match a confirmed HUD-owned special exit. This allows `walkto` and owned native-map clicks to cross safe mixed directional/special routes without trusting an unobserved portal, door, gate, arch, or other command. After arrival, nonzero GMCP roundtime pauses the route until a later Vitals update reports zero. The per-step movement timeout is canceled while paused because no command is in flight; a fresh timeout starts only when the next command is sent. Wrong directions, unexpected rooms, manual movement, disconnection, timeout, and shutdown stop the route.
 
-The HUD tags only its own rooms and areas with `dghud.owner=DragonsGateHUD`. It refuses to rewrite an existing unowned room or area and never deletes personal map data. The only internal deletion is transactional rollback of the exact brand-new room or area whose creation cannot receive its first ownership tag; preexisting and successfully owned map data is never eligible. Discovered native Mudlet map records remain when the HUD reloads, updates, or is uninstalled. `dghud mapstatus` reports only whether mapping is enabled, the current room, the number of rooms managed during the HUD session, an active walking destination, the latest mapper status, and the latest actual mapper error. Routine stops such as `walkstop`, manual movement, route replacement, and shutdown update the status but do not overwrite the last error. It does not dump room names, routes, personal map records, or unrelated data.
+The mapper toolbar owns three controls: `−` zooms out, the center control recenters on the current canonical room, and `+` zooms in. Zoom uses Mudlet's native area-specific value, so each normal area and special sub-map retains its own level across room changes, HUD reloads, updates, and profile restarts. Configured steps and bounds are enforced independently for the current saved area.
+
+The HUD tags only its own rooms and areas with `dghud.owner=DragonsGateHUD`. It refuses to rewrite an existing unowned room or area and never deletes personal map data. The only internal deletion is transactional rollback of the exact brand-new room or area whose creation cannot receive its first ownership tag; preexisting and successfully owned map data is never eligible. Discovered canonical rooms, partitions, observed exits, coordinates, and native per-area zoom remain when the HUD reloads, updates, or is uninstalled. `dghud mapstatus` reports only whether mapping is enabled, the current room, the number of rooms managed during the HUD session, an active walking destination, the latest mapper status, and the latest actual mapper error. Routine stops such as `walkstop`, manual movement, route replacement, and shutdown update the status but do not overwrite the last error. It does not dump room names, routes, personal map records, or unrelated data.
 
 Updating with `dghud update` replaces only the `DragonsGateHUD` package code. It preserves native map records, chat logs, user settings, and unrelated Mudlet scripts, aliases, triggers, packages, and map content.

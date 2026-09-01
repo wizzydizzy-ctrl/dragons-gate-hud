@@ -1,7 +1,7 @@
 local Main=require("main")
 local MudletAdapter=require("mudlet_adapter")
 local function fake()
-  local f={next=0,killed={},deleted=0,borders={10,20,30,40},set_borders={},callbacks={},layouts={},triggers={},timers={},events={},aliases={}}
+  local f={next=0,killed={},deleted=0,borders={10,20,30,40},set_borders={},callbacks={},layouts={},triggers={},timers={},timer_delays={},timer_cancels={},events={},aliases={}}
   function f:getBorders() return self.borders[1],self.borders[2],self.borders[3],self.borders[4] end
   function f:setBorders(a,b,c,d) self.set_borders={a,b,c,d} end
   function f:getWindowSize() return self.width or 1920,self.height or 1080 end
@@ -46,16 +46,30 @@ local function fake()
     function storage:close() if f.onStorageClose then f.onStorageClose() end; return true end
     return storage
   end
-  function f:schedule(_,fn) self.next=self.next+1; local id="timer-"..self.next; self.timers[id]=fn; return id end
-  function f:cancelTimer(id) self.timers[id]=nil end
+  function f:schedule(delay,fn)
+    if self.failSchedule=="return" then return nil,"special schedule failed" end
+    if self.failSchedule=="throw" then error("special schedule exploded") end
+    self.next=self.next+1; local id="timer-"..self.next; self.timers[id]=fn; self.timer_delays[id]=delay; return id
+  end
+  function f:cancelTimer(id)
+    self.timer_cancels[id]=(self.timer_cancels[id] or 0)+1
+    self.timers[id]=nil
+    if self.failCancel then error("special cancellation exploded") end
+    return true
+  end
   function f:fireTimer() local id,fn=next(self.timers); if id then self.timers[id]=nil; fn() end end
   function f:sendCommand(command) self.sent=command; self.sentCommands=self.sentCommands or {}; self.sentCommands[#self.sentCommands+1]=command; return true end
   function f:count(tableValue) local n=0; for _ in pairs(tableValue) do n=n+1 end; return n end
   function f:createMapAdapter()
-    local map={rooms={},stubs={},links={},current=nil,shutdowns=0}
+    local map={rooms={},stubs={},links={},special={},current=nil,shutdowns=0}
     function map:ensureRoom(room,coordinates) self.rooms[room.id]={room=room,coordinates=coordinates}; return true end
     function map:ensureStub() return true end
     function map:connect(from,to,direction,reverse) self.links[#self.links+1]={from=from,to=to,direction=direction,reverse=reverse}; return true end
+    function map:connectSpecial(from,to,command)
+      if f.failSpecialMap=="return" then return nil,"special mapping failed" end
+      if f.failSpecialMap=="throw" then error("special mapping exploded") end
+      self.special[#self.special+1]={from=from,to=to,command=command}; return true
+    end
     function map:setCurrent(id) self.current=id; return self:center(id) end
     function map:center(id) self.centered=id; f.mapCenterCalls=(f.mapCenterCalls or 0)+1; return true end
     function map:coordinates(id) local item=self.rooms[id]; return item and item.coordinates end
@@ -69,6 +83,10 @@ local function fake()
   end
   function f:reportMapperStatus(kind,message) self.mapperStatuses=self.mapperStatuses or {}; self.mapperStatuses[#self.mapperStatuses+1]={kind,message} end
   return f
+end
+
+local function gmcpRoom(id)
+  return {Char={Vitals={hp=1,hp_max=1}},Room={Info={num=id,name="Room "..id,area=1,exits={}}}}
 end
 
 local function aliasCallback(f,pattern)
@@ -164,6 +182,69 @@ test("runtime routes movement, wrong direction, teleport commands, and disconnec
   f.callbacks["sysDataSendRequest"](nil,"north"); f.callbacks["sysDataSendRequest"](nil,"go portal"); eq(hud.automapper.pending,nil)
   f.callbacks["sysDataSendRequest"](nil,"north"); f.callbacks["sysDisconnectionEvent"](); eq(hud.automapper.pending,nil)
 end)
+test("runtime confirms the final non-direction command from the next canonical room",function()
+  local f=fake(); f.gmcp=gmcpRoom(100); local hud=Main.new(f,{layout={},mapper={special_timeout=7}}); assert(hud:start())
+  f.callbacks["sysDataSendRequest"](nil,"pull lever"); f.callbacks["sysDataSendRequest"](nil,"go gate")
+  local ownedTimer=hud.special_transition.timer; eq(f.timer_delays[ownedTimer],7)
+  f.gmcp=gmcpRoom(900); f.callbacks["gmcp.Room.Info"]()
+  eq(f.map.special[1].from,100); eq(f.map.special[1].to,900); eq(f.map.special[1].command,"go gate")
+  eq(hud.special_transition:pending(),nil); eq(f.timer_cancels[ownedTimer],1); eq(f:count(f.timers),0)
+end)
+test("runtime reports tracker scheduler failures without retaining candidates",function()
+  for _,mode in ipairs({"return","throw"}) do
+    local f=fake(); f.gmcp=gmcpRoom(100); local hud=Main.new(f,{layout={}}); assert(hud:start()); f.failSchedule=mode
+    local callbackOk=pcall(f.callbacks["sysDataSendRequest"],nil,"climb rope")
+    eq(callbackOk,true); eq(hud.special_transition:pending(),nil); eq(f:count(f.timers),0)
+    eq(tostring(hud.last_mapper_error):find("special schedule",1,true)~=nil,true)
+    f.failSchedule=nil; hud:shutdown()
+  end
+end)
+test("runtime contains cancellation exceptions and preserves personal timers",function()
+  local f=fake(); local personalTimer=f:schedule(60,function() end); f.gmcp=gmcpRoom(100)
+  local hud=Main.new(f,{layout={}}); assert(hud:start()); f.callbacks["sysDataSendRequest"](nil,"enter tunnel")
+  local ownedTimer=hud.special_transition.timer; f.failCancel=true
+  local callbackOk=pcall(f.callbacks["sysDisconnectionEvent"])
+  eq(callbackOk,true); eq(hud.special_transition:pending(),nil); eq(f.timer_cancels[ownedTimer],1)
+  eq(tostring(hud.last_mapper_error):find("special cancellation exploded",1,true)~=nil,true)
+  eq(f.timers[personalTimer]~=nil,true); f.failCancel=nil; hud:shutdown(); eq(f.timers[personalTimer]~=nil,true)
+end)
+test("runtime contains mapper failure after confirmation and clears transition state",function()
+  local f=fake(); f.gmcp=gmcpRoom(100); local hud=Main.new(f,{layout={}}); assert(hud:start())
+  f.callbacks["sysDataSendRequest"](nil,"go gate"); f.failSpecialMap="throw"; f.gmcp=gmcpRoom(900)
+  local callbackOk=pcall(f.callbacks["gmcp.Room.Info"])
+  eq(callbackOk,true); eq(hud.special_transition:pending(),nil); eq(hud.automapper.pending,nil); eq(f:count(f.timers),0)
+  eq(#f.map.special,0); eq(tostring(hud.last_mapper_error):find("special mapping exploded",1,true)~=nil,true)
+  hud:shutdown()
+end)
+test("repeated reload cancels each candidate once and retains unrelated runtime",function()
+  local f=fake(); local personalAlias=f:addAlias("personal",function() end); local personalEvent=f:addEvent("personal",function() end); local personalTimer=f:schedule(60,function() end); f.gmcp=gmcpRoom(100)
+  local hud=Main.new(f,{layout={}}); assert(hud:start())
+  for _=1,3 do
+    f.callbacks["sysDataSendRequest"](nil,"enter tunnel"); local tracker=hud.special_transition; local ownedTimer=tracker.timer
+    assert(hud:reload()); eq(tracker:pending(),nil); eq(f.timer_cancels[ownedTimer],1); eq(hud.special_transition==tracker,false)
+  end
+  f.callbacks["sysDataSendRequest"](nil,"enter tunnel"); local tracker=hud.special_transition; local ownedTimer=tracker.timer
+  hud:shutdown(); eq(tracker:pending(),nil); eq(f.timer_cancels[ownedTimer],1)
+  eq(f.aliases[personalAlias]~=nil,true); eq(f.events[personalEvent]~=nil,true); eq(f.timers[personalTimer]~=nil,true)
+end)
+test("runtime confirms a generated special transition",function()
+  local f=fake(); f.gmcp=gmcpRoom(100); local hud=Main.new(f,{layout={}}); assert(hud:start())
+  assert(hud.walker.adapter:sendCommand("go arch")); f.callbacks["sysDataSendRequest"](nil,"go arch")
+  f.gmcp=gmcpRoom(901); f.callbacks["gmcp.Room.Info"]()
+  eq(f.map.special[1].from,100); eq(f.map.special[1].to,901); eq(f.map.special[1].command,"go arch")
+end)
+test("runtime cancels candidates on movement and mapper lifecycle boundaries",function()
+  local f=fake(); local personalTimer=f:schedule(60,function() end); f.gmcp=gmcpRoom(100)
+  local hud=Main.new(f,{layout={}}); assert(hud:start())
+  f.callbacks["sysDataSendRequest"](nil,"enter tunnel"); eq(hud.special_transition:pending().command,"enter tunnel")
+  f.callbacks["sysDataSendRequest"](nil,"north"); eq(hud.special_transition:pending(),nil)
+  f.callbacks["sysDataSendRequest"](nil,"enter tunnel"); f.callbacks["gmcp.Room.WrongDir"](); eq(hud.special_transition:pending(),nil)
+  f.callbacks["sysDataSendRequest"](nil,"enter tunnel"); f.callbacks["sysDisconnectionEvent"](); eq(hud.special_transition:pending(),nil)
+  f.callbacks["sysDataSendRequest"](nil,"enter tunnel"); hud.settings.mapper={enabled=false}; f.callbacks["sysDataSendRequest"](nil,"look"); eq(hud.special_transition:pending(),nil)
+  local first=hud.special_transition; hud.settings.mapper={}; assert(hud:reload()); eq(first:pending(),nil); eq(hud.special_transition==first,false)
+  f.callbacks["sysDataSendRequest"](nil,"enter tunnel"); local second=hud.special_transition; hud:shutdown(); eq(second:pending(),nil)
+  eq(f.timers[personalTimer]~=nil,true); eq(f:count(f.timers),1)
+end)
 test("roundtime counts down once per second and becomes ready",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:onRoundtime(2); eq(hud.last_state.vitals.roundtime,2)
   f:fireTimer(); eq(hud.last_state.vitals.roundtime,1); f:fireTimer(); eq(hud.last_state.vitals.roundtime,0); eq(f:count(f.timers),0)
@@ -249,7 +330,7 @@ test("every post-hook startup failure restores hook and cleans runtime",function
     if boundary=="event" then function f:addEvent() error("event exploded") end end
     if boundary=="alias" then function f:addAlias() error("alias exploded") end end
     local ok,err=hud:start(); eq(ok,nil); eq(tostring(err):find("exploded",1,true)~=nil,true)
-    eq(_G.doSpeedWalk,personal); eq(hud.started,false); eq(hud.walker,nil)
+    eq(_G.doSpeedWalk,personal); eq(hud.started,false); eq(hud.walker,nil); eq(hud.special_transition,nil)
     eq(f:count(f.events),0); eq(f:count(f.aliases),0); eq(f:count(f.triggers),0); eq(f:count(f.timers),0)
   end
   _G.doSpeedWalk=oldHook

@@ -1,4 +1,4 @@
-local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local MapWalker=require("map_walker")
+local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local SpecialTransition=require("special_transition"); local MapWalker=require("map_walker")
 local Main={}; Main.__index=Main
 function Main.new(adapter,settings) return setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=0,managed_rooms={}},Main) end
 function Main.installChatApi(namespace)
@@ -71,6 +71,23 @@ function Main:mapperStatus(kind,message,isError)
   self.last_mapper_status=tostring(message or kind or "none")
   if kind=="invalid_room" or kind=="ownership_conflict" or kind=="error" or isError==true then self.last_mapper_error=tostring(message or "unknown mapper error") end
   if self.adapter.reportMapperStatus then self.adapter:reportMapperStatus(kind,message) end
+end
+function Main:callSpecialTransition(method,...)
+  local tracker=self.special_transition
+  if not tracker then return nil end
+  local callOk,result,err=pcall(tracker[method],tracker,...)
+  if not callOk then err=result; result=nil end
+  if err then self:mapperStatus("error",err,true) end
+  return result,err
+end
+function Main:callAutomapper(method,...)
+  local callOk,result,err=pcall(self.automapper[method],self.automapper,...)
+  if not callOk then
+    err=result; result=nil
+    pcall(self.automapper.onWrongDirection,self.automapper)
+    self:mapperStatus("error",err,true)
+  end
+  return result,err
 end
 function Main:mapStatus()
   local managed=0; for _ in pairs(self.managed_rooms or {}) do managed=managed+1 end
@@ -147,6 +164,7 @@ function Main:start()
   if not automapperOk then self:shutdown(); return nil,automapper end
   if not automapper then self:shutdown(); return nil,automapperErr or "automapper construction failed" end
   self.automapper=automapper
+  self.special_transition=SpecialTransition.new(MapperModel,self.adapter,(self.settings.mapper and self.settings.mapper.special_timeout) or 3)
   local walkerAdapter={owner=self}
   function walkerAdapter:sendCommand(command)
     self.owner.generated_movement=MapperModel.direction(command)
@@ -172,19 +190,27 @@ function Main:start()
   end) end
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.room,function()
     local data=self.adapter:getGMCP(); local info=data and data.Room and data.Room.Info; local ok,err
-    if self:mapperEnabled() then ok,err=self.automapper:onRoom(info); if ok and info and tonumber(info.num) then self.managed_rooms[tonumber(info.num)]=true end else ok=true end
+    if self:mapperEnabled() then
+      local transition=self:callSpecialTransition("onRoom",info and info.num)
+      if transition then self:callAutomapper("onSpecialTransition",transition) end
+      ok,err=self:callAutomapper("onRoom",info); if ok and info and tonumber(info.num) then self.managed_rooms[tonumber(info.num)]=true end
+    else self:callSpecialTransition("cancel","disabled"); ok=true end
     if self.walker and self.walker:active() then
       local vitals=data and data.Char and data.Char.Vitals; self.walker:onRoundtime(vitals and vitals.roundtime or 0)
       if not ok then self.walker:stop(err or "room mapping failed",true) else self.walker:onRoom(info and info.num) end
     end; self:refresh()
   end)
-  self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.wrong,function(_,direction) self.automapper:onWrongDirection(direction); self.walker:onWrongDirection(); self:refresh() end)
+  self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.wrong,function(_,direction) self:callSpecialTransition("cancel","wrong_direction"); self.automapper:onWrongDirection(direction); self.walker:onWrongDirection(); self:refresh() end)
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.outgoing,function(_,command)
     local canonical=MapperModel.direction(command); local generated=canonical~=nil and canonical==self.generated_movement
     if generated then self.generated_movement=nil end
-    self.walker:onManualMovement(command,generated); if self:mapperEnabled() then self.automapper:onOutgoing(command) end
+    self.walker:onManualMovement(command,generated)
+    if self:mapperEnabled() then
+      self.automapper:onOutgoing(command)
+      if canonical then self:callSpecialTransition("cancel","direction") else self:callSpecialTransition("onOutgoing",command,self.automapper:currentRoom()) end
+    else self:callSpecialTransition("cancel","disabled") end
   end)
-  self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.disconnect,function() self.automapper:onDisconnect(); self.walker:stop("disconnected") end)
+  self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.disconnect,function() self:callSpecialTransition("cancel","disconnect"); self.automapper:onDisconnect(); self.walker:stop("disconnected") end)
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent("sysWindowResizeEvent",function() self:applyResponsiveLayout() end)
   local function aliasArgument(value) return value or (type(_G.matches)=="table" and _G.matches[2]) end
   local commands={function() if self.updater then self.updater:check() end end,function() if self.updater then self.updater:update() end end,function() self:reload() end,function() if self.adapter.openSettings then self.adapter:openSettings() end end,function() if self.adapter.requestPurge then self.adapter:requestPurge() end end,function() return self:reportChatStatus() end,function(value) return self:walkTo(aliasArgument(value)) end,function() return self.walker:stop("requested") end,function() local room=self.automapper:currentRoom(); if not room then return nil,"current room is unavailable" end; return self.map:center(room) end}
@@ -201,6 +227,7 @@ function Main:shutdown()
   local chat=self.chat; self.chat=nil; if chat then chat:shutdown() end
   if self.collector then self.collector:shutdown(); self.collector=nil end
   if self.walker then self.walker:shutdown(); self.walker=nil end; self.generated_movement=nil; self:removeMapClickHook()
+  if self.special_transition then self:callSpecialTransition("shutdown"); self.special_transition=nil end
   if self.automapper then self.automapper:shutdown(); self.automapper=nil end; self.map=nil
   for _,id in ipairs(self.runtime.events) do self.adapter:killEvent(id) end; for _,id in ipairs(self.runtime.aliases) do self.adapter:killAlias(id) end
   self.runtime={events={},aliases={}}; if self.view then self.view:delete(); self.view=nil end
@@ -210,7 +237,7 @@ end
 function Main:reload() self:shutdown(); return self:start() end
 function Main:healthCheck()
   local chatEnabled=not (self.settings.chat and self.settings.chat.enabled==false)
-  if not self.started or not self.view or not self.collector or not self.collector.started or not self.automapper or (chatEnabled and (not self.chat or not self.chat.started or not self.chat.trigger)) or #self.runtime.events~=(#Events.gmcp+5) then return nil,"HUD is not healthy" end
+  if not self.started or not self.view or not self.collector or not self.collector.started or not self.automapper or not self.special_transition or (chatEnabled and (not self.chat or not self.chat.started or not self.chat.trigger)) or #self.runtime.events~=(#Events.gmcp+5) then return nil,"HUD is not healthy" end
   local ok=pcall(function() self:refresh() end); if not ok then return nil,"state refresh failed" end; return true
 end
 return Main

@@ -73,11 +73,11 @@ local function fakeGeyser()
         self.renderedEntries[#self.renderedEntries+1]={first=first,last=self.lastLine}
       else self.message=value end
     end
-    function item:cecho(value)
-      self.cechoes=self.cechoes or {}
-      self.cechoes[#self.cechoes+1]=value
+    function item:hecho(value)
+      self.hechoes=self.hechoes or {}
+      self.hechoes[#self.hechoes+1]=value
     end
-    function item:clear() self.echoes={}; self.cechoes={}; self.lastLine=0; self.renderedEntries={} end
+    function item:clear() self.echoes={}; self.hechoes={}; self.lastLine=0; self.renderedEntries={} end
     function item:setWrap(value) self.wrap=value; return true end
     function item:setFontSize(value) self.fontSize=value end
     function item:enableScrollBar() self.scrollBar=true end
@@ -108,8 +108,8 @@ end
 test("chat output colors its trusted prefix without printing HTML markup literally",function()
   local view=chatView()
   view:renderChat({{category="ROOM",timestamp="2026-08-31T20:12:00-04:00",line='Gia says, "hey"'}},{"ROOM"},"ALL")
-  eq(#(view.chat_output.cechoes or {}),1)
-  eq(view.chat_output.cechoes[1]:find("<span",1,true),nil)
+  eq(#(view.chat_output.hechoes or {}),1)
+  eq(view.chat_output.hechoes[1]:find("<span",1,true),nil)
   eq(#view.chat_output.echoes,1)
   eq(view.chat_output.echoes[1]:find('Gia says, "hey"',1,true)~=nil,true)
 end)
@@ -136,7 +136,7 @@ test("chat rendering keeps only the newest thousand and isolates untrusted text 
   eq(#view.chat_output.echoes,1000); eq(view.chat_output.echoes[1]:find("line-2",1,true)~=nil,true)
   local last=view.chat_output.echoes[#view.chat_output.echoes]
   eq(last:find("<b>owned &",1,true)~=nil,true); eq(last:find("\n\27",1,true),nil)
-  eq(view.chat_output.cechoes[#view.chat_output.cechoes]:find("<#75857c>",1,true)~=nil,true)
+  eq(view.chat_output.hechoes[#view.chat_output.hechoes]:find("<#75857c>",1,true)~=nil,true)
 end)
 
 test("chat tabs stay inside narrow panels and expose deterministic overflow",function()

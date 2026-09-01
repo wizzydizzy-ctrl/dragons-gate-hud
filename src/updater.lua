@@ -1,5 +1,6 @@
 local SHA256=require("sha256"); local Release=require("release")
 local Updater={}; Updater.__index=Updater
+local function errorMessage(value) local text=tostring(value or "unknown error"); return text:match(":%d+:%s*(.*)$") or text end
 function Updater.new(adapter,settings) return setmetatable({adapter=adapter,settings=settings or {},lock=nil,expected_path=nil},Updater) end
 function Updater:acquire(operation) if self.lock then return nil,self.lock.." already in progress" end; self.lock=operation; return true end
 function Updater:release() self.lock=nil; self.expected_path=nil; self.refresh_after_install=nil end
@@ -40,12 +41,57 @@ function Updater:check()
   if not self.adapter.fetchManifest then self:release(); return nil,"manifest adapter unavailable" end
   local success,result=pcall(self.adapter.fetchManifest,self.adapter,self.settings); self:release(); if not success then return nil,result end; return result
 end
-function Updater:update()
+function Updater:update(done)
   local ok,err=self:acquire("update"); if not ok then return nil,err end
   if not self.adapter.startUpdate then self:release(); return nil,"update adapter unavailable" end
   self.refresh_after_install=self.adapter.isCharacterActive and self.adapter:isCharacterActive() or false
-  local success,result,message=pcall(self.adapter.startUpdate,self.adapter,self); if not success then self:release(); return nil,result end
+  local completed=false
+  local function finish(updated,message)
+    if completed then return end; completed=true
+    self:release(); if done then done(updated,message) end
+  end
+  local success,result,message=pcall(self.adapter.startUpdate,self.adapter,self,finish); if not success then self:release(); return nil,result end
   if result==nil then self:release(); return nil,message end; return true
+end
+function Updater:checkAtCharacterEntry(done)
+  done=done or function() end
+  local ok,err=self:acquire("startup check"); if not ok then return nil,err end
+  if not self.adapter.checkLatestAsync then self:release(); done(false,"manifest adapter unavailable"); return nil,"manifest adapter unavailable" end
+  local completed=false
+  local function finish(updated,message)
+    if completed then return end; completed=true
+    self:release(); done(updated==true,message)
+  end
+  local function checked(manifest,message)
+    if completed then return end
+    if not manifest then
+      if self.adapter.reportUpdateCheckFailure then self.adapter:reportUpdateCheckFailure(message or "version check failed") end
+      finish(false,message or "version check failed"); return
+    end
+    local valid,why=self:validateManifest(manifest)
+    if not valid then
+      if self.adapter.reportUpdateCheckFailure then self.adapter:reportUpdateCheckFailure(why) end
+      finish(false,why); return
+    end
+    local current=self.settings.version
+    local compared,comparison=pcall(Release.compareVersions,manifest.version,current)
+    if not compared then
+      local whyCompare="installed version is invalid"
+      if self.adapter.reportUpdateCheckFailure then self.adapter:reportUpdateCheckFailure(whyCompare) end
+      finish(false,whyCompare); return
+    end
+    if comparison<=0 then finish(false); return end
+    self.lock=nil
+    local started,startErr=self:update(function(updated,updateErr) finish(updated,updateErr) end)
+    if not started then finish(false,startErr) end
+  end
+  local callOk,started,startErr=pcall(self.adapter.checkLatestAsync,self.adapter,self,checked)
+  if not callOk then startErr=errorMessage(started); started=nil end
+  if started==nil and not completed then
+    if self.adapter.reportUpdateCheckFailure then self.adapter:reportUpdateCheckFailure(startErr or "version check failed") end
+    finish(false,startErr or "version check failed"); return nil,startErr
+  end
+  return true
 end
 function Updater:cancel() if self.adapter.cancelUpdate then self.adapter:cancelUpdate() end; self:release(); return true end
 return Updater

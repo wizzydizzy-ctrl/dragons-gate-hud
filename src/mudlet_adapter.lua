@@ -50,19 +50,40 @@ function Adapter:sendCommand(command) return send(command) end
 function Adapter:getGMCP() return gmcp or {} end
 function Adapter.characterPrompt(value) return tostring(value or ""):match("^>")~=nil end
 function Adapter:isCharacterActive() return Adapter.characterPrompt(getCurrentLine and getCurrentLine() or "") end
-function Adapter:refreshCharacterData() return DGHUD and DGHUD.controller and DGHUD.controller.collector and DGHUD.controller.collector:refresh() end
+function Adapter:refreshCharacterData() return DGHUD and DGHUD.controller and DGHUD.controller.collector and DGHUD.controller.collector:forceRefresh() end
+function Adapter:reportUpdateCheckFailure(message) cecho("\n<yellow>[DGHUD Update]<reset> Version check failed: "..tostring(message).."; refreshing character data.\n") end
 function Adapter:openSettings() cecho("\n<gold>[DGHUD]<reset> Settings: "..getMudletHomeDir().."/DragonsGateHUD/settings.lua\n") end
 local function readFile(path) local f=io.open(path,"rb"); if not f then return nil end; local data=f:read("*a"); f:close(); return data end
 local function writeFile(path,data) local f=assert(io.open(path,"wb")); f:write(data); f:close() end
 local function hasPackage(name) for _,value in ipairs(getPackages() or {}) do if value==name then return true end end return false end
-function Adapter:startUpdate(updater)
+function Adapter:checkLatestAsync(updater,done)
+  local settings=updater.settings; local github=settings.github or {}; local policy=settings.update or {}
+  if github.owner=="GITHUB_OWNER" or not tostring(github.owner):match("^[%w_.-]+$") or not tostring(github.repository):match("^[%w_.-]+$") then return nil,"configure the GitHub owner and repository first" end
+  local base=Adapter.updateBase(getMudletHomeDir()); local staging=base.."/staging"; lfs.mkdir(base); lfs.mkdir(staging)
+  local manifestPath=staging.."/startup-manifest.json"; local ids={}; local timeoutId; local finished=false
+  local function cleanup() for _,id in ipairs(ids) do killAnonymousEventHandler(id) end; ids={}; if timeoutId then killTimer(timeoutId); timeoutId=nil end end
+  local function finish(manifest,message) if finished then return end; finished=true; cleanup(); done(manifest,message) end
+  ids[#ids+1]=registerAnonymousEventHandler("sysDownloadError",function(_,message,url) if url and url:find(github.repository,1,true) then finish(nil,message) end end)
+  ids[#ids+1]=registerAnonymousEventHandler("sysDownloadDone",function(_,path)
+    if path~=manifestPath then return end
+    local raw=readFile(path); if not raw or #raw>(policy.manifest_limit or 65536) then finish(nil,"manifest is missing or too large"); return end
+    local ok,manifest=pcall(yajl.to_value,raw); if not ok then finish(nil,"manifest JSON is invalid"); return end
+    local valid,why=updater:validateManifest(manifest); if not valid then finish(nil,why); return end
+    finish(manifest)
+  end)
+  updateNonce=updateNonce+1
+  downloadFile(manifestPath,Adapter.manifestUrl(github,tostring(os.time()).."-"..tostring(updateNonce)))
+  timeoutId=tempTimer(policy.timeout_seconds or 30,function() timeoutId=nil; finish(nil,"download timed out") end)
+  return true
+end
+function Adapter:startUpdate(updater,done)
   local settings=updater.settings; local github=settings.github or {}; local policy=settings.update or {}
   if github.owner=="GITHUB_OWNER" or not tostring(github.owner):match("^[%w_.-]+$") or not tostring(github.repository):match("^[%w_.-]+$") then return nil,"configure the GitHub owner and repository first" end
   local base=Adapter.updateBase(getMudletHomeDir()); local staging=base.."/staging"; lfs.mkdir(base); lfs.mkdir(staging)
   local manifestPath=staging.."/manifest.json"; local packagePath=Adapter.updateArchivePath(getMudletHomeDir()); local ids={}; local timers={}; local timeoutId
   local function schedule(delay,fn) local id; id=tempTimer(delay,function() for i,value in ipairs(timers) do if value==id then table.remove(timers,i); break end end; fn() end); timers[#timers+1]=id; return id end
   local function cleanup() for _,id in ipairs(ids) do killAnonymousEventHandler(id) end; ids={}; for _,id in ipairs(timers) do killTimer(id) end; timers={}; if timeoutId then killTimer(timeoutId); timeoutId=nil end; updater:release() end
-  local function fail(message) cleanup(); cecho("\n<red>[DGHUD Update]<reset> "..tostring(message).."\n") end
+  local function fail(message) cleanup(); cecho("\n<red>[DGHUD Update]<reset> "..tostring(message).."\n"); if done then done(nil,message) end end
   ids[#ids+1]=registerAnonymousEventHandler("sysDownloadError",function(_,message,url) if url and (url:find(github.repository,1,true)) then fail(message) end end)
   ids[#ids+1]=registerAnonymousEventHandler("sysDownloadDone",function(_,path)
     if path==manifestPath then
@@ -96,7 +117,7 @@ function Adapter:startUpdate(updater)
       local started,why=updater:installVerifiedAsync(payload,manifest.sha256,function(installed,message)
         completed=true
         if not installed then fail(message); return end
-        writeFile(current,payload); cleanup(); cecho("\n<green>[DGHUD Update]<reset> Installed version "..manifest.version.."\n")
+        writeFile(current,payload); cleanup(); cecho("\n<green>[DGHUD Update]<reset> Installed version "..manifest.version.."\n"); if done then done(true) end
       end)
       if not started and not completed then return fail(why) end
     end

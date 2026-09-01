@@ -1,4 +1,8 @@
 local Updater=require("updater"); local SHA=require("sha256"); local Adapter=require("mudlet_adapter")
+local function releaseManifest(version)
+  return {package="DragonsGateHUD",version=version,minimum_mudlet="5.0.0",archive_url="https://github.com/wizzydizzy-ctrl/dragons-gate-hud/releases/download/v"..version.."/DragonsGateHUD.mpackage",sha256=string.rep("a",64),archive_size=100}
+end
+local updateSettings={version="0.2.62",github={owner="wizzydizzy-ctrl",repository="dragons-gate-hud"},update={package_limit=1000}}
 test("update staging lives outside the installed package directory",function()
   local base=Adapter.updateBase("/profile")
   eq(base,"/profile/DGHUDUpdater")
@@ -41,6 +45,52 @@ test("successful in-session update refreshes command-backed character data",func
   local u=Updater.new(adapter,{}); u.refresh_after_install=true
   u:installVerifiedAsync("payload",SHA.hex("payload"),function() end)
   eq(refreshed,true)
+end)
+test("startup check skips installation when current and continues startup",function()
+  local order={}; local completed
+  local adapter={checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.62")) end}
+  local u=Updater.new(adapter,updateSettings)
+  eq(u:checkAtCharacterEntry(function(updated,err) completed={updated,err}; order[#order+1]="commands" end),true)
+  eq(table.concat(order,","),"check,commands"); eq(completed[1],false); eq(completed[2],nil); eq(u.lock,nil)
+end)
+test("startup check updates before allowing startup commands",function()
+  local order={}; local completed
+  local adapter={
+    checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.63")) end,
+    startUpdate=function(_,updater,done) order[#order+1]="update"; done(true); return true end,
+    isCharacterActive=function() return true end,
+  }
+  local u=Updater.new(adapter,updateSettings)
+  eq(u:checkAtCharacterEntry(function(updated,err) completed={updated,err}; order[#order+1]="commands" end),true)
+  eq(table.concat(order,","),"check,update,commands"); eq(completed[1],true); eq(completed[2],nil); eq(u.lock,nil)
+end)
+test("startup check failure reports briefly and still allows startup commands",function()
+  local reported; local completed
+  local adapter={
+    checkLatestAsync=function(_,updater,done) done(nil,"network timed out") end,
+    reportUpdateCheckFailure=function(_,message) reported=message end,
+  }
+  local u=Updater.new(adapter,updateSettings)
+  eq(u:checkAtCharacterEntry(function(updated,err) completed={updated,err} end),true)
+  eq(reported,"network timed out"); eq(completed[1],false); eq(completed[2],"network timed out"); eq(u.lock,nil)
+end)
+test("startup check contains adapter exceptions and still allows startup commands",function()
+  local reported; local completed
+  local adapter={
+    checkLatestAsync=function() error("network exploded") end,
+    reportUpdateCheckFailure=function(_,message) reported=message end,
+  }
+  local u=Updater.new(adapter,updateSettings)
+  local ok,err=u:checkAtCharacterEntry(function(updated,message) completed={updated,message} end)
+  eq(ok,nil); eq(err,"network exploded"); eq(reported,"network exploded"); eq(completed[1],false); eq(completed[2],"network exploded"); eq(u.lock,nil)
+end)
+test("startup check rejects overlap and completes only once",function()
+  local manifestDone; local completions=0
+  local adapter={checkLatestAsync=function(_,_,done) manifestDone=done; return true end}
+  local u=Updater.new(adapter,updateSettings)
+  eq(u:checkAtCharacterEntry(function() completions=completions+1 end),true)
+  local ok,err=u:checkAtCharacterEntry(function() completions=completions+1 end); eq(ok,nil); eq(err,"startup check already in progress")
+  manifestDone(releaseManifest("0.2.62")); manifestDone(releaseManifest("0.2.62")); eq(completions,1)
 end)
 test("async checksum mismatch never starts replacement",function()
   local called=false

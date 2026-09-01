@@ -1,7 +1,7 @@
 local Collector={}; Collector.__index=Collector
 local SPECS={inventory={parser="parseInventory",snapshot="inventory"},stat={parser="parseStat",snapshot="stat"},info={parser="parseInfo",snapshot="info"},["info religion"]={parser="parseReligion",snapshot="religion"},skill={parser="parseSkills",snapshot="skills"}}
-function Collector.new(adapter,parser,onChange,onRoundtime)
-  return setmetatable({adapter=adapter,parser=parser,onChange=onChange,onRoundtime=onRoundtime,snapshot={},sequence={"inventory","stat","info","info religion","skill"},runtime={triggers={},events={}},started=false,refreshed=false},Collector)
+function Collector.new(adapter,parser,onChange,onRoundtime,onCharacterEntry)
+  return setmetatable({adapter=adapter,parser=parser,onChange=onChange,onRoundtime=onRoundtime,onCharacterEntry=onCharacterEntry,snapshot={},sequence={"inventory","stat","info","info religion","skill"},runtime={triggers={},events={}},started=false,refreshed=false},Collector)
 end
 function Collector:cancelActive()
   if self.timeout then self.adapter:cancelTimer(self.timeout); self.timeout=nil end
@@ -18,6 +18,11 @@ function Collector:refresh()
   if self.active or self.refreshed then return false end
   self.refreshed=true; self.sequence_index=1
   return self:begin(self.sequence[1],true)
+end
+function Collector:forceRefresh()
+  if self.active then return false end
+  self.refreshed=false
+  return self:refresh()
 end
 function Collector:finish(lines)
   local active=self.active; if not active then return end
@@ -36,7 +41,10 @@ end
 function Collector:onLine(value)
   value=tostring(value or "")
   local delay=tonumber(value:match("%[(%d+)%s+sec%.%s+delay%]")); if delay and self.onRoundtime then self.onRoundtime(delay) end
-  if value:match("^Welcome to Dragon's Gate, .+!%s*$") and not self.refreshed then self:refresh(); return end
+  if value:match("^Welcome to Dragon's Gate, .+!%s*$") and not self.refreshed then
+    if self.onCharacterEntry then self.onCharacterEntry() else self:refresh() end
+    return
+  end
   if not self.active then return end
   self.active.lines[#self.active.lines+1]=value
   if self.parser.isComplete(self.active.command,self.active.lines) then self:finish(self.active.lines) end

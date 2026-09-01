@@ -196,9 +196,21 @@ test("controller status and storage use the effective bounded visible limit",fun
   local lowerHud=Main.new(lower,{layout={},chat={visible_limit=2,dedupe_seconds=3}}); assert(lowerHud:start())
   eq(lower.chatVisibleLimit,2); eq(lowerHud:chatStatus().visible_count,2); eq(lowerHud.chat:entries()[1].message,"two")
 end)
-test("startup refreshes command data when installed at an in-game prompt",function()
-  local f=fake(); f.character_active=true
-  local hud=Main.new(f,{layout={}}); hud:start(); eq(f.sent,"inventory")
+test("startup checks for updates before refreshing command data at an in-game prompt",function()
+  local f=fake(); f.character_active=true; local order={}
+  local hud=Main.new(f,{layout={}})
+  hud.updater={checkAtCharacterEntry=function(_,done) order[#order+1]="check"; eq(#(f.sentCommands or {}),0); done(false); return true end}
+  assert(hud:start()); order[#order+1]=f.sent
+  eq(table.concat(order,","),"check,inventory")
+end)
+test("welcome character entry checks only once and never refreshes before completion",function()
+  local f=fake(); local pending; local checks=0
+  local hud=Main.new(f,{layout={}})
+  hud.updater={checkAtCharacterEntry=function(_,done) checks=checks+1; pending=done; return true end}
+  hud:start()
+  for _,fn in pairs(f.triggers) do fn("Welcome to Dragon's Gate, Test!") end
+  for _,fn in pairs(f.triggers) do fn("Welcome to Dragon's Gate, Test!") end
+  eq(checks,1); eq(#(f.sentCommands or {}),0); pending(false); eq(f.sent,"inventory")
 end)
 test("reload leaves one command collector",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); eq(f:count(f.triggers),2); local outgoing=0; for _,name in pairs(f.events) do if name=="sysDataSendRequest" then outgoing=outgoing+1 end end; eq(outgoing,2)

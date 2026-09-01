@@ -1,7 +1,7 @@
 local Adapter=require("map_adapter")
 
 local function fakeMapApi(seed)
-  local api={rooms=seed or {},areas={},areaUser={},nextArea=1,fail={},path=nil,refreshed=0}
+  local api={rooms=seed or {},areas={},areaUser={},nextArea=1,fail={},path=nil,refreshed=0,deletedRooms={},deletedAreas={}}
   local function gate(name)
     if api.fail[name]=="throw" then error(name.." exploded") end
     if api.fail[name] then return nil,name.." rejected" end
@@ -9,8 +9,10 @@ local function fakeMapApi(seed)
   end
   function api.roomExists(id) local ok,e=gate("roomExists"); if not ok then return nil,e end; return api.rooms[id]~=nil end
   function api.addRoom(id) local ok,e=gate("addRoom"); if not ok then return nil,e end; api.rooms[id]={user={},exits={},stubs={}}; return true end
+  function api.deleteRoom(id) local ok,e=gate("deleteRoom"); if not ok then return nil,e end; api.rooms[id]=nil; api.deletedRooms[#api.deletedRooms+1]=id; return true end
   function api.getAreaTable() local ok,e=gate("getAreaTable"); if not ok then return nil,e end; local t={}; for n,id in pairs(api.areas) do t[n]=id end; return t end
   function api.addAreaName(name) local ok,e=gate("addAreaName"); if not ok then return nil,e end; if api.areas[name] then return nil,"area already exists" end; local id=api.nextArea; api.nextArea=id+1; api.areas[name]=id; api.areaUser[id]={}; return id end
+  function api.deleteArea(id) local ok,e=gate("deleteArea"); if not ok then return nil,e end; for name,areaID in pairs(api.areas) do if areaID==id then api.areas[name]=nil end end; api.areaUser[id]=nil; api.deletedAreas[#api.deletedAreas+1]=id; return true end
   function api.setAreaUserData(id,k,v) local ok,e=gate("setAreaUserData"); if not ok then return nil,e end; api.areaUser[id]=api.areaUser[id] or {}; api.areaUser[id][k]=v; return true end
   function api.getAreaUserData(id,k) local ok,e=gate("getAreaUserData"); if not ok then return nil,e end; return api.areaUser[id] and api.areaUser[id][k] end
   function api.setRoomArea(id,v) local ok,e=gate("setRoomArea"); if not ok then return nil,e end; api.rooms[id].area=v; return true end
@@ -71,7 +73,7 @@ test("post-create room mutation failures remain safely retryable",function()
     eq(ok,nil); eq(e,name.." rejected"); eq(api.rooms[20].user["dghud.owner"],"DragonsGateHUD"); eq(api.rooms[20].user["dghud.state"],"provisional")
     api.fail[name]=nil; assert(map:ensureRoom(descriptor(20),{})); eq(api.rooms[20].user["dghud.state"],"ready")
   end
-  for failureCall=1,6 do
+  for failureCall=2,6 do
     local api=fakeMapApi(); local map=Adapter.new(api); local native=api.setRoomUserData; local calls=0
     api.setRoomUserData=function(...) calls=calls+1; if calls==failureCall then return nil,"room metadata rejected" end; return native(...) end
     local ok,e=map:ensureRoom(descriptor(21),{}); eq(ok,nil); eq(e,"room metadata rejected"); api.setRoomUserData=native
@@ -80,13 +82,53 @@ test("post-create room mutation failures remain safely retryable",function()
 end)
 
 test("post-create area metadata failures remain safely retryable",function()
-  for _,failureCall in ipairs({1,2,3,4}) do
+  for _,failureCall in ipairs({2,3,4}) do
     local api=fakeMapApi(); local map=Adapter.new(api); local native=api.setAreaUserData; local calls=0
     api.setAreaUserData=function(...) calls=calls+1; if calls==failureCall then return nil,"area metadata rejected" end; return native(...) end
     local ok,e=map:ensureArea("Retry"); eq(ok,nil); eq(e,"area metadata rejected")
     local id=api.areas["Dragons Gate - Retry"]; assert(id); api.setAreaUserData=native
     assert(map:ensureArea("Retry")); eq(api.areaUser[id]["dghud.owner"],"DragonsGateHUD"); eq(api.areaUser[id]["dghud.state"],"ready")
   end
+end)
+
+test("rolls back a new area when its first ownership write fails across reload",function()
+  local api=fakeMapApi(); local native=api.setAreaUserData; local calls=0
+  api.setAreaUserData=function(...) calls=calls+1; if calls==1 then return nil,"area ownership rejected" end; return native(...) end
+  local ok,e=Adapter.new(api):ensureArea("Restart"); eq(ok,nil); eq(e,"area ownership rejected")
+  eq(api.areas["Dragons Gate - Restart"],nil); eq(#api.deletedAreas,1)
+  api.setAreaUserData=native
+  local area=assert(Adapter.new(api):ensureArea("Restart")); assert(area); eq(api.areaUser[area]["dghud.owner"],"DragonsGateHUD")
+end)
+
+test("rolls back a new room when its first ownership write fails across reload",function()
+  local api=fakeMapApi(); local native=api.setRoomUserData; local calls=0
+  api.setRoomUserData=function(...) calls=calls+1; if calls==1 then return nil,"room ownership rejected" end; return native(...) end
+  local ok,e=Adapter.new(api):ensureRoom(descriptor(31,"Restart"),{}); eq(ok,nil); eq(e,"room ownership rejected")
+  eq(api.rooms[31],nil); eq(api.deletedRooms[1],31)
+  api.setRoomUserData=native
+  assert(Adapter.new(api):ensureRoom(descriptor(31,"Restart"),{})); eq(api.rooms[31].user["dghud.owner"],"DragonsGateHUD")
+end)
+
+test("reports ownership and rollback failures together",function()
+  local areaApi=fakeMapApi(); areaApi.fail.setAreaUserData=true; areaApi.fail.deleteArea=true
+  local ok,e=Adapter.new(areaApi):ensureArea("Broken"); eq(ok,nil); assert(e:find("setAreaUserData rejected",1,true)); assert(e:find("rollback failed",1,true)); assert(e:find("deleteArea rejected",1,true))
+
+  local roomApi=fakeMapApi(); assert(Adapter.new(roomApi):ensureArea("A")); roomApi.fail.setRoomUserData=true; roomApi.fail.deleteRoom=true
+  ok,e=Adapter.new(roomApi):ensureRoom(descriptor(32,"A"),{}); eq(ok,nil); assert(e:find("setRoomUserData rejected",1,true)); assert(e:find("rollback failed",1,true)); assert(e:find("deleteRoom rejected",1,true))
+end)
+
+test("never deletes preexisting collisions or owned rooms on update failure",function()
+  local personal={name="Personal",user={},exits={},stubs={}}; local api=fakeMapApi({[40]=personal})
+  api.areas["Dragons Gate - Personal"]=9; api.areaUser[9]={}
+  local map=Adapter.new(api); eq(map:ensureRoom(descriptor(40),{}),nil); eq(map:ensureArea("Personal"),nil)
+  eq(#api.deletedRooms,0); eq(#api.deletedAreas,0); eq(api.rooms[40],personal); eq(api.areas["Dragons Gate - Personal"],9)
+
+  local managed=fakeMapApi(); local managedMap=Adapter.new(managed); assert(managedMap:ensureRoom(descriptor(41),{}))
+  managed.fail.setRoomName=true; eq(managedMap:ensureRoom(descriptor(41,"A","Changed"),{}),nil)
+  eq(#managed.deletedRooms,0); eq(#managed.deletedAreas,0); assert(managed.rooms[41])
+
+  local persistedArea=fakeMapApi(); assert(Adapter.new(persistedArea):ensureArea("Owned")); persistedArea.fail.setAreaUserData=true
+  eq(Adapter.new(persistedArea):ensureArea("Owned"),nil); eq(#persistedArea.deletedAreas,0); assert(persistedArea.areas["Dragons Gate - Owned"])
 end)
 
 test("never adopts preexisting unowned provisional-looking objects",function()
@@ -144,6 +186,12 @@ end)
 
 test("production factory guards area APIs",function()
   local api=Adapter.mudletApi({}); local value,e=api.getAreaTable(); eq(value,nil); eq(e,"Mudlet mapper API getAreaTable is unavailable")
+end)
+
+test("production factory exposes private rollback wrappers",function()
+  local deletedRoom,deletedArea
+  local api=Adapter.mudletApi({deleteRoom=function(id) deletedRoom=id end,deleteArea=function(id) deletedArea=id end})
+  assert(api.deleteRoom(51)); assert(api.deleteArea(6)); eq(deletedRoom,51); eq(deletedArea,6)
 end)
 
 test("production route isolates speedWalkDir",function()

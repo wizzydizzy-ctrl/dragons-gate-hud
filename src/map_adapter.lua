@@ -34,6 +34,14 @@ local function requireCapabilities(api,names)
   return true
 end
 
+local function rollbackCreated(api,deleteName,id,originalError)
+  local deleted,deleteError=invoke(api,deleteName,id)
+  if deleted==nil then
+    return nil,tostring(originalError).."; rollback failed: "..tostring(deleteError)
+  end
+  return nil,originalError
+end
+
 function MapAdapter.new(api)
   return setmetatable({api=api or {},owner="DragonsGateHUD",schema="1",areas={},createdAreas={},createdRooms={}},MapAdapter)
 end
@@ -51,6 +59,7 @@ function MapAdapter:ensureArea(areaKey)
   local areas,areasErr=read(self.api,"getAreaTable")
   if areas==nil then return nil,areasErr end
   local area=areas[name]
+  local createdThisCall=false
   if area~=nil then
     local owner,ownerErr=read(self.api,"getAreaUserData",area,"dghud.owner")
     if ownerErr then return nil,ownerErr end
@@ -59,10 +68,21 @@ function MapAdapter:ensureArea(areaKey)
     local addErr
     area,addErr=invoke(self.api,"addAreaName",name)
     if area==nil then return nil,addErr end
+    createdThisCall=true
     self.createdAreas[area]=true
   end
   local areaOperations={{"setAreaUserData",area,"dghud.owner",self.owner},{"setAreaUserData",area,"dghud.state","provisional"},{"setAreaUserData",area,"dghud.mapper_schema",self.schema}}
-  for _,operation in ipairs(areaOperations) do local ok,err=invoke(self.api,unpackValues(operation)); if ok==nil then return nil,err end end
+  for index,operation in ipairs(areaOperations) do
+    local ok,err=invoke(self.api,unpackValues(operation))
+    if ok==nil then
+      if createdThisCall and index==1 then
+        local _,rollbackError=rollbackCreated(self.api,"deleteArea",area,err)
+        self.createdAreas[area]=nil
+        return nil,rollbackError
+      end
+      return nil,err
+    end
+  end
   local readyOk,readyErr=invoke(self.api,"setAreaUserData",area,"dghud.state","ready"); if readyOk==nil then return nil,readyErr end
   self.createdAreas[area]=nil
   self.areas[key]=area
@@ -72,7 +92,7 @@ end
 function MapAdapter:ensureRoom(room,coordinates)
   if type(room)~="table" or room.id==nil then return nil,"room ID is required" end
   coordinates=coordinates or {}
-  local ready,readyErr=requireCapabilities(self.api,{"roomExists","addRoom","getAreaTable","addAreaName","setAreaUserData","getAreaUserData","setRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData"})
+  local ready,readyErr=requireCapabilities(self.api,{"roomExists","addRoom","deleteRoom","getAreaTable","addAreaName","deleteArea","setAreaUserData","getAreaUserData","setRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData"})
   if not ready then return nil,readyErr end
   local existsCall,exists,existsErr=pcall(self.api.roomExists,room.id)
   if not existsCall then return nil,"Mudlet mapper API roomExists failed: "..tostring(exists) end
@@ -82,12 +102,22 @@ function MapAdapter:ensureRoom(room,coordinates)
   end
   local area,areaErr=self:ensureArea(room.area_key)
   if area==nil then return nil,areaErr end
+  local createdThisCall=false
   if not exists then
     local added,addErr=invoke(self.api,"addRoom",room.id)
     if added==nil then return nil,addErr end
+    createdThisCall=true
     self.createdRooms[room.id]=true
   end
-  local ownerOk,ownerErr=invoke(self.api,"setRoomUserData",room.id,"dghud.owner",self.owner); if ownerOk==nil then return nil,ownerErr end
+  local ownerOk,ownerErr=invoke(self.api,"setRoomUserData",room.id,"dghud.owner",self.owner)
+  if ownerOk==nil then
+    if createdThisCall then
+      local _,rollbackError=rollbackCreated(self.api,"deleteRoom",room.id,ownerErr)
+      self.createdRooms[room.id]=nil
+      return nil,rollbackError
+    end
+    return nil,ownerErr
+  end
   local provisionalOk,provisionalErr=invoke(self.api,"setRoomUserData",room.id,"dghud.state","provisional"); if provisionalOk==nil then return nil,provisionalErr end
   local operations={
     {"setRoomUserData",room.id,"dghud.mapper_schema",self.schema},
@@ -168,7 +198,7 @@ end
 function MapAdapter.mudletApi(globals)
   globals=globals or _G
   local api={}
-  local names={"addRoom","addAreaName","getAreaTable","setAreaUserData","getAreaUserData","setRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","getRoomCoordinates","getRoomsByPosition","setRoomIDbyHash","centerview","updateMap"}
+  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","setAreaUserData","getAreaUserData","setRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","getRoomCoordinates","getRoomsByPosition","setRoomIDbyHash","centerview","updateMap"}
   local function wrapper(name)
     return function(...)
       local fn=globals[name]
@@ -179,7 +209,7 @@ function MapAdapter.mudletApi(globals)
       return a,b,c
     end
   end
-  local mutations={addRoom=true,addAreaName=true,setAreaUserData=true,setRoomArea=true,setRoomName=true,setRoomCoordinates=true,setRoomUserData=true,setExitStub=true,setExit=true,setRoomIDbyHash=true,centerview=true,updateMap=true}
+  local mutations={addRoom=true,deleteRoom=true,addAreaName=true,deleteArea=true,setAreaUserData=true,setRoomArea=true,setRoomName=true,setRoomCoordinates=true,setRoomUserData=true,setExitStub=true,setExit=true,setRoomIDbyHash=true,centerview=true,updateMap=true}
   for _,name in ipairs(names) do
     if mutations[name] then
       api[name]=wrapper(name)

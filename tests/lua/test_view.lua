@@ -73,7 +73,11 @@ local function fakeGeyser()
         self.renderedEntries[#self.renderedEntries+1]={first=first,last=self.lastLine}
       else self.message=value end
     end
-    function item:clear() self.echoes={}; self.lastLine=0; self.renderedEntries={} end
+    function item:cecho(value)
+      self.cechoes=self.cechoes or {}
+      self.cechoes[#self.cechoes+1]=value
+    end
+    function item:clear() self.echoes={}; self.cechoes={}; self.lastLine=0; self.renderedEntries={} end
     function item:setWrap(value) self.wrap=value; return true end
     function item:setFontSize(value) self.fontSize=value end
     function item:enableScrollBar() self.scrollBar=true end
@@ -101,6 +105,15 @@ local function chatView()
   return view
 end
 
+test("chat output colors its trusted prefix without printing HTML markup literally",function()
+  local view=chatView()
+  view:renderChat({{category="ROOM",timestamp="2026-08-31T20:12:00-04:00",line='Gia says, "hey"'}},{"ROOM"},"ALL")
+  eq(#(view.chat_output.cechoes or {}),1)
+  eq(view.chat_output.cechoes[1]:find("<span",1,true),nil)
+  eq(#view.chat_output.echoes,1)
+  eq(view.chat_output.echoes[1]:find('Gia says, "hey"',1,true)~=nil,true)
+end)
+
 test("view owns a scrollable chat panel above the main console",function()
   local view=chatView()
   eq(view.chat_container~=nil,true); eq(view.chat_tabs~=nil,true); eq(view.chat_output~=nil,true)
@@ -115,15 +128,15 @@ test("chat panel occupies the center while side cards stay at the header",functi
   eq(view.identity.y,layout.header_height); eq(view.left.y,layout.header_height); eq(view.equipment.y,layout.header_height+layout.panel_padding)
 end)
 
-test("chat rendering keeps only the newest thousand and escapes untrusted text",function()
+test("chat rendering keeps only the newest thousand and isolates untrusted text from color markup",function()
   local view=chatView(); view:applyLayout(require("layout").compute(1920,1080)); local entries={}
   for index=1,1001 do entries[index]={category="ROOM",timestamp="2026-08-31T13:00:00-04:00",line="line-"..index} end
   entries[1001].line="<b>owned &\n\27[31m"
   view:renderChat(entries,{"ROOM","QUEST<script>","EVENTS\n"},"ALL")
   eq(#view.chat_output.echoes,1000); eq(view.chat_output.echoes[1]:find("line-2",1,true)~=nil,true)
   local last=view.chat_output.echoes[#view.chat_output.echoes]
-  eq(last:find("<b>owned",1,true),nil); eq(last:find("&lt;b&gt;owned &amp;",1,true)~=nil,true)
-  eq(last:find("\n\27",1,true),nil); eq(last:find("color:#75857c",1,true)~=nil,true)
+  eq(last:find("<b>owned &",1,true)~=nil,true); eq(last:find("\n\27",1,true),nil)
+  eq(view.chat_output.cechoes[#view.chat_output.cechoes]:find("<#75857c>",1,true)~=nil,true)
 end)
 
 test("chat tabs stay inside narrow panels and expose deterministic overflow",function()

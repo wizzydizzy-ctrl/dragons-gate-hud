@@ -5,6 +5,7 @@ function View.withFont(text,size) return "<span style='font-size:"..tonumber(siz
 function View.raiseCards(cards) for _,card in ipairs(cards or {}) do if card and card.raise then card:raise() end end end
 local function esc(v) return tostring(v or ""):gsub("&","&amp;"):gsub("<","&lt;"):gsub(">","&gt;") end
 local function safeText(v) return esc(tostring(v or ""):gsub("%c"," ")) end
+local function safeChatText(v) return tostring(v or ""):gsub("%c"," ") end
 local chat_colors={ROOM="text",OWN="jade",WHISPER="#d49bc8",ESP="#a6a3e8",DRAGON="#d9a869",CONTACT="#8bc6b0",STAFF="#e09672"}
 local function chatScroll(output,ranges)
   local okCurrent,current=pcall(function() return output:getScroll() end)
@@ -39,9 +40,10 @@ function View.chatLine(entry,t,timestamps)
   local stamp=""
   if timestamps~=false then
     local time=tostring(entry.timestamp or ""):match("T(%d%d:%d%d)")
-    if time then stamp="<span style='color:"..t.muted.."'>["..time.."]</span> " end
+    if time then stamp="<#"..t.muted:gsub("^#","")..">["..time.."]<reset> " end
   end
-  return stamp.."<span style='color:"..color.."'><b>"..safeText(category).."</b></span> "..safeText(entry.line or entry.message).."\n"
+  local prefix=stamp.."<#"..tostring(color):gsub("^#","")..">"..safeText(category).."<reset>"
+  return prefix," "..safeChatText(entry.line or entry.message).."\n"
 end
 function View.identityContent(character,t,layout)
   local physical=character.physical or {}; local detail=""
@@ -287,7 +289,9 @@ function View:renderChat(entries,categories,activeFilter,savedScroll)
   self.chat_line_ranges={}
   for index,entry in ipairs(self.chat_entries) do
     local okBefore,before=pcall(function() return self.chat_output:getLastLineNumber() end)
-    self.chat_output:echo(View.chatLine(entry,self.settings.theme,chatSettings.timestamps))
+    local prefix,message=View.chatLine(entry,self.settings.theme,chatSettings.timestamps)
+    self.chat_output:cecho(prefix)
+    self.chat_output:echo(message)
     local okAfter,after=pcall(function() return self.chat_output:getLastLineNumber() end)
     before=okBefore and tonumber(before) or 0; after=okAfter and tonumber(after) or before
     self.chat_line_ranges[index]={entry=entry,first=before+1,last=math.max(before+1,after)}

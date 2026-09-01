@@ -64,6 +64,7 @@ local function fake()
   function f:count(tableValue) local n=0; for _ in pairs(tableValue) do n=n+1 end; return n end
   function f:createMapAdapter()
     local map={rooms={},stubs={},links={},special={},current=nil,shutdowns=0}
+    function map:clearOwnedRoomNames() f.mapLabelCleanups=(f.mapLabelCleanups or 0)+1; return 0 end
     function map:ensureRoom(room,coordinates,partition)
       local record=self.rooms[room.id]
       if record then record.room=room else self.rooms[room.id]={room=room,coordinates=coordinates,partition=partition or room.area_key,game_area=room.area_key,owned=true} end
@@ -107,6 +108,10 @@ local function fake()
   function f:reportMapperStatus(kind,message) self.mapperStatuses=self.mapperStatuses or {}; self.mapperStatuses[#self.mapperStatuses+1]={kind,message} end
   return f
 end
+
+test("startup performs the owned-room label migration once",function()
+  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); eq(f.mapLabelCleanups,1)
+end)
 
 local function gmcpRoom(id)
   return {Char={Vitals={hp=1,hp_max=1}},Room={Info={num=id,name="Room "..id,area=1,exits={}}}}

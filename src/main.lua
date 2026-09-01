@@ -176,6 +176,11 @@ function Main:start()
   if not mapOk then self:shutdown(); return nil,map end
   if not map then self:shutdown(); return nil,mapErr or "map adapter construction failed" end
   self.map=map
+  if type(self.map.clearOwnedRoomNames)=="function" then
+    local cleanupOk,cleanupResult,cleanupErr=pcall(self.map.clearOwnedRoomNames,self.map)
+    if not cleanupOk then self:mapperStatus("warning","Map label cleanup failed: "..tostring(cleanupResult),true)
+    elseif cleanupResult==nil then self:mapperStatus("warning","Map label cleanup failed: "..tostring(cleanupErr),true) end
+  end
   local factory=self.createAutomapper or function(_,model,adapter,status) return Automapper.new(model,adapter,status) end
   local automapperOk,automapper,automapperErr=pcall(factory,self,MapperModel,self.map,function(kind,message) self:mapperStatus(kind,message) end)
   if not automapperOk then self:shutdown(); return nil,automapper end

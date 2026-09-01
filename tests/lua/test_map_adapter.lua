@@ -43,6 +43,7 @@ local function fakeMapApi(seed)
     return grouped
   end
   function api.getRoomCoordinates(id) local ok,e=gate("getRoomCoordinates"); if not ok then return nil,e end; local r=api.rooms[id]; return r and r.x,r and r.y,r and r.z end
+  function api.getRooms() local ok,e=gate("getRooms"); if not ok then return nil,e end; local out={}; for id,r in pairs(api.rooms) do out[r.name or ("Room "..id)]=id end; return out end
   function api.getRoomsByPosition(area,x,y,z) local ok,e=gate("getRoomsByPosition"); if not ok then return nil,e end; local out,i={},0; for id,r in pairs(api.rooms) do if r.area==area and r.x==x and r.y==y and r.z==z then out[i]=id;i=i+1 end end; return out end
   function api.getMapZoom(area) local ok,e=gate("getMapZoom"); if not ok then return nil,e end; return api.zoom[area] end
   function api.setMapZoom(value,area) local ok,e=gate("setMapZoom"); if not ok then return nil,e end; api.zoom[area]=value; return true end
@@ -77,6 +78,26 @@ test("HUD rooms keep native mapper labels blank while preserving descriptive met
   assert(map:ensureRoom(descriptor(176,"1","Training Center."),{x=9,y=9,z=9}))
   eq(api.rooms[176].name,"")
   eq(api.rooms[176].user["dghud.room_name"],"Training Center.")
+end)
+
+test("legacy label cleanup changes only HUD-owned rooms",function()
+  local api=fakeMapApi({
+    [10]={name="Old HUD label",user={["dghud.owner"]="DragonsGateHUD"}},
+    [11]={name="Personal room",user={}},
+    [12]={name="Other package",user={["dghud.owner"]="SomeoneElse"}},
+  })
+  local count=assert(Adapter.new(api):clearOwnedRoomNames())
+  eq(count,1); eq(api.rooms[10].name,""); eq(api.rooms[11].name,"Personal room"); eq(api.rooms[12].name,"Other package")
+end)
+
+test("legacy label cleanup deduplicates room ids and reports read failures",function()
+  local api=fakeMapApi({[10]={name="Old",user={["dghud.owner"]="DragonsGateHUD"}}})
+  local nativeGetRooms=api.getRooms
+  api.getRooms=function() return {Old=10,Duplicate="10",invalid="nope"} end
+  eq(Adapter.new(api):clearOwnedRoomNames(),1)
+  api.getRooms=nativeGetRooms
+  api.fail.getRooms=true
+  local count,err=Adapter.new(api):clearOwnedRoomNames(); eq(count,nil); eq(err,"getRooms rejected")
 end)
 
 test("reuses a persisted owned area after adapter reload",function()

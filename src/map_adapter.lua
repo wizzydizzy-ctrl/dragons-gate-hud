@@ -88,6 +88,28 @@ function MapAdapter:isOwned(id)
   return owner==self.owner
 end
 
+function MapAdapter:clearOwnedRoomNames()
+  local rooms,roomsErr=read(self.api,"getRooms")
+  if rooms==nil then return nil,roomsErr end
+  if type(rooms)~="table" then return nil,"Mudlet mapper API getRooms returned invalid data" end
+  local ids={}
+  for key,value in pairs(rooms) do
+    local keyID=positiveInteger(key); if keyID then ids[keyID]=true end
+    local valueID=positiveInteger(value); if valueID then ids[valueID]=true end
+  end
+  local changed=0
+  for id in pairs(ids) do
+    local owner,ownerErr=read(self.api,"getRoomUserData",id,"dghud.owner")
+    if owner==nil and ownerErr~=nil then return nil,ownerErr end
+    if owner==self.owner then
+      local ok,err=invoke(self.api,"setRoomName",id,"")
+      if ok==nil then return nil,err end
+      changed=changed+1
+    end
+  end
+  return changed
+end
+
 function MapAdapter:ensureArea(areaKey)
   local key=tostring(areaKey or "unknown")
   if self.areas[key]~=nil then return self.areas[key] end
@@ -400,7 +422,7 @@ end
 function MapAdapter.mudletApi(globals)
   globals=globals or _G
   local api={}
-  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","addSpecialExit","getSpecialExits","getRoomCoordinates","getRoomsByPosition","getMapZoom","setMapZoom","setRoomIDbyHash","centerview","updateMap"}
+  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","addSpecialExit","getSpecialExits","getRoomCoordinates","getRooms","getRoomsByPosition","getMapZoom","setMapZoom","setRoomIDbyHash","centerview","updateMap"}
   local function wrapper(name)
     return function(...)
       local fn=globals[name]

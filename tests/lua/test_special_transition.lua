@@ -38,6 +38,15 @@ test("confirms the final eligible non-direction command from canonical rooms",fu
   eq(tracker:pending(),nil)
 end)
 
+test("preserves exact trimmed command bytes while classifying with a lowercase copy",function()
+  local adapter=fakeTimerAdapter(); local tracker=Special.new(MapperModel,adapter,3)
+  eq(tracker:onOutgoing("  NoRtH  ",100),nil)
+  eq(tracker:onOutgoing("  DGHUD UPDATE  ",100),nil)
+  assert(tracker:onOutgoing("  Open RuneDoor --Sigil=Ä  ",100))
+  local transition=assert(tracker:onRoom(900))
+  eq(transition.command,"Open RuneDoor --Sigil=Ä")
+end)
+
 test("directions controls and expired candidates never become special exits",function()
   local adapter=fakeTimerAdapter(); local tracker=Special.new(MapperModel,adapter,3)
   eq(tracker:onOutgoing("north",100),nil)
@@ -69,6 +78,24 @@ test("replacement disconnect and cancellation failures clear candidate ownership
   function adapter:cancelTimer() error("cancel threw") end
   ok,err=tracker:cancel("shutdown"); eq(ok,nil); assert(err:find("cancel threw",1,true))
   eq(tracker:pending(),nil)
+end)
+
+test("replacement cancellation failure is bounded aborts replacement and leaves stale callback inert",function()
+  local adapter=fakeTimerAdapter(); local statuses={}
+  local tracker=Special.new(MapperModel,adapter,3,function(kind) statuses[#statuses+1]=kind end)
+  assert(tracker:onOutgoing("enter tunnel",100))
+  local oldTimer=tracker.timer; local staleCallback=adapter.timers[oldTimer].callback
+  adapter.cancelError="cancel rejected "..string.rep("x",500)
+  local ok,err=tracker:onOutgoing("Open New Door",100)
+  eq(ok,nil); eq(err:find("special transition replacement cancellation failed",1,true),1); eq(#err<=200,true)
+  eq(tracker:pending(),nil); eq(tracker.timer,nil); eq(adapter.nextTimer,1)
+
+  adapter.cancelError=nil
+  assert(tracker:onOutgoing("Open Final Door",100))
+  local replacementTimer=tracker.timer
+  staleCallback()
+  eq(tracker:pending().command,"Open Final Door"); eq(tracker.timer,replacementTimer)
+  eq(statuses[#statuses],nil)
 end)
 
 test("timer creation failures never leave pending candidates",function()

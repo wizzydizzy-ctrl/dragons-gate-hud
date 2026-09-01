@@ -78,10 +78,10 @@ function Walker:start(route,destination)
     else
       local validate=self.adapter and self.adapter.validateStep
       if type(validate)~="function" then return nil,"special exit is not confirmed from "..rooms[index].." to "..rooms[index+1] end
-      local callOk,confirmed,err=pcall(validate,self.adapter,rooms[index],rooms[index+1],command)
+      local callOk,confirmed,validated=pcall(validate,self.adapter,rooms[index],rooms[index+1],command)
       if not callOk then return nil,confirmed end
-      if not confirmed then return nil,err or "special exit is not confirmed from "..rooms[index].." to "..rooms[index+1] end
-      commands[index]=command
+      if not confirmed then return nil,validated or "special exit is not confirmed from "..rooms[index].." to "..rooms[index+1] end
+      commands[index]=validated or command
     end
   end
   self.route={rooms=rooms,commands=commands}

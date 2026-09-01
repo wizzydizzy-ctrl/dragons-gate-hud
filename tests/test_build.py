@@ -1,8 +1,13 @@
-import hashlib, json, subprocess, sys, tempfile, unittest, zipfile
+import hashlib, json, re, subprocess, sys, tempfile, unittest, zipfile
+from xml.etree import ElementTree
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 class BuildTest(unittest.TestCase):
+    def run_lua(self, source, cwd):
+        completed=subprocess.run(['lua','-'],input=source,text=True,cwd=cwd,capture_output=True)
+        self.assertEqual(completed.returncode,0,completed.stdout+completed.stderr)
+
     def test_build_emits_verified_owned_package(self):
         with tempfile.TemporaryDirectory() as td:
             subprocess.run([sys.executable,str(ROOT/'scripts/build.py'),'--output',td,'--owner','ricwall','--repository','dragons-gate-hud'],check=True)
@@ -16,4 +21,42 @@ class BuildTest(unittest.TestCase):
                 self.assertIn('package.preload[&quot;chat_controller&quot;]',xml)
                 self.assertNotIn('&lt;/green&gt;',xml)
                 self.assertIn('[DGHUD Update]&lt;reset&gt; Installed version',xml)
+                root=ElementTree.fromstring(xml)
+                scripts={node.findtext('name'):node.findtext('script') for node in root.findall('.//Script')}
+                preloads={name.removeprefix('DGHUD Module - '):code for name,code in scripts.items() if name.startswith('DGHUD Module - ')}
+                required=set()
+                for path in (ROOT/'src').glob('*.lua'):
+                    required.update(re.findall(r'require\(["\']([^"\']+)["\']\)',path.read_text()))
+                self.assertEqual(required-set(preloads),set())
+                self.run_lua('package.path=""; package.cpath=""\n'+'\n'.join(preloads.values())+'\nassert(require("main"))\n',td)
+
+                entry=scripts['DGHUD Start']
+                reload_probe='''
+package.path=""; package.cpath=""
+local generation=1
+package.loaded["special_transition"]={generation=0}
+package.preload["special_transition"]=function() return {generation=generation} end
+package.preload["defaults"]=function() return {} end
+package.preload["settings"]=function() return {resolve=function(defaults,user) return defaults,user end} end
+package.preload["mudlet_adapter"]=function() return {new=function() return {} end} end
+package.preload["main"]=function()
+  local special=require("special_transition")
+  return {
+    new=function() return {special=special,start=function() return true end,shutdown=function() return true end} end,
+    installChatApi=function() end,
+  }
+end
+package.preload["updater"]=function() return {new=function() return {} end} end
+package.preload["chat_storage"]=function() return {mudletApi=function() return {} end} end
+local function run_entry()
+ENTRY
+end
+run_entry()
+assert(DGHUD.controller.special.generation==1,"entry retained stale special_transition on initial load")
+generation=2
+package.preload["special_transition"]=function() return {generation=generation} end
+run_entry()
+assert(DGHUD.controller.special.generation==2,"entry retained stale special_transition on reload")
+'''.replace('ENTRY',entry)
+                self.run_lua(reload_probe,td)
 if __name__=='__main__': unittest.main()

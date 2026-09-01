@@ -6,8 +6,8 @@ local exclusions={
   say=true,whisper=true,link=true,
 }
 
-local function normalize(value)
-  return tostring(value or ""):lower():match("^%s*(.-)%s*$")
+local function trim(value)
+  return tostring(value or ""):match("^%s*(.-)%s*$")
 end
 
 local function positive(value)
@@ -17,6 +17,13 @@ end
 
 local function excluded(value)
   return exclusions[value:match("^(%S+)") or ""]==true
+end
+
+local function boundedError(prefix,detail)
+  local message=tostring(prefix)
+  if detail~=nil and tostring(detail)~="" then message=message..": "..tostring(detail) end
+  if #message>200 then return message:sub(1,197).."..." end
+  return message
 end
 
 function Special.new(model,adapter,timeoutSeconds,onStatus)
@@ -45,9 +52,11 @@ function Special:cancel(reason)
 end
 
 function Special:onOutgoing(command,originID)
-  self:cancel("replaced")
-  local value=normalize(command)
-  if not positive(originID) or value=="" or self.model.direction(value) or excluded(value) then return nil end
+  local cancelled,cancelErr=self:cancel("replaced")
+  if not cancelled then return nil,boundedError("special transition replacement cancellation failed",cancelErr) end
+  local value=trim(command)
+  local classified=value:lower()
+  if not positive(originID) or value=="" or self.model.direction(classified) or excluded(classified) then return nil end
   local timer,err
   local callOk
   callOk,timer,err=pcall(self.adapter.schedule,self.adapter,self.timeout_seconds,function()

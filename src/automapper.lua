@@ -6,7 +6,7 @@ local teleportCommands={
 }
 
 local function trim(value)
-  return tostring(value or ""):match("^%s*(.-)%s*$"):lower()
+  return tostring(value or ""):match("^%s*(.-)%s*$")
 end
 
 local function contains(values,wanted)
@@ -30,10 +30,11 @@ end
 
 function Automapper:onOutgoing(command)
   local value=trim(command)
-  local direction=self.model.direction(value)
+  local classified=value:lower()
+  local direction=self.model.direction(classified)
   if direction and self.current_id then
     self.pending={from=self.current_id,direction=direction}
-  elseif teleportCommands[value] or value:match("^walkto%s+") then
+  elseif teleportCommands[classified] or classified:match("^walkto%s+") then
     self.pending=nil
   end
   return direction

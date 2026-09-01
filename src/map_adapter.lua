@@ -53,7 +53,14 @@ local function finiteNumber(value)
 end
 
 local function normalizeCommand(value)
-  return tostring(value or ""):lower():match("^%s*(.-)%s*$")
+  return tostring(value or ""):match("^%s*(.-)%s*$")
+end
+
+local function specialDestination(exits,command)
+  for destination,commands in pairs(exits or {}) do
+    if type(commands)=="table" and commands[command]~=nil then return destination end
+  end
+  return nil
 end
 
 local function requireCapabilities(api,names)
@@ -280,14 +287,15 @@ function MapAdapter:specialExitMatches(fromID,toID,command)
   if normalized=="" then return nil,"special exit command is required" end
   local exits,exitsErr=read(self.api,"getSpecialExits",from,true)
   if exits==nil then return nil,exitsErr end
-  local destination=exits[to] or exits[tostring(to)]
-  return type(destination)=="table" and destination[normalized]~=nil
+  local destination=specialDestination(exits,normalized)
+  return positiveInteger(destination)==to
 end
 
 function MapAdapter:validateRouteStep(fromID,toID,command)
   local direction=MapperModel.direction(command)
   if direction then return true,direction end
-  if self:isOwned(fromID) and self:isOwned(toID) and self:specialExitMatches(fromID,toID,command) then return true,command end
+  local normalized=normalizeCommand(command)
+  if self:isOwned(fromID) and self:isOwned(toID) and self:specialExitMatches(fromID,toID,normalized) then return true,normalized end
   return nil,"special exit is not confirmed from "..tostring(fromID).." to "..tostring(toID)
 end
 
@@ -297,9 +305,13 @@ function MapAdapter:connectSpecial(fromID,toID,command)
   local normalized=normalizeCommand(command)
   if normalized=="" then return nil,"special exit command is required" end
   if not self:isOwned(from) or not self:isOwned(to) then return nil,"special exit endpoints are not owned by DragonsGateHUD" end
-  local matches,matchErr=self:specialExitMatches(from,to,normalized)
-  if matches==nil then return nil,matchErr end
-  if matches then return true end
+  local exits,exitsErr=read(self.api,"getSpecialExits",from,true)
+  if exits==nil then return nil,exitsErr end
+  local destination=specialDestination(exits,normalized)
+  if destination~=nil then
+    if positiveInteger(destination)==to then return true end
+    return nil,"special exit command already has a different destination"
+  end
   local added,addErr=invoke(self.api,"addSpecialExit",from,to,normalized)
   if added==nil then return nil,addErr end
   return true
@@ -345,13 +357,16 @@ end
 function MapAdapter:currentZoom(roomID)
   local room=positiveInteger(roomID)
   if not room then return nil,"room ID must be a positive integer" end
-  local ready,readyErr=requireCapabilities(self.api,{"getRoomUserData","getRoomArea","getMapZoom"})
+  local ready,readyErr=requireCapabilities(self.api,{"getRoomUserData","getRoomArea","getAreaUserData","getMapZoom"})
   if not ready then return nil,readyErr end
   local owner,ownerErr=read(self.api,"getRoomUserData",room,"dghud.owner")
   if owner==nil and ownerErr~=nil then return nil,ownerErr end
   if owner~=self.owner then return nil,"room "..tostring(room).." is not owned by DragonsGateHUD" end
   local area,areaErr=read(self.api,"getRoomArea",room)
   if area==nil then return nil,areaErr or ("room "..tostring(room).." has no mapper area") end
+  local areaOwner,areaOwnerErr=read(self.api,"getAreaUserData",area,"dghud.owner")
+  if areaOwner==nil and areaOwnerErr~=nil then return nil,areaOwnerErr end
+  if areaOwner~=self.owner then return nil,"mapper area "..tostring(area).." is not owned by DragonsGateHUD" end
   local zoom,zoomErr=read(self.api,"getMapZoom",area)
   if zoom==nil then return nil,zoomErr or ("mapper area "..tostring(area).." has no zoom value") end
   return zoom,area
@@ -361,7 +376,9 @@ function MapAdapter:zoom(roomID,visualDirection,step,minimum,maximum)
   if visualDirection~="larger" and visualDirection~="smaller" then return nil,"map zoom direction must be larger or smaller" end
   local amount=finiteNumber(step); local lower=finiteNumber(minimum); local upper=finiteNumber(maximum)
   if not amount or amount<=0 then return nil,"map zoom step must be positive" end
-  if not lower or not upper or lower>upper then return nil,"map zoom bounds are invalid" end
+  if not lower or not upper then return nil,"map zoom bounds are invalid" end
+  lower=math.max(3.0,lower)
+  if lower>upper then return nil,"map zoom bounds are invalid" end
   local current,area=self:currentZoom(roomID)
   if current==nil then return nil,area end
   current=finiteNumber(current)

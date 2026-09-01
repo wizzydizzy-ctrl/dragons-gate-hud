@@ -33,12 +33,14 @@ local function fakeMapApi(seed)
   function api.setExit(id,to,d) local ok,e=gate("setExit"); if not ok then return nil,e end; api.rooms[id].exits[d]=to; return true end
   function api.addSpecialExit(from,to,command)
     local ok,e=gate("addSpecialExit"); if not ok then return nil,e end
-    api.special[from]=api.special[from] or {}; api.special[from][to]=api.special[from][to] or {}; api.special[from][to][command]="0"; api.specialAdds=api.specialAdds+1; return true
+    api.special[from]=api.special[from] or {}; api.special[from][command]=to; api.specialAdds=api.specialAdds+1; return true
   end
   function api.getSpecialExits(from,listAll)
     local ok,e=gate("getSpecialExits"); if not ok then return nil,e end
     eq(listAll,true)
-    return api.special[from] or {}
+    local grouped={}
+    for command,to in pairs(api.special[from] or {}) do grouped[to]=grouped[to] or {}; grouped[to][command]="0" end
+    return grouped
   end
   function api.getRoomCoordinates(id) local ok,e=gate("getRoomCoordinates"); if not ok then return nil,e end; local r=api.rooms[id]; return r and r.x,r and r.y,r and r.z end
   function api.getRoomsByPosition(area,x,y,z) local ok,e=gate("getRoomsByPosition"); if not ok then return nil,e end; local out,i={},0; for id,r in pairs(api.rooms) do if r.area==area and r.x==x and r.y==y and r.z==z then out[i]=id;i=i+1 end end; return out end
@@ -223,7 +225,7 @@ test("fresh automapper retry places an owner-only special destination in its des
   local record=assert(Adapter.new(api):roomRecord(900))
   eq(record.partition,"special:900"); eq(record.area,submapArea)
   eq(record.coordinates.x,0); eq(record.coordinates.y,0); eq(record.coordinates.z,0); eq(record.state,"ready")
-  eq(api.special[100][900]["go gate"],"0")
+  eq(api.special[100]["go gate"],900)
 end)
 
 test("fresh automapper retry derives coordinates for a provisional directional continuation",function()
@@ -363,11 +365,35 @@ end)
 test("adds only an observed one-way special exit and is idempotent",function()
   local api=fakeMapApi(); local map=Adapter.new(api)
   assert(map:ensureRoom(descriptor(100,"1"),{},"1")); assert(map:ensureRoom(descriptor(900,"1"),{},"special:900"))
-  assert(map:connectSpecial(100,900,"  GO Gate  ")); assert(Adapter.new(api):connectSpecial(100,900,"go gate"))
-  eq(api.special[100][900]["go gate"],"0"); eq(api.special[900],nil); eq(api.specialAdds,1)
-  eq(map:specialExitMatches(100,900,"GO GATE"),true)
+  assert(map:connectSpecial(100,900,"  GO Gate  ")); assert(Adapter.new(api):connectSpecial(100,900,"GO Gate"))
+  eq(api.special[100]["GO Gate"],900); eq(api.special[900],nil); eq(api.specialAdds,1)
+  eq(map:specialExitMatches(100,900,"GO Gate"),true)
+  eq(map:specialExitMatches(100,900,"go gate"),false)
   eq(map:specialExitMatches(100,900,"leave gate"),false)
   eq(map:specialExitMatches(100,901,"go gate"),false)
+end)
+
+test("never replaces a different-destination special exit with the same command",function()
+  for _,existing in ipairs({
+    {destination=777,owner="PersonalMapper"},
+    {destination=901,owner="DragonsGateHUD"},
+  }) do
+    local api=fakeMapApi(); local map=Adapter.new(api)
+    assert(map:ensureRoom(descriptor(100,"1"),{},"1")); assert(map:ensureRoom(descriptor(900,"1"),{},"special:900"))
+    api.rooms[existing.destination]={area=77,user={["dghud.owner"]=existing.owner},exits={},stubs={}}
+    api.special[100]={["go gate"]=existing.destination}
+    local ok,e=map:connectSpecial(100,900,"go gate")
+    eq(ok,nil); eq(e,"special exit command already has a different destination")
+    eq(api.special[100]["go gate"],existing.destination); eq(api.specialAdds,0)
+  end
+end)
+
+test("an exact command and destination tuple remains idempotent",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(100,"1"),{},"1")); assert(map:ensureRoom(descriptor(900,"1"),{},"special:900"))
+  api.special[100]={["go gate"]=900}
+  assert(map:connectSpecial(100,900,"go gate"))
+  eq(api.special[100]["go gate"],900); eq(api.specialAdds,0)
 end)
 
 test("contains special-exit read and write failures without inventing an edge",function()
@@ -399,7 +425,7 @@ test("reads zero-indexed occupancy route and view",function()
 end)
 
 test("visual zoom direction hides Mudlet numeric inversion and clamps per area",function()
-  local api=fakeMapApi(); api.rooms[100]={area=7,user={["dghud.owner"]="DragonsGateHUD"}}; api.zoom[7]=20
+  local api=fakeMapApi(); api.rooms[100]={area=7,user={["dghud.owner"]="DragonsGateHUD"}}; api.areaUser[7]={["dghud.owner"]="DragonsGateHUD"}; api.zoom[7]=20
   local map=Adapter.new(api)
   eq(map:currentZoom(100),20)
   eq(map:zoom(100,"larger",2.5,3,60),17.5); eq(api.zoom[7],17.5)
@@ -407,8 +433,20 @@ test("visual zoom direction hides Mudlet numeric inversion and clamps per area",
   api.zoom[7]=3; eq(map:zoom(100,"larger",2.5,3,60),3)
 end)
 
+test("zoom enforces Mudlet's absolute minimum over a lower configured minimum",function()
+  local api=fakeMapApi(); api.rooms[100]={area=7,user={["dghud.owner"]="DragonsGateHUD"}}; api.areaUser[7]={["dghud.owner"]="DragonsGateHUD"}; api.zoom[7]=4
+  eq(Adapter.new(api):zoom(100,"larger",2.5,1,60),3)
+  eq(api.zoom[7],3)
+end)
+
+test("zoom rejects a configured maximum below Mudlet's absolute minimum",function()
+  local api=fakeMapApi(); api.rooms[100]={area=7,user={["dghud.owner"]="DragonsGateHUD"}}; api.areaUser[7]={["dghud.owner"]="DragonsGateHUD"}; api.zoom[7]=4
+  local value,e=Adapter.new(api):zoom(100,"smaller",2.5,1,2.5)
+  eq(value,nil); eq(e,"map zoom bounds are invalid"); eq(api.zoom[7],4)
+end)
+
 test("zoom rejects invalid ownership and preserves the previous value on API failures",function()
-  local api=fakeMapApi(); api.rooms[100]={area=7,user={["dghud.owner"]="DragonsGateHUD"}}; api.zoom[7]=20
+  local api=fakeMapApi(); api.rooms[100]={area=7,user={["dghud.owner"]="DragonsGateHUD"}}; api.areaUser[7]={["dghud.owner"]="DragonsGateHUD"}; api.zoom[7]=20
   local map=Adapter.new(api)
   api.rooms[100].user["dghud.owner"]="PersonalMapper"
   local value,e=map:currentZoom(100); eq(value,nil); eq(e,"room 100 is not owned by DragonsGateHUD")
@@ -418,6 +456,15 @@ test("zoom rejects invalid ownership and preserves the previous value on API fai
     api.fail[name]=true; value,e=map:zoom(100,"larger",2.5,3,60); eq(value,nil); eq(e,name.." rejected"); eq(api.zoom[7],20); api.fail[name]=nil
   end
   api.fail.updateMap=true; value,e=map:zoom(100,"larger",2.5,3,60); eq(value,nil); eq(e,"updateMap rejected"); eq(api.zoom[7],20)
+end)
+
+test("zoom refuses an unowned area even when the room is HUD owned",function()
+  local api=fakeMapApi(); api.rooms[100]={area=7,user={["dghud.owner"]="DragonsGateHUD"}}; api.areaUser[7]={["dghud.owner"]="PersonalMapper"}; api.zoom[7]=20
+  local map=Adapter.new(api)
+  local value,e=map:currentZoom(100)
+  eq(value,nil); eq(e,"mapper area 7 is not owned by DragonsGateHUD")
+  value,e=map:zoom(100,"larger",2.5,3,60)
+  eq(value,nil); eq(e,"mapper area 7 is not owned by DragonsGateHUD"); eq(api.zoom[7],20)
 end)
 
 test("reload resolves persisted owned area before checking occupied coordinates",function()

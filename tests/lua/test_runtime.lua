@@ -88,7 +88,7 @@ local function fake()
     end
     function map:validateRouteStep(from,to,command)
       for _,exit in ipairs(self.special) do
-        if exit.from==from and exit.to==to and exit.command==tostring(command):lower():match("^%s*(.-)%s*$") and self:isOwned(from) and self:isOwned(to) then return true,command end
+        if exit.from==from and exit.to==to and exit.command==tostring(command):match("^%s*(.-)%s*$") and self:isOwned(from) and self:isOwned(to) then return true,exit.command end
       end
       return nil,"special exit is not confirmed from "..from.." to "..to
     end
@@ -223,6 +223,16 @@ test("runtime reports tracker scheduler failures without retaining candidates",f
     eq(tostring(hud.last_mapper_error):find("special schedule",1,true)~=nil,true)
     f.failSchedule=nil; hud:shutdown()
   end
+end)
+test("runtime reports bounded replacement cancellation failures and does not schedule a replacement",function()
+  local f=fake(); f.gmcp=gmcpRoom(100); local hud=Main.new(f,{layout={}}); assert(hud:start())
+  f.callbacks["sysDataSendRequest"](nil,"enter tunnel"); local scheduled=f.next
+  f.failCancel=true
+  local callbackOk=pcall(f.callbacks["sysDataSendRequest"],nil,"Open New Door")
+  eq(callbackOk,true); eq(hud.special_transition:pending(),nil); eq(f.next,scheduled)
+  eq(tostring(hud.last_mapper_error):find("special transition replacement cancellation failed",1,true),1)
+  eq(#tostring(hud.last_mapper_error)<=200,true)
+  f.failCancel=nil; hud:shutdown()
 end)
 test("runtime contains cancellation exceptions and preserves personal timers",function()
   local f=fake(); local personalTimer=f:schedule(60,function() end); f.gmcp=gmcpRoom(100)
@@ -389,10 +399,12 @@ test("map adapter validates exact owned route steps and preserves special comman
   local owners={[1]="DragonsGateHUD",[2]="DragonsGateHUD",[3]="DragonsGateHUD"}
   local adapter=MapAdapter.new({
     getRoomUserData=function(id,key) if key=="dghud.owner" then return owners[id] or "" end end,
-    getSpecialExits=function(from,listAll) eq(from,1); eq(listAll,true); return {[2]={['go gate']="0"}} end,
+    getSpecialExits=function(from,listAll) eq(from,1); eq(listAll,true); return {[2]={['Go Gate']="0"}} end,
   })
   local ok,command=adapter:validateRouteStep(1,2,"Go Gate")
   eq(ok,true); eq(command,"Go Gate")
+  ok,command=adapter:validateRouteStep(1,2,"go gate")
+  eq(ok,nil); eq(command,"special exit is not confirmed from 1 to 2")
   ok,command=adapter:validateRouteStep(1,3,"Go Gate")
   eq(ok,nil); eq(command,"special exit is not confirmed from 1 to 3")
   ok,command=adapter:validateRouteStep(1,2,"leave gate")
@@ -403,9 +415,9 @@ test("map adapter validates exact owned route steps and preserves special comman
 end)
 
 test("walkto crosses a confirmed special exit one command at a time around roundtime",function()
-  local f=fake(); f.gmcp=gmcpRoom(1); f.route={rooms={1,2,3},commands={"Go Gate","north"}}
+  local f=fake(); f.gmcp=gmcpRoom(1); f.route={rooms={1,2,3},commands={"  Go Gate  ","north"}}
   local hud=Main.new(f,{layout={}}); assert(hud:start())
-  hud.map.rooms[2]={}; hud.map.rooms[3]={}; hud.map.special[1]={from=1,to=2,command="go gate"}
+  hud.map.rooms[2]={}; hud.map.rooms[3]={}; hud.map.special[1]={from=1,to=2,command="Go Gate"}
   local walkto=assert(aliasCallback(f,"^walkto\\s+(\\d+)$")); assert(walkto("3"))
   eq(f.sentCommands[1],"Go Gate"); eq(f.sentCommands[2],nil); eq(hud.generated_command,"Go Gate")
   f.callbacks["sysDataSendRequest"](nil,"Go Gate"); eq(hud.generated_command,nil); eq(hud.walker:active(),true)

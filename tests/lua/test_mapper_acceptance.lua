@@ -28,7 +28,7 @@ local function runtime(world)
     local map={world=self.world}
     local directions={"n","ne","e","se","s","sw","w","nw","up","down","in","out"}
     local reverse={n="s",ne="sw",e="w",se="nw",s="n",sw="ne",w="e",nw="se",up="down",down="up",["in"]="out",out="in"}
-    local function normalize(command) return tostring(command or ""):lower():match("^%s*(.-)%s*$") end
+    local function normalize(command) return tostring(command or ""):match("^%s*(.-)%s*$") end
     local function ensureArea(partition)
       map.world.areas=map.world.areas or {}; map.world.zoom=map.world.zoom or {}
       local area=map.world.areas[partition]
@@ -152,9 +152,9 @@ test("special submaps persist canonical rooms zoom and mixed walking end to end"
   f.gmcp.Room.Info={num=100,name="Room 100",area=1,environment="Plain",flags={"outdoor"},exits={}}
   local hud=Main.new(f,Defaults); assert(hud:start())
 
-  observeCommand(f,"go door"); arrive(f,900,{"north"})
+  observeCommand(f,"  Go Door  "); arrive(f,900,{"north"})
   observeCommand(f,"north"); arrive(f,901,{"south"})
-  observeCommand(f,"go arch"); arrive(f,1200,{})
+  observeCommand(f,"  Go Arch  "); arrive(f,1200,{})
   observeCommand(f,"leave"); arrive(f,901,{"south"})
 
   eq(count(world.rooms),4)
@@ -164,16 +164,16 @@ test("special submaps persist canonical rooms zoom and mixed walking end to end"
   eq(world.rooms[901].partition,"special:900")
   eq(world.rooms[1200].partition,"special:1200")
   eq(count(world.special),3)
-  eq(world.special["100:900:go door"],true)
-  eq(world.special["901:1200:go arch"],true)
+  eq(world.special["100:900:Go Door"],true)
+  eq(world.special["901:1200:Go Arch"],true)
   eq(world.special["1200:901:leave"],true)
   eq(world.special["900:100:leave door"],nil)
 
-  observeCommand(f,"go arch"); arrive(f,1200,{"out"})
+  observeCommand(f,"Go Arch"); arrive(f,1200,{"out"})
   observeCommand(f,"out"); arrive(f,100,{"in"})
   eq(count(world.special),3); eq(world.links["1200:out"],100); eq(world.links["100:in"],1200)
 
-  assert(hud:reload()); observeCommand(f,"go door"); arrive(f,900,{"north"})
+  assert(hud:reload()); observeCommand(f,"Go Door"); arrive(f,900,{"north"})
   eq(count(world.rooms),4); eq(count(world.special),3); eq(world.rooms[900].partition,"special:900")
   for _,id in ipairs({100,900,901,1200}) do eq(world.creations[id],1) end
   local savedArea=world.rooms[900].area; world.zoom[savedArea]=20
@@ -183,15 +183,15 @@ test("special submaps persist canonical rooms zoom and mixed walking end to end"
   eq(invalid,nil); eq(invalidErr,"standard exit is not persisted from 901 to 100")
   local route,routeErr=hud.map:route(900,100); assert(route,routeErr)
   eq(table.concat(route.rooms,","),"900,901,1200,100")
-  eq(table.concat(route.commands,","),"n,go arch,out")
+  eq(table.concat(route.commands,","),"n,Go Arch,out")
   for index,command in ipairs(route.commands) do
     local valid,canonical=hud.map:validateRouteStep(route.rooms[index],route.rooms[index+1],command)
     assert(valid,canonical); eq(canonical,command)
   end
   local walk=assert(findAlias(f,"^walkto\\s+(\\d+)$")); local sentBefore=#world.sent
   assert(walk("100")); eq(#world.sent,sentBefore+1); eq(world.sent[#world.sent],"n")
-  observeCommand(f,"n"); arrive(f,901,{"south"}); eq(#world.sent,sentBefore+2); eq(world.sent[#world.sent],"go arch")
-  observeCommand(f,"go arch"); arrive(f,1200,{"out"}); eq(#world.sent,sentBefore+3); eq(world.sent[#world.sent],"out")
+  observeCommand(f,"n"); arrive(f,901,{"south"}); eq(#world.sent,sentBefore+2); eq(world.sent[#world.sent],"Go Arch")
+  observeCommand(f,"Go Arch"); arrive(f,1200,{"out"}); eq(#world.sent,sentBefore+3); eq(world.sent[#world.sent],"out")
   observeCommand(f,"out"); arrive(f,100,{"in"}); eq(hud.walker:active(),false); eq(#world.sent,sentBefore+3); eq(count(world.special),3)
 end)
 

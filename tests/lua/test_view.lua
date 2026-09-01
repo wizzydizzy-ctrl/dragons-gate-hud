@@ -74,6 +74,7 @@ local function fakeGeyser()
     function item:raise() self.raised=true end
     function item:delete() self.deleted=true end
     function item:setClickCallback(callback) self.click=callback end
+    function item:setToolTip(value) self.tooltip=value end
     function item:echo(value)
       if self.kind=="console" then
         self.echoes[#self.echoes+1]=value
@@ -130,6 +131,32 @@ test("native mapper is embedded immediately above the compass",function()
   eq(view.mapper.raised,true); eq(view.compass_area.raised,true)
 end)
 
+test("mapper owns visible minus center and plus controls without covering compass",function()
+  local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
+  eq(view.map_zoom_out.visible,true); eq(view.map_center.visible,true); eq(view.map_zoom_in.visible,true)
+  eq(view.map_zoom_in.parent,view.mapper_frame)
+  eq(view.map_zoom_in.y+view.map_zoom_in.height<=view.mapper_frame.height,true)
+  eq(view.mapper.y>=layout.lower_mapper_toolbar_height,true)
+  eq(view.map_zoom_out.tooltip~=nil,true); eq(view.map_center.tooltip~=nil,true); eq(view.map_zoom_in.tooltip~=nil,true)
+end)
+
+test("zoom buttons invoke visual actions",function()
+  local view=chatView(); local calls={}; view:setMapZoomCallback(function(action) calls[#calls+1]=action end)
+  view.map_zoom_in.click(); view.map_zoom_out.click(); view.map_center.click()
+  eq(table.concat(calls,","),"larger,smaller,center")
+end)
+
+test("repeated mapper resize reuses controls and callbacks while hidden layouts hide them",function()
+  local Layout=require("layout"); local view=chatView(); local calls=0
+  view:setMapZoomCallback(function() calls=calls+1 end)
+  local zoomOut,center,zoomIn=view.map_zoom_out,view.map_center,view.map_zoom_in
+  for _,size in ipairs({{1920,1080},{1200,800},{1200,650},{1000,650},{1920,1080}}) do view:applyLayout(Layout.compute(size[1],size[2])) end
+  eq(view.map_zoom_out,zoomOut); eq(view.map_center,center); eq(view.map_zoom_in,zoomIn)
+  view.map_zoom_in.click(); eq(calls,1)
+  view:applyLayout(Layout.compute(760,700))
+  eq(view.map_zoom_out.visible,false); eq(view.map_center.visible,false); eq(view.map_zoom_in.visible,false)
+end)
+
 test("responsive mapper survives short layouts and hides cleanly in compact mode",function()
   local Layout=require("layout"); local view=chatView()
   for _,size in ipairs({{1200,800},{1200,650},{1000,650}}) do
@@ -139,6 +166,7 @@ test("responsive mapper survives short layouts and hides cleanly in compact mode
   end
   view:applyLayout(Layout.compute(760,700))
   eq(view.mapper_frame.visible,false); eq(view.mapper.visible,false)
+  eq(view.map_zoom_out.visible,false); eq(view.map_center.visible,false); eq(view.map_zoom_in.visible,false)
 end)
 
 test("short layouts reduce optional detail before allowing vitals to overlap the mapper",function()

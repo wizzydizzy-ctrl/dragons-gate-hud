@@ -46,6 +46,12 @@ local function positiveInteger(value)
   return number
 end
 
+local function finiteNumber(value)
+  local number=tonumber(value)
+  if not number or number~=number or number==math.huge or number==-math.huge then return nil end
+  return number
+end
+
 local function normalizeCommand(value)
   return tostring(value or ""):lower():match("^%s*(.-)%s*$")
 end
@@ -336,10 +342,47 @@ function MapAdapter:center(roomID)
   return true
 end
 
+function MapAdapter:currentZoom(roomID)
+  local room=positiveInteger(roomID)
+  if not room then return nil,"room ID must be a positive integer" end
+  local ready,readyErr=requireCapabilities(self.api,{"getRoomUserData","getRoomArea","getMapZoom"})
+  if not ready then return nil,readyErr end
+  local owner,ownerErr=read(self.api,"getRoomUserData",room,"dghud.owner")
+  if owner==nil and ownerErr~=nil then return nil,ownerErr end
+  if owner~=self.owner then return nil,"room "..tostring(room).." is not owned by DragonsGateHUD" end
+  local area,areaErr=read(self.api,"getRoomArea",room)
+  if area==nil then return nil,areaErr or ("room "..tostring(room).." has no mapper area") end
+  local zoom,zoomErr=read(self.api,"getMapZoom",area)
+  if zoom==nil then return nil,zoomErr or ("mapper area "..tostring(area).." has no zoom value") end
+  return zoom,area
+end
+
+function MapAdapter:zoom(roomID,visualDirection,step,minimum,maximum)
+  if visualDirection~="larger" and visualDirection~="smaller" then return nil,"map zoom direction must be larger or smaller" end
+  local amount=finiteNumber(step); local lower=finiteNumber(minimum); local upper=finiteNumber(maximum)
+  if not amount or amount<=0 then return nil,"map zoom step must be positive" end
+  if not lower or not upper or lower>upper then return nil,"map zoom bounds are invalid" end
+  local current,area=self:currentZoom(roomID)
+  if current==nil then return nil,area end
+  current=finiteNumber(current)
+  if not current then return nil,"current map zoom is invalid" end
+  local applied=visualDirection=="larger" and current-amount or current+amount
+  applied=math.max(lower,math.min(upper,applied))
+  local setOk,setErr=invoke(self.api,"setMapZoom",applied,area)
+  if setOk==nil then return nil,setErr end
+  local refreshOk,refreshErr=invoke(self.api,"updateMap")
+  if refreshOk==nil then
+    local rollbackOk,rollbackErr=invoke(self.api,"setMapZoom",current,area)
+    if rollbackOk==nil then return nil,tostring(refreshErr).."; zoom rollback failed: "..tostring(rollbackErr) end
+    return nil,refreshErr
+  end
+  return applied
+end
+
 function MapAdapter.mudletApi(globals)
   globals=globals or _G
   local api={}
-  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","addSpecialExit","getSpecialExits","getRoomCoordinates","getRoomsByPosition","setRoomIDbyHash","centerview","updateMap"}
+  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","addSpecialExit","getSpecialExits","getRoomCoordinates","getRoomsByPosition","getMapZoom","setMapZoom","setRoomIDbyHash","centerview","updateMap"}
   local function wrapper(name)
     return function(...)
       local fn=globals[name]
@@ -350,7 +393,7 @@ function MapAdapter.mudletApi(globals)
       return a,b,c
     end
   end
-  local mutations={addRoom=true,deleteRoom=true,addAreaName=true,deleteArea=true,setAreaUserData=true,setRoomArea=true,setRoomName=true,setRoomCoordinates=true,setRoomUserData=true,setExitStub=true,setExit=true,addSpecialExit=true,setRoomIDbyHash=true,centerview=true,updateMap=true}
+  local mutations={addRoom=true,deleteRoom=true,addAreaName=true,deleteArea=true,setAreaUserData=true,setRoomArea=true,setRoomName=true,setRoomCoordinates=true,setRoomUserData=true,setExitStub=true,setExit=true,addSpecialExit=true,setMapZoom=true,setRoomIDbyHash=true,centerview=true,updateMap=true}
   for _,name in ipairs(names) do
     if mutations[name] then
       api[name]=wrapper(name)

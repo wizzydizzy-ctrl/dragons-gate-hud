@@ -13,7 +13,7 @@ function Layout.lowerPanelGeometry(layout,psiVisible,webVisible)
   end
   local room=layout.lower_room_height
   local mapper=layout.mapper_visible and layout.lower_mapper_height or 0
-  local mapper_min=layout.lower_mapper_min_height or 0
+  local mapper_min=(layout.lower_mapper_min_height or 0)+(layout.lower_mapper_toolbar_height or 0)
   local room_min=layout.lower_room_min_height or 1
   local optional=#requested
   local function required(r,m)
@@ -99,16 +99,18 @@ local function metrics(width,height,layout,chatSettings,mapperSettings)
   chatMetrics(width,height,layout,chatSettings)
   layout.lower_mapper_gap=layout.lower_row_gap
   if layout.mode=="compact" then
-    layout.mapper_visible=false; layout.lower_mapper_height=0; layout.lower_mapper_min_height=0; layout.lower_room_visible_height=0
+    layout.mapper_visible=false; layout.lower_mapper_height=0; layout.lower_mapper_min_height=0; layout.lower_mapper_toolbar_height=0; layout.lower_room_visible_height=0
   else
     mapperSettings=type(mapperSettings)=="table" and mapperSettings or {}
     local responsiveMinimum=layout.mode=="wide" and 140 or 90
     local minimum=math.max(responsiveMinimum,math.floor(tonumber(mapperSettings.minimum_height) or 90))
+    local toolbar=scaled(30)
     layout.lower_mapper_min_height=minimum
+    layout.lower_mapper_toolbar_height=toolbar
     local available=math.max(0,height-layout.top)
     local desired=clamp(available*.30,minimum,320)
-    layout.mapper_visible=available>=minimum+180
-    layout.lower_mapper_height=layout.mapper_visible and desired or 0
+    layout.mapper_visible=available>=minimum+toolbar+180
+    layout.lower_mapper_height=layout.mapper_visible and desired+toolbar or 0
     layout.lower_room_visible_height=layout.lower_room_height
   end
   return layout

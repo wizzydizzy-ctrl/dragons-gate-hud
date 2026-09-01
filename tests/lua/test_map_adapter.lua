@@ -3,7 +3,7 @@ local Automapper=require("automapper")
 local Model=require("mapper_model")
 
 local function fakeMapApi(seed)
-  local api={rooms=seed or {},areas={},areaUser={},nextArea=1,fail={},path=nil,refreshed=0,deletedRooms={},deletedAreas={},special={},specialAdds=0}
+  local api={rooms=seed or {},areas={},areaUser={},nextArea=1,fail={},path=nil,refreshed=0,deletedRooms={},deletedAreas={},special={},specialAdds=0,zoom={}}
   local function gate(name)
     if api.fail[name]=="throw" then error(name.." exploded") end
     if api.fail[name] then return nil,name.." rejected" end
@@ -42,6 +42,8 @@ local function fakeMapApi(seed)
   end
   function api.getRoomCoordinates(id) local ok,e=gate("getRoomCoordinates"); if not ok then return nil,e end; local r=api.rooms[id]; return r and r.x,r and r.y,r and r.z end
   function api.getRoomsByPosition(area,x,y,z) local ok,e=gate("getRoomsByPosition"); if not ok then return nil,e end; local out,i={},0; for id,r in pairs(api.rooms) do if r.area==area and r.x==x and r.y==y and r.z==z then out[i]=id;i=i+1 end end; return out end
+  function api.getMapZoom(area) local ok,e=gate("getMapZoom"); if not ok then return nil,e end; return api.zoom[area] end
+  function api.setMapZoom(value,area) local ok,e=gate("setMapZoom"); if not ok then return nil,e end; api.zoom[area]=value; return true end
   function api.centerview(id) local ok,e=gate("centerview"); if not ok then return nil,e end; api.centered=id; return true end
   function api.getPath(a,b) local ok,e=gate("getPath"); if not ok then return nil,e end; return api.path or {a.."-"..b} end
   function api.updateMap() local ok,e=gate("updateMap"); if not ok then return nil,e end; api.refreshed=api.refreshed+1; return true end
@@ -396,6 +398,28 @@ test("reads zero-indexed occupancy route and view",function()
   local occupied=assert(map:roomsAt("7",3,4,1)); eq(occupied[0],10); api.path={"n","e"}; eq(assert(map:route(10,20))[2],"e"); assert(map:setCurrent(10)); assert(map:center(10)); eq(api.refreshed,1)
 end)
 
+test("visual zoom direction hides Mudlet numeric inversion and clamps per area",function()
+  local api=fakeMapApi(); api.rooms[100]={area=7,user={["dghud.owner"]="DragonsGateHUD"}}; api.zoom[7]=20
+  local map=Adapter.new(api)
+  eq(map:currentZoom(100),20)
+  eq(map:zoom(100,"larger",2.5,3,60),17.5); eq(api.zoom[7],17.5)
+  eq(map:zoom(100,"smaller",2.5,3,60),20); eq(api.zoom[7],20)
+  api.zoom[7]=3; eq(map:zoom(100,"larger",2.5,3,60),3)
+end)
+
+test("zoom rejects invalid ownership and preserves the previous value on API failures",function()
+  local api=fakeMapApi(); api.rooms[100]={area=7,user={["dghud.owner"]="DragonsGateHUD"}}; api.zoom[7]=20
+  local map=Adapter.new(api)
+  api.rooms[100].user["dghud.owner"]="PersonalMapper"
+  local value,e=map:currentZoom(100); eq(value,nil); eq(e,"room 100 is not owned by DragonsGateHUD")
+  value,e=map:zoom(100,"larger",2.5,3,60); eq(value,nil); eq(e,"room 100 is not owned by DragonsGateHUD"); eq(api.zoom[7],20)
+  api.rooms[100].user["dghud.owner"]="DragonsGateHUD"
+  for _,name in ipairs({"getRoomArea","getMapZoom","setMapZoom"}) do
+    api.fail[name]=true; value,e=map:zoom(100,"larger",2.5,3,60); eq(value,nil); eq(e,name.." rejected"); eq(api.zoom[7],20); api.fail[name]=nil
+  end
+  api.fail.updateMap=true; value,e=map:zoom(100,"larger",2.5,3,60); eq(value,nil); eq(e,"updateMap rejected"); eq(api.zoom[7],20)
+end)
+
 test("reload resolves persisted owned area before checking occupied coordinates",function()
   local api=fakeMapApi(); local first=Adapter.new(api)
   assert(first:ensureRoom(descriptor(10,"Castle"),{x=0,y=1,z=0}))
@@ -442,6 +466,14 @@ test("production factory exposes guarded special-exit APIs",function()
   local api=Adapter.mudletApi(globals)
   assert(api.addSpecialExit(100,900,"go gate")); eq(added[1],100); eq(added[2],900); eq(added[3],"go gate")
   local exits,from,listAll=api.getSpecialExits(100,true); eq(exits[900]["go gate"],"0"); eq(from,100); eq(listAll,true)
+end)
+
+test("production factory exposes guarded native zoom APIs",function()
+  local zoom={[7]=20}; local globals={}
+  globals.getMapZoom=function(area) return zoom[area] end
+  globals.setMapZoom=function(value,area) zoom[area]=value end
+  local api=Adapter.mudletApi(globals)
+  eq(api.getMapZoom(7),20); assert(api.setMapZoom(17.5,7)); eq(zoom[7],17.5)
 end)
 
 test("production route isolates speedWalkDir",function()

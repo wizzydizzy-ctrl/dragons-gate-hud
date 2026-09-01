@@ -72,6 +72,23 @@ function Main:mapperStatus(kind,message,isError)
   if kind=="invalid_room" or kind=="ownership_conflict" or kind=="error" or isError==true then self.last_mapper_error=tostring(message or "unknown mapper error") end
   if self.adapter.reportMapperStatus then self.adapter:reportMapperStatus(kind,message) end
 end
+function Main:mapToolbarAction(action)
+  local current=self.automapper and self.automapper:currentRoom()
+  if not current then local err="current room is unavailable"; self:mapperStatus("error",err,true); return nil,err end
+  local callOk,result,err=pcall(function()
+    if action=="center" then return self.map:center(current) end
+    if action=="larger" or action=="smaller" then
+      local settings=self.settings.mapper or {}
+      return self.map:zoom(current,action,settings.zoom_step,settings.zoom_min,settings.zoom_max)
+    end
+    return nil,"unknown map toolbar action "..tostring(action)
+  end)
+  if not callOk then err=result; result=nil end
+  if result==nil or result==false then err=err or "map toolbar action failed"; self:mapperStatus("error",err,true); return nil,err end
+  if action=="center" then self:mapperStatus("centered","Map centered on room "..tostring(current))
+  else self:mapperStatus("zoom","Map zoom "..tostring(result)) end
+  return result
+end
 function Main:callSpecialTransition(method,...)
   local tracker=self.special_transition
   if not tracker then return nil end
@@ -182,6 +199,7 @@ function Main:start()
   self:installMapClickHook()
   local startupOk,startupErr=pcall(function()
   self.view=self.adapter:createView(self.settings)
+  if self.view.setMapZoomCallback then self.view:setMapZoomCallback(function(action) return self:mapToolbarAction(action) end) end
   self:applyResponsiveLayout()
   self.collector=Collector.new(self.adapter,Parser,function() self:refresh() end,function(value) self:onRoundtime(value) end); local collectorOk,collectorErr=self.collector:start(); if not collectorOk then error(collectorErr,0) end
   if self.adapter.isCharacterActive and self.adapter:isCharacterActive() then self.collector:refresh() end

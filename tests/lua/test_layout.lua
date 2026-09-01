@@ -130,6 +130,15 @@ test("embedded mapper is allocated immediately above compass on wide screens",fu
   eq(r.mapper_visible,true); eq(r.lower_mapper_height>=200,true)
   eq(r.lower_mapper_gap,r.lower_row_gap)
 end)
+test("mapper toolbar reserves space above the existing usable map minimum",function()
+  for _,size in ipairs({{1920,1080},{1200,800},{1200,650},{1000,650}}) do
+    local r=Layout.compute(size[1],size[2]); local geometry=Layout.lowerPanelGeometry(r,false,false)
+    eq(r.lower_mapper_toolbar_height>0,true)
+    if geometry.mapper_height>0 then eq(geometry.mapper_height-r.lower_mapper_toolbar_height>=r.lower_mapper_min_height,true) end
+  end
+  local compact=Layout.compute(760,700)
+  eq(compact.lower_mapper_toolbar_height,0)
+end)
 test("configured mapper minimum height affects feasible responsive layouts",function()
   local defaultWide=Layout.compute(1920,1080,nil,{minimum_height=90})
   local customWide=Layout.compute(1920,1080,nil,{minimum_height=180})
@@ -150,7 +159,7 @@ test("medium and short windows preserve mapper before optional room detail",func
 end)
 test("compact layouts may hide the embedded mapper",function()
   local r=Layout.compute(760,700)
-  eq(r.mapper_visible,false); eq(r.lower_mapper_height,0)
+  eq(r.mapper_visible,false); eq(r.lower_mapper_height,0); eq(r.lower_mapper_toolbar_height,0)
 end)
 test("lower panel reduction preserves location and mapper floors before hiding the mapper",function()
   local wide=Layout.compute(2560,1400); local full=Layout.lowerPanelGeometry(wide,true,true)

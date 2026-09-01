@@ -12,6 +12,7 @@ local function fake()
     renderChat=function(self,entries,categories,filter) f.chatRenders=(f.chatRenders or 0)+1; f.renderedChat={entries=entries,categories=categories,filter=filter} end,
     setChatFilterCallback=function(self,callback) f.chatFilterCallback=callback end,
     setMapCenterCallback=function(self,callback) f.mapCenterCallback=callback end,
+    setMapZoomCallback=function(self,callback) f.mapZoomCallback=callback; f.mapZoomCallbackSets=(f.mapZoomCallbackSets or 0)+1 end,
     centerMap=function(self,roomID) f.centeredRooms=f.centeredRooms or {}; f.centeredRooms[#f.centeredRooms+1]=roomID; return true end,
     delete=function() f.deleted=f.deleted+1 end,
   } end
@@ -73,6 +74,11 @@ local function fake()
     end
     function map:setCurrent(id) self.current=id; return self:center(id) end
     function map:center(id) self.centered=id; f.mapCenterCalls=(f.mapCenterCalls or 0)+1; return true end
+    function map:zoom(id,action,step,minimum,maximum)
+      f.mapZoomCalls=f.mapZoomCalls or {}; f.mapZoomCalls[#f.mapZoomCalls+1]={id,action,step,minimum,maximum}
+      if f.zoomError then return nil,f.zoomError end
+      return f.zoomResult or 17.5
+    end
     function map:coordinates(id) local item=self.rooms[id]; return item and item.coordinates end
     function map:roomsAt() return {} end
     function map:isOwned(id) return self.rooms[id]~=nil end
@@ -123,6 +129,18 @@ test("health check requires root handlers and an owned chat trigger",function()
 end)
 test("window resize recomputes absolute borders and view layout",function()
   local f=fake(); f.borders={1290,234,1610,120}; local hud=Main.new(f,{layout={}}); hud:start(); eq(f.layouts[#f.layouts].mode,"wide"); eq(f.set_borders[1],326); eq(f.set_borders[2],314); eq(f.set_borders[3],326); f.width=760; f.height=700; f.callbacks["sysWindowResizeEvent"](); eq(f.layouts[#f.layouts].mode,"compact"); eq(f.set_borders[1],0); eq(f.set_borders[2],276); eq(f.set_borders[3],0); eq(f.set_borders[4],0)
+end)
+test("runtime wires one mapper toolbar callback across resize and reports zoom outcomes",function()
+  local f=fake(); f.gmcp=gmcpRoom(175); f.zoomResult=17.5
+  local hud=Main.new(f,{layout={},mapper={zoom_step=2.5,zoom_min=3,zoom_max=60}}); assert(hud:start())
+  eq(type(f.mapZoomCallback),"function"); eq(f.mapZoomCallbackSets,1)
+  eq(f.mapZoomCallback("larger"),17.5)
+  local call=f.mapZoomCalls[1]; eq(call[1],175); eq(call[2],"larger"); eq(call[3],2.5); eq(call[4],3); eq(call[5],60)
+  eq(f.mapperStatuses[#f.mapperStatuses][1],"zoom"); eq(hud.last_mapper_status,"Map zoom 17.5")
+  f.mapZoomCallback("center"); eq(f.map.centered,175); eq(f.mapperStatuses[#f.mapperStatuses][1],"centered")
+  f.callbacks["sysWindowResizeEvent"](); f.callbacks["sysWindowResizeEvent"](); eq(f.mapZoomCallbackSets,1)
+  f.zoomError="native zoom failed"; local value,e=f.mapZoomCallback("smaller")
+  eq(value,nil); eq(e,"native zoom failed"); eq(hud.last_mapper_error,"native zoom failed"); eq(f.mapperStatuses[#f.mapperStatuses][1],"error")
 end)
 test("chat controller renders through the view and tab callbacks select filters",function()
   local f=fake(); local hud=Main.new(f,{layout={},chat={visible_limit=1000,dedupe_seconds=3}}); hud:start()

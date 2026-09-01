@@ -133,6 +133,20 @@ function View.new(settings)
   self.room=label("DGHUD.Room",self.right,"background:#101a16;border:1px solid #385044;border-radius:6px;color:"..t.text..";padding:10px 12px;")
   self.mapper_frame=label("DGHUD.MapperFrame",self.right,"background:#101713;border:1px solid "..t.border..";border-radius:7px;")
   self.mapper=self.geyser.Mapper:new({name="DGHUD.Mapper",x=4,y=4,width="100%-8",height="100%-8"},self.mapper_frame)
+  local mapButtonStyle="background:#17231c;border:1px solid #385044;border-radius:4px;color:"..t.jade..";font-weight:700;"
+  self.map_zoom_out=label("DGHUD.Mapper.ZoomOut",self.mapper_frame,mapButtonStyle)
+  self.map_center=label("DGHUD.Mapper.Center",self.mapper_frame,mapButtonStyle)
+  self.map_zoom_in=label("DGHUD.Mapper.ZoomIn",self.mapper_frame,mapButtonStyle)
+  for _,control in ipairs({
+    {self.map_zoom_out,"−","Show more rooms","smaller"},
+    {self.map_center,"◎","Center current room","center"},
+    {self.map_zoom_in,"+","Make rooms larger","larger"},
+  }) do
+    local button,symbol,tooltip,action=control[1],control[2],control[3],control[4]
+    button:echo("<center><b>"..symbol.."</b></center>")
+    if button.setToolTip then pcall(button.setToolTip,button,tooltip) end
+    button:setClickCallback(function() if self.map_zoom_callback then return self.map_zoom_callback(action) end end)
+  end
   self.compass_area=Geyser.Container:new({name="DGHUD.Compass",x=0,y=0,width=100,height=100},self.right)
   self.compass_center=label("DGHUD.Compass.Center",self.compass_area,"background:transparent;color:"..t.muted..";"); self.compass_center:echo("<center>◆</center>")
   for i,direction in ipairs(Navigation.directions) do local b=label("DGHUD.Compass."..direction.key,self.compass_area); b:setClickCallback(function() if self.exit_available[direction.key] then send(direction.command) end end); self.direction_buttons[i]={label=b,direction=direction} end
@@ -255,7 +269,7 @@ function View:applyLayout(layout)
     if inventory_h>=minimum_inventory_h then place(self.inventory,card_x,inventory_y,card_w,inventory_h); self.inventory_capacity=math.max(1,math.floor((inventory_h-layout.heading_font-p*2-30)/layout.inventory_row_height)-2) else self.inventory:hide(); self.inventory_capacity=0 end
     View.raiseCards({self.equipment,self.inventory,self.details})
   else
-    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
+    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
   end
   if layout.mode~="compact" then
     place(self.right_bg,0,0,"100%","100%"); self.right_title:hide()
@@ -273,8 +287,12 @@ function View:applyLayout(layout)
     if room_h>0 then place(self.room,inset,content_top,"100%-"..(inset*2),room_h) else self.room:hide() end
     if layout.mapper_visible and mapper_h>0 then
       place(self.mapper_frame,inset,mapper_y,"100%-"..(inset*2),mapper_h)
-      place(self.mapper,4,4,"100%-8","100%-8"); self.mapper:raise()
-    else self.mapper_frame:hide(); self.mapper:hide() end
+      local toolbar=layout.lower_mapper_toolbar_height or 0; local button_h=math.max(16,toolbar-6)
+      place(self.map_zoom_out,4,3,28,button_h); place(self.map_center,36,3,28,button_h); place(self.map_zoom_in,68,3,28,button_h)
+      self.map_zoom_out:echo(View.withFont("<center><b>−</b></center>",layout.lower_utility_font)); self.map_center:echo(View.withFont("<center><b>◎</b></center>",layout.lower_utility_font)); self.map_zoom_in:echo(View.withFont("<center><b>+</b></center>",layout.lower_utility_font))
+      place(self.mapper,4,toolbar,"100%-8","100%-"..toolbar); self.mapper:raise()
+      self.map_zoom_out:raise(); self.map_center:raise(); self.map_zoom_in:raise()
+    else self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide() end
     place(self.compass_area,inset,compass_y,"100%-"..(inset*2),compass_h); self.compass_area:raise()
     local cell_width=33.333; for _,entry in ipairs(self.direction_buttons) do local d=entry.direction; place(entry.label,(d.col-1)*cell_width.."%",(d.row-1)*layout.lower_compass_cell,cell_width.."%",layout.lower_compass_cell) end
     place(self.compass_center,cell_width.."%",layout.lower_compass_cell,cell_width.."%",layout.lower_compass_cell)
@@ -284,6 +302,7 @@ function View:applyLayout(layout)
   self:applyChatWrap(layout)
 end
 function View:setMapCenterCallback(callback) self.map_center_callback=type(callback)=="function" and callback or nil; return true end
+function View:setMapZoomCallback(callback) self.map_zoom_callback=type(callback)=="function" and callback or nil; return true end
 function View:centerMap(roomID)
   if not self.map_center_callback then return nil,"map center callback is unavailable" end
   return self.map_center_callback(roomID)

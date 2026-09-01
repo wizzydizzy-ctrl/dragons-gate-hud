@@ -318,7 +318,7 @@ function View:applyLayout(layout)
       self.skills:hide(); self.skills_title:hide(); self.skills_output:hide(); self.details:hide()
       local fallback_h=math.max(0,rail_bottom-inventory_y); if fallback_h>title_h+layout.list_row_height+p*2 then place(self.inventory,card_x,inventory_y,card_w,fallback_h); place(self.inventory_title,"100%-"..(layout.right-p*2),inventory_y+p,card_w-p*2,title_h); place(self.inventory_output,"100%-"..(layout.right-p*2),inventory_y+p+title_h,card_w-p*2,math.max(layout.list_row_height,fallback_h-p*2-title_h-footer_h-8)); place(self.inventory_footer,"100%-"..(layout.right-p*2),rail_bottom-p-footer_h,card_w-p*2,footer_h) else self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide() end
     end
-    View.raiseCards({self.equipment,self.inventory,self.details,self.skills,self.inventory_title,self.inventory_output,self.inventory_footer,self.skills_title,self.skills_output})
+    View.raiseCards({self.equipment,self.inventory,self.details,self.skills,self.inventory_title,self.inventory_output,self.inventory_content,self.inventory_footer,self.skills_title,self.skills_output,self.skills_content})
   else
     self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide(); self.vitals_right:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
   end

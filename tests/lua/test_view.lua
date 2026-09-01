@@ -141,6 +141,7 @@ test("scrollable list content uses resolved numeric widths",function()
   view:update(state)
   eq(type(view.inventory_content.width),"number"); eq(type(view.skills_content.width),"number")
   eq(view.inventory_content.width<view.inventory_output.width,true); eq(view.skills_content.width<view.skills_output.width,true)
+  eq(view.inventory_content.raised,true); eq(view.skills_content.raised,true)
 end)
 test("responsive skill columns fit both wide and medium right rails",function()
   for _,size in ipairs({{1920,1080},{1200,800},{1200,650}}) do

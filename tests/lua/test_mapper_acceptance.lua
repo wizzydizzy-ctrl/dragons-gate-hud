@@ -328,6 +328,9 @@ test("cleanup preview cancellation expiry and success preserve personal map byte
   observeCommand(f,"north"); arrive(f,901,{"south"})
   eq(world.rooms[900].owner,"DragonsGateHUD"); eq(world.rooms[901].owner,"DragonsGateHUD")
   eq(world.rooms[900].partition,"special:900"); eq(world.rooms[901].partition,"special:900"); eq(world.rooms[900].area,world.rooms[901].area)
+  eq(world.rooms[900].coordinates.x,0); eq(world.rooms[900].coordinates.y,0); eq(world.rooms[900].coordinates.z,0)
+  eq(world.rooms[901].coordinates.x,0); eq(world.rooms[901].coordinates.y,1); eq(world.rooms[901].coordinates.z,0)
+  eq(stable(world.rooms[901].coordinates)~=stable(world.rooms[900].coordinates),true)
   eq(world.links["900:n"],901); eq(world.links["901:s"],900); eq(world.special["1:900:go gate"],true); eq(personalBytes(world),before)
 end)
 

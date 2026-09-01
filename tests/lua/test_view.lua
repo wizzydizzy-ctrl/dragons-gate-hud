@@ -153,8 +153,9 @@ test("scrollable cards render every inventory item and every ranked skill",funct
   local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
   local items,skills={},{}; for i=1,12 do items[i]={name="Item "..i,weight=i}; skills[i]={name="Skill "..i,level=20-i,remain=i} end
   view:update({character={full_name="Test",race="Monitanian",class="Fighter",alignment="entropy",physical={}},attributes={},combat={},equipment={items={}},inventory={items=items,total_weight=78},skills={items=skills},vitals={hp={current=1,maximum=1},fatigue={current=1,maximum=1},carry={current=1,maximum=1},psi={visible=false},web={visible=false},gold=2,silver=3,roundtime=0,position=0,weapon_readied=false,shield_readied=false},room={name="Room",num=1,area=1,environment="Plain",players={},flags={},exits={}}})
-  eq(view.inventory_content.message:find("Item 12",1,true)~=nil,true); eq(view.skills_content.message:find("Skill 12",1,true)~=nil,true)
+  eq(view.inventory_content.message:find("Item 12",1,true)~=nil,true); eq(view.skills_content.message:find("Skill&nbsp;12",1,true)~=nil,true)
   eq(view.inventory_content.height>=layout.list_row_height*12,true); eq(view.skills_content.height>=layout.list_row_height*12,true); eq(view.inventory_footer.message:find("2gp",1,true)~=nil,true)
+  eq(view.skills_content.message:find("white-space:pre",1,true),nil); eq(view.skills_content.message:find("&nbsp;",1,true)~=nil,true)
 end)
 
 test("unchanged HUD refreshes preserve inventory and skill scroll positions",function()

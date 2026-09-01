@@ -141,8 +141,8 @@ local function observeCommand(f,command)
   fire(f,"sysDataSendRequest",command)
 end
 
-test("mapper release defaults are ready for version 0.2.58",function()
-  eq(Defaults.version,"0.2.58"); eq(Defaults.mapper.enabled,true); eq(Defaults.mapper.walk_timeout,12)
+test("mapper release defaults are ready for version 0.2.59",function()
+  eq(Defaults.version,"0.2.59"); eq(Defaults.mapper.enabled,true); eq(Defaults.mapper.walk_timeout,12)
   eq(Defaults.mapper.minimum_height,90); eq(Defaults.mapper.schema,1)
 end)
 

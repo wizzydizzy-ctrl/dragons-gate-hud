@@ -1,4 +1,4 @@
-local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local SpecialTransition=require("special_transition"); local MapWalker=require("map_walker")
+local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local SpecialTransition=require("special_transition"); local MapWalker=require("map_walker"); local Cleanup=require("map_cleanup")
 local Main={}; Main.__index=Main
 function Main.new(adapter,settings) return setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=0,managed_rooms={}},Main) end
 function Main.installChatApi(namespace)
@@ -137,6 +137,79 @@ function Main:reportMapStatus()
   if type(_G.cecho)=="function" then pcall(_G.cecho,"\n<gold>[DGHUD Map]<reset> "..line.."\n") end
   return status
 end
+local function positiveRoom(value)
+  local room=tonumber(value)
+  return room and room==room and room~=math.huge and room~=-math.huge and room>0 and room%1==0 and room or nil
+end
+local function appendRoute(target,source,startIndex)
+  if source==nil then return true end
+  if type(source)~="table" then return nil,"cleanup safety state is unavailable" end
+  for index=startIndex or 1,#source do
+    local room=positiveRoom(source[index]); if not room then return nil,"cleanup safety state is unavailable" end
+    target[#target+1]=room
+  end
+  return true
+end
+function Main:safetySnapshot()
+  local ok,data=pcall(self.adapter.getGMCP,self.adapter)
+  local info=ok and type(data)=="table" and type(data.Room)=="table" and type(data.Room.Info)=="table" and data.Room.Info or nil
+  local current=info and positiveRoom(info.num) or nil
+  if not current or not self.walker or type(self.walker.active)~="function" or not self.automapper or not self.special_transition then return nil,"cleanup safety state is unavailable" end
+  local activeOK,walking=pcall(self.walker.active,self.walker); if not activeOK or type(walking)~="boolean" then return nil,"cleanup safety state is unavailable" end
+  local route={}
+  if walking then
+    if type(self.walker.route)~="table" or type(self.walker.route.rooms)~="table" or not positiveRoom(self.walker.index) then return nil,"cleanup safety state is unavailable" end
+    local routeOK,routeErr=appendRoute(route,self.walker.route.rooms,self.walker.index); if not routeOK then return nil,routeErr end
+  elseif self.generated_command~=nil then return nil,"cleanup safety state is unavailable" end
+  local globalPath=rawget(_G,"speedWalkPath")
+  local globalOK,globalErr=appendRoute(route,globalPath,1); if not globalOK then return nil,globalErr end
+  local specialOK,special=pcall(self.special_transition.pending,self.special_transition); if not specialOK then return nil,"cleanup safety state is unavailable" end
+  if self.automapper.pending~=nil and type(self.automapper.pending)~="table" then return nil,"cleanup safety state is unavailable" end
+  return {current_room=current,walking=walking,route_rooms=route,pending_automap=self.automapper.pending~=nil,pending_special=special~=nil}
+end
+function Main:beforeCleanupDelete()
+  local walkOK,walkErr=self.walker:stop("map cleanup")
+  if not walkOK then return nil,walkErr end
+  self.generated_command=nil
+  local automapOK,automapErr=pcall(self.automapper.onWrongDirection,self.automapper)
+  if not automapOK then return nil,tostring(automapErr) end
+  local specialOK,specialErr=self:callSpecialTransition("cancel","map_cleanup")
+  if specialOK==nil and specialErr then return nil,specialErr end
+  return true
+end
+function Main:afterCleanupDelete(result)
+  local deleted={}
+  for _,roomID in ipairs(result.deleted or {}) do deleted[roomID]=true; self.managed_rooms[roomID]=nil end
+  local refreshed,refreshErr=true,nil
+  if type(self.adapter.refreshMap)=="function" then refreshed,refreshErr=self.adapter:refreshMap() end
+  if not refreshed then return nil,refreshErr or "map refresh failed" end
+  local data=self.adapter:getGMCP(); local info=data and data.Room and data.Room.Info; local current=info and positiveRoom(info.num)
+  if current and not deleted[current] and self:mapperEnabled() then
+    local mapped,mapErr=self:callAutomapper("onRoom",info); if not mapped then return nil,mapErr or "current room remap failed" end
+    self.managed_rooms[current]=true
+  end
+  return true
+end
+function Main:reportCleanup(message,isError)
+  message=tostring(message or "cleanup failed"); if #message>1000 then message=message:sub(1,997).."..." end
+  if type(self.adapter.reportMapCleanup)=="function" then pcall(self.adapter.reportMapCleanup,self.adapter,message,isError==true) end
+  return isError and nil or true,message
+end
+function Main:previewCleanup(method,target)
+  local preview,err=self.cleanup[method](self.cleanup,target)
+  if not preview then self:reportCleanup(err,true); return nil,err end
+  local ids={}; for index,roomID in ipairs(preview.room_ids) do ids[index]=tostring(roomID) end
+  local message="Operation: "..preview.operation.."\nArea: "..tostring(preview.area_id or "none").."\nCount: "..tostring(#preview.room_ids).."\nRoom IDs: "..table.concat(ids,",").."\n[DGHUD Map] Preview "..preview.token.." expires in 30 seconds.\n[DGHUD Map] Confirm with: dghud map confirm "..preview.token
+  self:reportCleanup(message,false); return preview
+end
+function Main:confirmCleanup(token)
+  local result,err=self.cleanup:confirm(token)
+  if not result then self:reportCleanup(err,true); return nil,err end
+  local function ids(values) local out={}; for i,value in ipairs(values or {}) do out[i]=tostring(value) end; return #out>0 and table.concat(out,",") or "none" end
+  local message="Deleted IDs: "..ids(result.deleted).."\nFailed ID: "..tostring(result.failed or "none").."\nUntouched IDs: "..ids(result.untouched).."\nArea deleted: "..tostring(result.area_deleted==true)
+  if result.error then message=message.."\nError: "..tostring(result.error) end
+  self:reportCleanup(message,result.error~=nil); return result
+end
 function Main:routeShape(fromID,toID,route)
   if type(route)~="table" then return nil,"invalid map route" end
   local commands=type(route.commands)=="table" and route.commands or route
@@ -219,6 +292,13 @@ function Main:start()
   self.walker=MapWalker.new(walkerAdapter,function(kind,message,isError) self:mapperStatus(kind,message,isError) end,(self.settings.mapper and self.settings.mapper.walk_timeout) or 12)
   local initialVitals=self.adapter:getGMCP(); initialVitals=initialVitals and initialVitals.Char and initialVitals.Char.Vitals
   self.walker:onRoundtime(initialVitals and initialVitals.roundtime or 0)
+  local cleanupRuntime={owner=self}
+  function cleanupRuntime:safetySnapshot(roomIDs) return self.owner:safetySnapshot(roomIDs) end
+  function cleanupRuntime:beforeDelete(plan) return self.owner:beforeCleanupDelete(plan) end
+  function cleanupRuntime:afterDelete(result) return self.owner:afterCleanupDelete(result) end
+  local clock=function() return self.adapter:cleanupClock() end
+  local tokenFactory=function() return self.adapter:cleanupToken() end
+  self.cleanup=Cleanup.new(self.map,cleanupRuntime,clock,tokenFactory,30)
   self:installMapClickHook()
   local startupOk,startupErr=pcall(function()
   self.view=self.adapter:createView(self.settings)
@@ -254,10 +334,18 @@ function Main:start()
   end)
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.disconnect,function() self.character_entry_started=false; self.character_entry_name=nil; self:callSpecialTransition("cancel","disconnect"); self.automapper:onDisconnect(); self.walker:stop("disconnected") end)
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent("sysWindowResizeEvent",function() self:applyResponsiveLayout() end)
-  local function aliasArgument(value) return value or (type(_G.matches)=="table" and _G.matches[2]) end
+  local function aliasArgument(value) if type(value)=="table" then return value[2] end; return value or (type(_G.matches)=="table" and _G.matches[2]) end
   local commands={function() if self.updater then self.updater:check() end end,function() if self.updater then self.updater:update() end end,function() self:reload() end,function() if self.adapter.openSettings then self.adapter:openSettings() end end,function() if self.adapter.requestPurge then self.adapter:requestPurge() end end,function() return self:reportChatStatus() end,function(value) return self:walkTo(aliasArgument(value)) end,function() return self.walker:stop("requested") end,function() local room=self.automapper:currentRoom(); if not room then return nil,"current room is unavailable" end; return self.map:center(room) end}
   for i,pattern in ipairs(Events.aliases) do self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias(pattern,commands[i]) end
   self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias("^dghud mapstatus$",function() return self:reportMapStatus() end)
+  local cleanupAliases={
+    {"^dghud map delete room (\\d+)$",function(value) return self:previewCleanup("previewRoom",aliasArgument(value)) end},
+    {"^dghud map clear submap (\\d+)$",function(value) return self:previewCleanup("previewSubmap",aliasArgument(value)) end},
+    {"^dghud map clear area (.+)$",function(value) return self:previewCleanup("previewArea",aliasArgument(value)) end},
+    {"^dghud map confirm (\\S+)$",function(value) return self:confirmCleanup(aliasArgument(value)) end},
+    {"^dghud map cancel$",function() local ok,err=self.cleanup:cancel(); if not ok then self:reportCleanup(err,true); return nil,err end; self:reportCleanup("Cleanup preview cancelled.",false); return true end},
+  }
+  for _,entry in ipairs(cleanupAliases) do self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias(entry[1],entry[2]) end
   self.started=true; local data=self.adapter:getGMCP(); if self:mapperEnabled() and data and data.Room and data.Room.Info then local mapped=self.automapper:onRoom(data.Room.Info); if mapped and tonumber(data.Room.Info.num) then self.managed_rooms[tonumber(data.Room.Info.num)]=true end end; self:refresh()
   local chatStarted,chatErr=self:startChat(); if not chatStarted then error(chatErr,0) end
   end)
@@ -270,6 +358,7 @@ function Main:shutdown()
   if self.collector then self.collector:shutdown(); self.collector=nil end
   if self.walker then self.walker:shutdown(); self.walker=nil end; self.generated_command=nil; self:removeMapClickHook()
   if self.special_transition then self:callSpecialTransition("shutdown"); self.special_transition=nil end
+  self.cleanup=nil
   if self.automapper then self.automapper:shutdown(); self.automapper=nil end; self.map=nil
   for _,id in ipairs(self.runtime.events) do self.adapter:killEvent(id) end; for _,id in ipairs(self.runtime.aliases) do self.adapter:killAlias(id) end
   self.runtime={events={},aliases={}}; if self.view then self.view:delete(); self.view=nil end

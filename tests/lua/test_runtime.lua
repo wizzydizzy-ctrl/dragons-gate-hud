@@ -1,6 +1,7 @@
 local Main=require("main")
 local MudletAdapter=require("mudlet_adapter")
 local MapAdapter=require("map_adapter")
+local Events=require("events")
 local function fake()
   local f={next=0,killed={},deleted=0,borders={10,20,30,40},set_borders={},callbacks={},layouts={},triggers={},timers={},timer_delays={},timer_cancels={},events={},aliases={}}
   function f:getBorders() return self.borders[1],self.borders[2],self.borders[3],self.borders[4] end
@@ -29,6 +30,12 @@ local function fake()
   end
   function f:killTrigger(id) self.killed[id]=true; self.triggers[id]=nil end
   function f:epoch() return self.epochValue or 100 end
+  function f:cleanupClock() return self.cleanupTime or 1000 end
+  function f:cleanupToken() self.cleanupTokenCalls=(self.cleanupTokenCalls or 0)+1; return self.cleanupTokenValue or "ABC123" end
+  function f:reportMapCleanup(message,isError)
+    self.cleanupReports=self.cleanupReports or {}; self.cleanupReports[#self.cleanupReports+1]={message=tostring(message),error=isError==true}; return true
+  end
+  function f:refreshMap() self.mapRefreshes=(self.mapRefreshes or 0)+1; if self.refreshMapError then return nil,self.refreshMapError end; return true end
   function f:timestamp() return self.timestampValue or "2026-08-31T13:00:00-04:00" end
   function f:reportChatErrorOnce() self.chatErrors=(self.chatErrors or 0)+1 end
   function f:createChatStorage(visibleLimit)
@@ -63,7 +70,8 @@ local function fake()
   function f:sendCommand(command) self.sent=command; self.sentCommands=self.sentCommands or {}; self.sentCommands[#self.sentCommands+1]=command; return true end
   function f:count(tableValue) local n=0; for _ in pairs(tableValue) do n=n+1 end; return n end
   function f:createMapAdapter()
-    local map={rooms={},stubs={},links={},special={},current=nil,shutdowns=0}
+    local map={rooms={},areas={},areaNames={},stubs={},links={},special={},current=nil,shutdowns=0,api={}}
+    function map.api.getAreaTable() local result={}; for name,id in pairs(map.areaNames) do result[name]=id end; return result end
     function map:clearOwnedRoomNames() f.mapLabelCleanups=(f.mapLabelCleanups or 0)+1; return 0 end
     function map:ensureRoom(room,coordinates,partition)
       local record=self.rooms[room.id]
@@ -88,8 +96,14 @@ local function fake()
     function map:roomRecord(id)
       local record=self.rooms[id]
       if not record then return {exists=false,owned=false,placement_needed=true} end
-      return {exists=true,owned=record.owned,coordinates=record.coordinates,partition=record.partition,game_area=record.game_area}
+      return {exists=true,owned=record.owned,coordinates=record.coordinates,partition=record.partition,game_area=record.game_area,area=record.area}
     end
+    function map:areaRecord(id) local area=self.areas[id]; if not area then return {id=id,exists=false,owned=false} end; return {id=id,exists=true,owned=area.owned} end
+    function map:roomsInArea(id) local result={}; for roomID,record in pairs(self.rooms) do if record.area==id then result[#result+1]=roomID end end; table.sort(result); return result end
+    function map:inboundSources() return {} end
+    function map:deleteOwnedRoom(id) local record=self.rooms[id]; if not record or not record.owned then return nil,"room is not owned" end; self.rooms[id]=nil; return true end
+    function map:deleteEmptyOwnedArea(id) if #self:roomsInArea(id)>0 then return nil,"area is not empty" end; if not self.areas[id] or not self.areas[id].owned then return nil,"area is not owned" end; self.areas[id]=nil; return true end
+    function map:invalidateDeleted(ids,areaID) self.invalidated={ids=ids,area_id=areaID}; return true end
     function map:effectivePartition(id) local record=self.rooms[id]; return record and record.partition end
     function map:roomsAt() return {} end
     function map:isOwned(id) return self.rooms[id]~=nil end
@@ -132,6 +146,75 @@ end
 local function aliasCallback(f,pattern)
   for _,alias in pairs(f.aliases) do if alias.pattern==pattern then return alias.fn end end
 end
+
+local function addCleanupRoom(f,id,area,partition)
+  f.map.areas[area]=f.map.areas[area] or {owned=true}
+  f.map.rooms[id]={owned=true,area=area,partition=partition,coordinates={x=0,y=0,z=0}}
+end
+
+test("cleanup aliases preview exact targets and confirmation is token-bound",function()
+  local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
+  local preview=assert(aliasCallback(f,"^dghud map delete room (\\d+)$")); assert(preview({"","100"}))
+  eq(hud.cleanup:pending().room_ids[1],100); eq(f.cleanupReports[1].message,"Operation: delete_room\nArea: 7\nCount: 1\nRoom IDs: 100\n[DGHUD Map] Preview ABC123 expires in 30 seconds.\n[DGHUD Map] Confirm with: dghud map confirm ABC123")
+  local confirm=assert(aliasCallback(f,"^dghud map confirm (\\S+)$")); local ok,err=confirm({"","WRONG"}); eq(ok,nil); eq(err,"cleanup confirmation token is invalid"); eq(f.map.rooms[100]~=nil,true)
+  assert(confirm({"",hud.cleanup:pending().token})); eq(f.map.rooms[100],nil); eq(f.cleanupReports[#f.cleanupReports].message,"Deleted IDs: 100\nFailed ID: none\nUntouched IDs: none\nArea deleted: false")
+end)
+
+test("cleanup aliases expose only exact approved command shapes and reject malformed targets",function()
+  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start())
+  eq(type(aliasCallback(f,"^dghud map delete room (\\d+)$")),"function")
+  eq(type(aliasCallback(f,"^dghud map clear submap (\\d+)$")),"function")
+  eq(type(aliasCallback(f,"^dghud map clear area (.+)$")),"function")
+  eq(type(aliasCallback(f,"^dghud map confirm (\\S+)$")),"function")
+  eq(type(aliasCallback(f,"^dghud map cancel$")),"function")
+  eq(aliasCallback(f,"^dghud map delete room (.+)$"),nil); eq(aliasCallback(f,"^dghud map clear area (.*)$"),nil)
+  local ok,err=aliasCallback(f,"^dghud map delete room (\\d+)$")({"","0"}); eq(ok,nil); eq(err,"room ID must be a positive integer")
+  eq(f.cleanupReports[#f.cleanupReports].error,true)
+end)
+
+test("cleanup preview cancellation invalidates the pending token",function()
+  local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
+  assert(aliasCallback(f,"^dghud map delete room (\\d+)$")({"","100"})); local token=hud.cleanup:pending().token
+  assert(aliasCallback(f,"^dghud map cancel$")()); eq(hud.cleanup:pending(),nil); eq(f.cleanupReports[#f.cleanupReports].message,"Cleanup preview cancelled.")
+  local ok,err=aliasCallback(f,"^dghud map confirm (\\S+)$")({"",token}); eq(ok,nil); eq(err,"cleanup confirmation token is invalid"); eq(f.map.rooms[100]~=nil,true)
+end)
+
+test("cleanup safety blocks current active and uncertain movement state",function()
+  local f=fake(); f.gmcp=gmcpRoom(100); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone"); addCleanupRoom(f,101,7,"zone")
+  local room=aliasCallback(f,"^dghud map delete room (\\d+)$"); local ok,err=room({"","100"}); eq(ok,nil); eq(err,"cleanup includes the current room")
+  hud.walker.route={rooms={100,101},commands={"n"}}; hud.walker.index=1; hud.walker.destination=101
+  ok,err=room({"","101"}); eq(ok,nil); eq(err,"map walking is active"); hud.walker.route=nil
+  hud.generated_command="n"; ok,err=room({"","101"}); eq(ok,nil); eq(err,"cleanup safety state is unavailable"); hud.generated_command=nil
+  _G.speedWalkPath="malformed"; ok,err=room({"","101"}); eq(ok,nil); eq(err,"cleanup safety state is unavailable"); _G.speedWalkPath=nil
+end)
+
+test("cleanup safety blocks pending automapper and special transitions",function()
+  local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
+  local room=aliasCallback(f,"^dghud map delete room (\\d+)$")
+  hud.automapper.pending={from=1,direction="n"}; local ok,err=room({"","100"}); eq(ok,nil); eq(err,"automapper movement is pending"); hud.automapper.pending=nil
+  hud.special_transition.candidate={from=1,command="go gate"}; ok,err=room({"","100"}); eq(ok,nil); eq(err,"special transition is pending"); hud.special_transition.candidate=nil
+end)
+
+test("cleanup lifecycle stops movement clears caches refreshes and remaps surviving current room",function()
+  local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone"); hud.managed_rooms[100]=true
+  local remaps=0; local original=hud.automapper.onRoom; hud.automapper.onRoom=function(self,info) remaps=remaps+1; return original(self,info) end
+  assert(aliasCallback(f,"^dghud map delete room (\\d+)$")({"","100"})); assert(aliasCallback(f,"^dghud map confirm (\\S+)$")({"","ABC123"}))
+  eq(hud.managed_rooms[100],nil); eq(f.map.invalidated.ids[1],100); eq(f.mapRefreshes,1); eq(remaps,1)
+end)
+
+test("cleanup shutdown removes all five owned aliases",function()
+  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); local before=f:count(f.aliases); eq(before,#Events.aliases+6)
+  local owned={}; for id,alias in pairs(f.aliases) do if alias.pattern:match("%^dghud map ") then owned[id]=true end end; eq(f:count(owned),5)
+  assert(hud:shutdown()); for id in pairs(owned) do eq(f.killed[id],true) end; eq(f:count(f.aliases),0)
+end)
+
+test("Mudlet cleanup adapter contains refresh exceptions and creates opaque tokens",function()
+  local adapter=MudletAdapter.new(); local updates=0
+  eq(adapter:cleanupClock(),os.time())
+  local first,second=adapter:cleanupToken(),adapter:cleanupToken(); eq(type(first),"string"); eq(first:match("^[A-Za-z0-9]+$")~=nil,true); eq(#first>=8 and #first<=24,true); eq(first~=second,true)
+  eq(adapter:refreshMap({updateMap=function() updates=updates+1 end}),true); eq(updates,1)
+  local ok,err=adapter:refreshMap({updateMap=function() error("native refresh failed") end}); eq(ok,nil); eq(type(err),"string")
+end)
 
 test("successful room ingestion centers the embedded mapper",function()
   local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="Training grounds.",area=1,exits={"west"}}}}

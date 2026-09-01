@@ -1,4 +1,4 @@
-local View=require("view"); local Storage=require("chat_storage"); local MapAdapter=require("map_adapter")
+local View=require("view"); local Storage=require("chat_storage"); local MapAdapter=require("map_adapter"); local SHA256=require("sha256")
 local Adapter={}; Adapter.__index=Adapter
 function Adapter.updateBase(home) return home.."/DGHUDUpdater" end
 function Adapter.updateArchivePath(home) return Adapter.updateBase(home).."/staging/DragonsGateHUD.mpackage" end
@@ -6,6 +6,7 @@ function Adapter.manifestUrl(github,nonce)
   return "https://github.com/"..github.owner.."/"..github.repository.."/releases/latest/download/manifest.json?dghud="..tostring(nonce)
 end
 local updateNonce=0
+local cleanupNonce=0
 function Adapter.new() return setmetatable({},Adapter) end
 function Adapter:getBorders() return getBorderLeft(),getBorderTop(),getBorderRight(),getBorderBottom() end
 function Adapter:getWindowSize() return getMainWindowSize() end
@@ -47,6 +48,26 @@ function Adapter:killAlias(id) return killAlias(id) end
 function Adapter:addLineTrigger(fn) return tempRegexTrigger("^.*$",function() fn(line or "") end) end
 function Adapter:killTrigger(id) return killTrigger(id) end
 function Adapter:epoch() return os.time() end
+function Adapter:cleanupClock() return os.time() end
+function Adapter:cleanupToken()
+  cleanupNonce=cleanupNonce+1
+  local entropy={tostring(os.time()),tostring(os.clock()),tostring(cleanupNonce),tostring({}),tostring(math.random())}
+  if type(_G.getEpoch)=="function" then local ok,value=pcall(_G.getEpoch); if ok then entropy[#entropy+1]=tostring(value) end end
+  return SHA256.hex(table.concat(entropy,"|")):sub(1,16)
+end
+function Adapter:refreshMap(api)
+  api=api or _G
+  if type(api.updateMap)~="function" then return nil,"Mudlet mapper API updateMap is unavailable" end
+  local ok,err=pcall(api.updateMap)
+  if not ok then return nil,tostring(err) end
+  return true
+end
+function Adapter:reportMapCleanup(message,isError)
+  local color=isError and "red" or "gold"
+  local ok,err=pcall(cecho,"\n<"..color..">[DGHUD Map]<reset> "..tostring(message).."\n")
+  if not ok then return nil,tostring(err) end
+  return true
+end
 function Adapter:timestamp() return os.date("%Y-%m-%dT%H:%M:%S%z") end
 function Adapter:reportChatErrorOnce(message) cecho("\n<red>[DGHUD Chat]<reset> "..tostring(message).."\n") end
 function Adapter:reportChatStatus(status)

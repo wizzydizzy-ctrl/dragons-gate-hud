@@ -74,7 +74,7 @@ local function chatMetrics(width,height,layout,settings)
   layout.chat_width=layout.console_width
   layout.chat_padding=8
   layout.chat_scrollbar_allowance=18
-  layout.chat_font=clamp(width/138,12,16)
+  layout.chat_font=clamp(width/148,11,15)
   layout.chat_character_width=math.max(6,layout.chat_font*.62)
   layout.chat_inner_width=math.max(1,layout.chat_width-(2*layout.chat_padding)-layout.chat_scrollbar_allowance)
   layout.chat_wrap_columns=math.max(30,math.floor(layout.chat_inner_width/layout.chat_character_width))

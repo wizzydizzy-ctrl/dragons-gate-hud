@@ -135,6 +135,13 @@ test("inventory and skills own five-row scrollable consoles",function()
   eq(view.inventory_content.parent,view.inventory_output); eq(view.skills_content.parent,view.skills_output)
   eq(view.inventory_output.height,layout.list_row_height*5); eq(view.skills_output.height,layout.list_row_height*5)
 end)
+test("scrollable list content uses resolved numeric widths",function()
+  local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
+  local state={character={physical={}},attributes={},combat={},equipment={items={}},inventory={items={{name="One",weight=1}},total_weight=1},skills={items={{name="Biting",level=4,remain=10}}},vitals={hp={current=1,maximum=1},fatigue={current=1,maximum=1},carry={current=1,maximum=1},psi={visible=false},web={visible=false},gold=0,silver=0,roundtime=0,position=0},room={players={},flags={},exits={}}}
+  view:update(state)
+  eq(type(view.inventory_content.width),"number"); eq(type(view.skills_content.width),"number")
+  eq(view.inventory_content.width<view.inventory_output.width,true); eq(view.skills_content.width<view.skills_output.width,true)
+end)
 test("responsive skill columns fit both wide and medium right rails",function()
   for _,size in ipairs({{1920,1080},{1200,800},{1200,650}}) do
     local view=chatView(); local layout=require("layout").compute(size[1],size[2]); view:applyLayout(layout)

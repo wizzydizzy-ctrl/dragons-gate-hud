@@ -23,9 +23,10 @@ function Main.installChatApi(namespace)
 end
 function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {}); normalized.vitals.roundtime=self.roundtime_display or normalized.vitals.roundtime; self.view:update(normalized); self.last_state=normalized; if self.chat then self.chat:syncCharacter() end; return true end
 function Main:characterName() return self.last_state and self.last_state.character and self.last_state.character.full_name or nil end
-function Main:onCharacterEntry()
-  if self.character_entry_started then return false end
-  self.character_entry_started=true
+function Main:onCharacterEntry(name)
+  name=tostring(name or ""):match("^%s*(.-)%s*$")
+  if self.character_entry_started and (name=="" or name==self.character_entry_name) then return false end
+  self.character_entry_started=true; self.character_entry_name=name~="" and name or self.character_entry_name
   local function refreshCommands()
     local collector=self.collector
     if collector then collector:refresh() end
@@ -223,7 +224,7 @@ function Main:start()
   self.view=self.adapter:createView(self.settings)
   if self.view.setMapZoomCallback then self.view:setMapZoomCallback(function(action) return self:mapToolbarAction(action) end) end
   self:applyResponsiveLayout()
-  self.collector=Collector.new(self.adapter,Parser,function() self:refresh() end,function(value) self:onRoundtime(value) end,function() self:onCharacterEntry() end); local collectorOk,collectorErr=self.collector:start(); if not collectorOk then error(collectorErr,0) end
+  self.collector=Collector.new(self.adapter,Parser,function() self:refresh() end,function(value) self:onRoundtime(value) end,function(name) self:onCharacterEntry(name) end); local collectorOk,collectorErr=self.collector:start(); if not collectorOk then error(collectorErr,0) end
   if self.adapter.isCharacterActive and self.adapter:isCharacterActive() then self:onCharacterEntry() end
   for _,name in ipairs(Events.gmcp) do local eventName=name; self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(eventName,function()
     if eventName=="gmcp.Char.Vitals" and self.walker then local data=self.adapter:getGMCP(); local vitals=data and data.Char and data.Char.Vitals; self.walker:onRoundtime(vitals and vitals.roundtime or 0) end
@@ -251,7 +252,7 @@ function Main:start()
       if canonical then self:callSpecialTransition("cancel","direction") else self:callSpecialTransition("onOutgoing",command,self.automapper:currentRoom()) end
     else self:callSpecialTransition("cancel","disabled") end
   end)
-  self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.disconnect,function() self.character_entry_started=false; self:callSpecialTransition("cancel","disconnect"); self.automapper:onDisconnect(); self.walker:stop("disconnected") end)
+  self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.disconnect,function() self.character_entry_started=false; self.character_entry_name=nil; self:callSpecialTransition("cancel","disconnect"); self.automapper:onDisconnect(); self.walker:stop("disconnected") end)
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent("sysWindowResizeEvent",function() self:applyResponsiveLayout() end)
   local function aliasArgument(value) return value or (type(_G.matches)=="table" and _G.matches[2]) end
   local commands={function() if self.updater then self.updater:check() end end,function() if self.updater then self.updater:update() end end,function() self:reload() end,function() if self.adapter.openSettings then self.adapter:openSettings() end end,function() if self.adapter.requestPurge then self.adapter:requestPurge() end end,function() return self:reportChatStatus() end,function(value) return self:walkTo(aliasArgument(value)) end,function() return self.walker:stop("requested") end,function() local room=self.automapper:currentRoom(); if not room then return nil,"current room is unavailable" end; return self.map:center(room) end}
@@ -273,7 +274,7 @@ function Main:shutdown()
   for _,id in ipairs(self.runtime.events) do self.adapter:killEvent(id) end; for _,id in ipairs(self.runtime.aliases) do self.adapter:killAlias(id) end
   self.runtime={events={},aliases={}}; if self.view then self.view:delete(); self.view=nil end
   if self.original_borders then self.adapter:setBorders(self.original_borders[1],self.original_borders[2],self.original_borders[3],self.original_borders[4]); self.original_borders=nil end
-  self.character_entry_started=false; self.started=false; return true
+  self.character_entry_started=false; self.character_entry_name=nil; self.started=false; return true
 end
 function Main:reload() self:shutdown(); return self:start() end
 function Main:healthCheck()

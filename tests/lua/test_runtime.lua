@@ -224,6 +224,15 @@ test("welcome character entry checks only once and never refreshes before comple
   for _,fn in pairs(f.triggers) do fn("Welcome to Dragon's Gate, Test!") end
   eq(checks,1); eq(#(f.sentCommands or {}),0); pending(false); eq(f.sent,"inventory")
 end)
+test("a different character welcome performs another update check without disconnect",function()
+  local f=fake(); local completions={}; local checks=0
+  local hud=Main.new(f,{layout={}})
+  hud.updater={checkAtCharacterEntry=function(_,done) checks=checks+1; completions[#completions+1]=done; return true end}
+  hud:start(); hud.collector:onLine("Welcome to Dragon's Gate, Muthulas!"); completions[1](false)
+  hud.collector:cancelActive(); hud.collector.refreshed=true
+  hud.collector:onLine("Welcome to Dragon's Gate, Dace!")
+  eq(checks,2); eq(#completions,2)
+end)
 test("reload leaves one command collector",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); eq(f:count(f.triggers),2); local outgoing=0; for _,name in pairs(f.events) do if name=="sysDataSendRequest" then outgoing=outgoing+1 end end; eq(outgoing,2)
 end)

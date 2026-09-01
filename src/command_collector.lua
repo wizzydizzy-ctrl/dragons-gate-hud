@@ -52,8 +52,11 @@ end
 function Collector:onLine(value)
   value=tostring(value or "")
   local delay=tonumber(value:match("%[(%d+)%s+sec%.%s+delay%]")); if delay and self.onRoundtime then self.onRoundtime(delay) end
-  if value:match("^Welcome to Dragon's Gate, .+!%s*$") and not self.refreshed then
-    if self.onCharacterEntry then self.onCharacterEntry() else self:refresh() end
+  local character=value:match("^Welcome to Dragon's Gate, (.+)!%s*$")
+  if character then
+    if self.active_character==character then return end
+    self:cancelActive(); self.refreshed=false; self.active_character=character
+    if self.onCharacterEntry then self.onCharacterEntry(character) else self:refresh() end
     return
   end
   if not self.active then return end
@@ -69,13 +72,13 @@ function Collector:start()
   if self.started then return true end
   self.runtime.triggers[1]=self.adapter:addLineTrigger(function(value) self:onLine(value) end)
   self.runtime.events[1]=self.adapter:addEvent("sysDataSendRequest",function(_,command) self:onOutgoing(command) end)
-  self.runtime.events[2]=self.adapter:addEvent("sysDisconnectionEvent",function() self:cancelActive(); self.refreshed=false end)
+  self.runtime.events[2]=self.adapter:addEvent("sysDisconnectionEvent",function() self:cancelActive(); self.refreshed=false; self.active_character=nil end)
   self.started=true; return true
 end
 function Collector:shutdown()
   self:cancelActive()
   for _,id in ipairs(self.runtime.triggers) do self.adapter:killTrigger(id) end
   for _,id in ipairs(self.runtime.events) do self.adapter:killEvent(id) end
-  self.runtime={triggers={},events={}}; self.refreshed=false; self.started=false; return true
+  self.runtime={triggers={},events={}}; self.refreshed=false; self.active_character=nil; self.started=false; return true
 end
 return Collector

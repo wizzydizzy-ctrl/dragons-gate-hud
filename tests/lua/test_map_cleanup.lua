@@ -154,6 +154,22 @@ test("new previews replace old tokens and cancellation clears pending",function(
   result,err=cleanup:confirm(second.token); eq(result,nil); eq(err,"cleanup confirmation token is invalid")
 end)
 
+test("every new preview attempt invalidates the old token before builder failure",function()
+  local cases={
+    {attempt=function(cleanup) local result,err=cleanup:previewRoom("bad"); eq(result,nil); eq(err,"room ID must be a positive integer") end},
+    {prepare=function(_,runtime) runtime.snapshot.walking=true end,attempt=function(cleanup) local result,err=cleanup:previewRoom(100); eq(result,nil); eq(err,"map walking is active") end},
+    {prepare=function(map) function map:roomRecord() error("room record exploded") end end,attempt=function(cleanup) local ok,err=pcall(function() cleanup:previewRoom(100) end); eq(ok,false); eq(tostring(err):match("room record exploded")~=nil,true) end},
+  }
+  for _,case in ipairs(cases) do
+    local cleanup,map,runtime=fixture(); local old=assert(cleanup:previewRoom(100))
+    if case.prepare then case.prepare(map,runtime) end
+    case.attempt(cleanup)
+    local result,err=cleanup:confirm(old.token)
+    eq(map.deleteCalls,0); eq(runtime.beforeCalls,0); eq(runtime.afterCalls,0)
+    eq(result,nil); eq(err,"cleanup confirmation token is invalid"); eq(cleanup:pending(),nil)
+  end
+end)
+
 test("confirmation tokens expire after thirty seconds and are consumed",function()
   local cleanup,map,_,setNow=fixture(); local preview=assert(cleanup:previewRoom(100)); setNow(1031)
   local result,err=cleanup:confirm(preview.token); eq(result,nil); eq(err,"cleanup confirmation token has expired"); eq(map.deleteCalls,0)

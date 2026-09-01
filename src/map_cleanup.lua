@@ -166,6 +166,7 @@ end
 
 function Cleanup:_preview(builder,...)
   if self.busy then return nil,"cleanup is already running" end
+  self.plan=nil
   local plan,err=builder(self,...,true)
   if not plan then return nil,err end
   self.plan=copy(plan)

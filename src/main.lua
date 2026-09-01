@@ -115,12 +115,19 @@ function Main:walkTo(destination,providedRoute)
   return true
 end
 function Main:installMapClickHook()
+  if not self:mapperEnabled() then return true end
   self.previous_speed_walk=rawget(_G,"doSpeedWalk")
   local controller=self
   self.speed_walk_hook=function()
-    local destination=type(_G.speedWalkPath)=="table" and _G.speedWalkPath[#_G.speedWalkPath] or nil
-    if not destination then return nil,"clicked route has no destination room" end
-    return controller:walkTo(destination,{rooms=_G.speedWalkPath,commands=_G.speedWalkDir or {}})
+    local path=type(_G.speedWalkPath)=="table" and _G.speedWalkPath or nil
+    local destination=path and path[#path] or nil
+    local owned=destination~=nil and controller.map and type(controller.map.isOwned)=="function"
+    if owned then for _,roomID in ipairs(path) do if not controller.map:isOwned(tonumber(roomID)) then owned=false; break end end end
+    if not owned then
+      if type(controller.previous_speed_walk)=="function" then return controller.previous_speed_walk() end
+      return nil,"clicked route is not owned by DragonsGateHUD"
+    end
+    return controller:walkTo(destination,{rooms=path,commands=_G.speedWalkDir or {}})
   end
   _G.doSpeedWalk=self.speed_walk_hook
 end

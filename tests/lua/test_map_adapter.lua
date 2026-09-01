@@ -32,11 +32,11 @@ local function descriptor(id,area,name)
   return {id=id,name=name or ("Room "..id),area_key=area or "A",environment="Plain",flags={"indoor"},exits={}}
 end
 
-test("creates a fully tagged room and commits ownership last",function()
+test("creates a fully tagged room and finalizes readiness last",function()
   local api=fakeMapApi(); local calls={}; local native=api.setRoomUserData
   api.setRoomUserData=function(id,k,v) calls[#calls+1]=k; return native(id,k,v) end
   assert(Adapter.new(api):ensureRoom(descriptor(176,"1","Training square."),{x=0,y=1,z=2}))
-  local r=api.rooms[176]; eq(r.name,"Training square."); eq(r.user["dghud.owner"],"DragonsGateHUD"); eq(calls[#calls],"dghud.owner")
+  local r=api.rooms[176]; eq(r.name,"Training square."); eq(r.user["dghud.owner"],"DragonsGateHUD"); eq(calls[#calls],"dghud.state"); eq(r.user["dghud.state"],"ready")
   eq(r.user["dghud.mapper_schema"],"1"); eq(r.user["dghud.environment"],"Plain"); eq(r.user["dghud.flags"],"indoor")
   eq(r.x,0); eq(r.y,1); eq(r.z,2); eq(api.areaUser[r.area]["dghud.owner"],"DragonsGateHUD")
 end)
@@ -65,11 +65,34 @@ test("updates owned rooms and retains ownership on failure",function()
   api.fail.setRoomName=true; local ok,e=map:ensureRoom(descriptor(1,"A","Nope"),{}); eq(ok,nil); eq(e,"setRoomName rejected"); eq(api.rooms[1].user["dghud.owner"],"DragonsGateHUD")
 end)
 
-test("mutation failures never commit ownership on a new room",function()
-  for _,name in ipairs({"setRoomArea","setRoomName","setRoomCoordinates","setRoomUserData"}) do
-    local api=fakeMapApi(); api.fail[name]=true; local ok,e=Adapter.new(api):ensureRoom(descriptor(20),{})
-    eq(ok,nil); eq(e,name.." rejected"); eq(api.rooms[20] and api.rooms[20].user["dghud.owner"],nil)
+test("post-create room mutation failures remain safely retryable",function()
+  for _,name in ipairs({"setRoomArea","setRoomName","setRoomCoordinates"}) do
+    local api=fakeMapApi(); local map=Adapter.new(api); api.fail[name]=true; local ok,e=map:ensureRoom(descriptor(20),{})
+    eq(ok,nil); eq(e,name.." rejected"); eq(api.rooms[20].user["dghud.owner"],"DragonsGateHUD"); eq(api.rooms[20].user["dghud.state"],"provisional")
+    api.fail[name]=nil; assert(map:ensureRoom(descriptor(20),{})); eq(api.rooms[20].user["dghud.state"],"ready")
   end
+  for failureCall=1,6 do
+    local api=fakeMapApi(); local map=Adapter.new(api); local native=api.setRoomUserData; local calls=0
+    api.setRoomUserData=function(...) calls=calls+1; if calls==failureCall then return nil,"room metadata rejected" end; return native(...) end
+    local ok,e=map:ensureRoom(descriptor(21),{}); eq(ok,nil); eq(e,"room metadata rejected"); api.setRoomUserData=native
+    assert(map:ensureRoom(descriptor(21),{})); eq(api.rooms[21].user["dghud.owner"],"DragonsGateHUD"); eq(api.rooms[21].user["dghud.state"],"ready")
+  end
+end)
+
+test("post-create area metadata failures remain safely retryable",function()
+  for _,failureCall in ipairs({1,2,3,4}) do
+    local api=fakeMapApi(); local map=Adapter.new(api); local native=api.setAreaUserData; local calls=0
+    api.setAreaUserData=function(...) calls=calls+1; if calls==failureCall then return nil,"area metadata rejected" end; return native(...) end
+    local ok,e=map:ensureArea("Retry"); eq(ok,nil); eq(e,"area metadata rejected")
+    local id=api.areas["Dragons Gate - Retry"]; assert(id); api.setAreaUserData=native
+    assert(map:ensureArea("Retry")); eq(api.areaUser[id]["dghud.owner"],"DragonsGateHUD"); eq(api.areaUser[id]["dghud.state"],"ready")
+  end
+end)
+
+test("never adopts preexisting unowned provisional-looking objects",function()
+  local api=fakeMapApi({[20]={user={['dghud.state']='provisional'},exits={},stubs={}}})
+  api.areas["Dragons Gate - Personal"]=9; api.areaUser[9]={['dghud.state']='provisional'}
+  local map=Adapter.new(api); local ok=map:ensureRoom(descriptor(20),{}); eq(ok,nil); ok=map:ensureArea("Personal"); eq(ok,nil)
 end)
 
 test("creates stubs one-way and confirmed reverse links",function()

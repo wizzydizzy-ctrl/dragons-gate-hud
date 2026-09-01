@@ -60,6 +60,7 @@ local function fake()
     function map:center(id) self.centered=id; f.mapCenterCalls=(f.mapCenterCalls or 0)+1; return true end
     function map:coordinates(id) local item=self.rooms[id]; return item and item.coordinates end
     function map:roomsAt() return {} end
+    function map:isOwned(id) return self.rooms[id]~=nil end
     function map:route(fromID,toID)
       if f.routeError then return nil,f.routeError end
       return f.route or {rooms={fromID,toID},commands={"n"}}
@@ -299,15 +300,31 @@ test("native map click uses walker route and restores the previous global hook",
   local previous=function() return "personal" end; local oldHook=_G.doSpeedWalk; _G.doSpeedWalk=previous
   local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}
   local hud=Main.new(f,{layout={}}); assert(hud:start()); local ownedHook=_G.doSpeedWalk; eq(ownedHook~=previous,true)
-  _G.speedWalkPath={175,176}; _G.speedWalkDir={"north"}; assert(ownedHook()); eq(f.sentCommands[#f.sentCommands],"n")
+  hud.map.rooms[176]={}; _G.speedWalkPath={175,176}; _G.speedWalkDir={"north"}; assert(ownedHook()); eq(f.sentCommands[#f.sentCommands],"n")
   hud:shutdown(); eq(_G.doSpeedWalk,previous); eq(f:count(f.timers),0); eq(f:count(f.aliases),0)
   _G.doSpeedWalk=oldHook; _G.speedWalkPath=nil; _G.speedWalkDir=nil
+end)
+
+test("disabled mapper never replaces personal speedwalk hook",function()
+  local old=_G.doSpeedWalk; local personal=function() return "personal" end; _G.doSpeedWalk=personal
+  local f=fake(); local hud=Main.new(f,{layout={},mapper={enabled=false}}); assert(hud:start()); eq(_G.doSpeedWalk,personal); hud:shutdown(); eq(_G.doSpeedWalk,personal); _G.doSpeedWalk=old
+end)
+
+test("map click delegates unowned and mixed routes but handles wholly owned routes",function()
+  local oldHook,oldPath,oldDir=_G.doSpeedWalk,_G.speedWalkPath,_G.speedWalkDir
+  local delegated=0; local personal=function() delegated=delegated+1; return "personal" end; _G.doSpeedWalk=personal
+  local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}
+  local hud=Main.new(f,{layout={},mapper={}}); assert(hud:start()); hud.map.isOwned=function(_,id) return id==175 or id==176 end
+  _G.speedWalkPath={900,901}; _G.speedWalkDir={"n"}; eq(_G.doSpeedWalk(),"personal"); eq(delegated,1)
+  _G.speedWalkPath={175,901}; _G.speedWalkDir={"n"}; eq(_G.doSpeedWalk(),"personal"); eq(delegated,2)
+  _G.speedWalkPath={175,176}; _G.speedWalkDir={"n"}; assert(_G.doSpeedWalk()); eq(delegated,2)
+  hud:shutdown(); eq(_G.doSpeedWalk,personal); _G.doSpeedWalk=oldHook; _G.speedWalkPath=oldPath; _G.speedWalkDir=oldDir
 end)
 
 test("native map click accepts speedWalkPath without the current room",function()
   local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}
   local hud=Main.new(f,{layout={}}); assert(hud:start())
-  _G.speedWalkPath={176}; _G.speedWalkDir={"north"}; assert(_G.doSpeedWalk()); eq(hud.walker:active(),true); eq(f.sentCommands[#f.sentCommands],"n")
+  hud.map.rooms[176]={}; _G.speedWalkPath={176}; _G.speedWalkDir={"north"}; assert(_G.doSpeedWalk()); eq(hud.walker:active(),true); eq(f.sentCommands[#f.sentCommands],"n")
   hud:shutdown(); _G.speedWalkPath=nil; _G.speedWalkDir=nil
 end)
 

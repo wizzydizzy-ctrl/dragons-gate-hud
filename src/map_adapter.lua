@@ -35,7 +35,7 @@ local function requireCapabilities(api,names)
 end
 
 function MapAdapter.new(api)
-  return setmetatable({api=api or {},owner="DragonsGateHUD",schema="1",areas={}},MapAdapter)
+  return setmetatable({api=api or {},owner="DragonsGateHUD",schema="1",areas={},createdAreas={},createdRooms={}},MapAdapter)
 end
 
 function MapAdapter:isOwned(id)
@@ -54,16 +54,17 @@ function MapAdapter:ensureArea(areaKey)
   if area~=nil then
     local owner,ownerErr=read(self.api,"getAreaUserData",area,"dghud.owner")
     if ownerErr then return nil,ownerErr end
-    if owner~=self.owner then return nil,"area "..name.." is not owned by DragonsGateHUD" end
+    if owner~=self.owner and self.createdAreas[area]~=true then return nil,"area "..name.." is not owned by DragonsGateHUD" end
   else
     local addErr
     area,addErr=invoke(self.api,"addAreaName",name)
     if area==nil then return nil,addErr end
-    local schemaOk,schemaErr=invoke(self.api,"setAreaUserData",area,"dghud.mapper_schema",self.schema)
-    if schemaOk==nil then return nil,schemaErr end
-    local ownerOk,ownerSetErr=invoke(self.api,"setAreaUserData",area,"dghud.owner",self.owner)
-    if ownerOk==nil then return nil,ownerSetErr end
+    self.createdAreas[area]=true
   end
+  local areaOperations={{"setAreaUserData",area,"dghud.owner",self.owner},{"setAreaUserData",area,"dghud.state","provisional"},{"setAreaUserData",area,"dghud.mapper_schema",self.schema}}
+  for _,operation in ipairs(areaOperations) do local ok,err=invoke(self.api,unpackValues(operation)); if ok==nil then return nil,err end end
+  local readyOk,readyErr=invoke(self.api,"setAreaUserData",area,"dghud.state","ready"); if readyOk==nil then return nil,readyErr end
+  self.createdAreas[area]=nil
   self.areas[key]=area
   return area
 end
@@ -76,7 +77,7 @@ function MapAdapter:ensureRoom(room,coordinates)
   local existsCall,exists,existsErr=pcall(self.api.roomExists,room.id)
   if not existsCall then return nil,"Mudlet mapper API roomExists failed: "..tostring(exists) end
   if exists==nil then return nil,existsErr or "Mudlet mapper API roomExists failed" end
-  if exists and not self:isOwned(room.id) then
+  if exists and not self:isOwned(room.id) and self.createdRooms[room.id]~=true then
     return nil,"room "..tostring(room.id).." is not owned by DragonsGateHUD"
   end
   local area,areaErr=self:ensureArea(room.area_key)
@@ -84,7 +85,10 @@ function MapAdapter:ensureRoom(room,coordinates)
   if not exists then
     local added,addErr=invoke(self.api,"addRoom",room.id)
     if added==nil then return nil,addErr end
+    self.createdRooms[room.id]=true
   end
+  local ownerOk,ownerErr=invoke(self.api,"setRoomUserData",room.id,"dghud.owner",self.owner); if ownerOk==nil then return nil,ownerErr end
+  local provisionalOk,provisionalErr=invoke(self.api,"setRoomUserData",room.id,"dghud.state","provisional"); if provisionalOk==nil then return nil,provisionalErr end
   local operations={
     {"setRoomUserData",room.id,"dghud.mapper_schema",self.schema},
     {"setRoomUserData",room.id,"dghud.environment",tostring(room.environment or "")},
@@ -97,10 +101,8 @@ function MapAdapter:ensureRoom(room,coordinates)
     local ok,err=invoke(self.api,unpackValues(operation))
     if ok==nil then return nil,err end
   end
-  if not exists then
-    local ownerOk,ownerErr=invoke(self.api,"setRoomUserData",room.id,"dghud.owner",self.owner)
-    if ownerOk==nil then return nil,ownerErr end
-  end
+  local readyOk,readyErr=invoke(self.api,"setRoomUserData",room.id,"dghud.state","ready"); if readyOk==nil then return nil,readyErr end
+  self.createdRooms[room.id]=nil
   return true
 end
 

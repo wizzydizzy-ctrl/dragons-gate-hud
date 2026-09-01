@@ -4,7 +4,7 @@ Use only the disposable `Dragons Gate HUD` profile. Do not send representational
 
 1. Build the unreleased package locally and install it only into the disposable profile. Record the profile's existing personal triggers, aliases, scripts, packages, map data, and settings before installation.
 2. Confirm Identity and Character/Combat are left, Vitals/Location are lower-left, and Equipment/Wealth/Inventory are right. Enter a character and confirm exactly one sequential `inventory`, `stat`, `info` refresh.
-3. Compare inventory, exact readied equipment, attributes, physical details, armor, OR/DR, movement, damage bonus, stance, and novice protection with command output. Run each command manually and confirm its HUD section refreshes.
+3. Compare inventory, weapon/shield readiness, attributes, physical details, armor, OR/DR, movement, damage bonus, stance, and novice protection with command output. Run each command manually and confirm its HUD section refreshes.
 4. Confirm available compass directions are bright and clickable; unavailable directions are dim and inert. In a safe test room, verify `GO PORTAL`, `GO DOOR`, `GO GATE`, and `GO ARCH` send their exact commands.
 5. Confirm the chatbox is always visible directly above the center console, precisely matches the console's left edge and width, and does not change normal game output.
 6. Feed the approved ROOM, OWN, WHISPER, ESP, DRAGON, CONTACT, and STAFF examples through the real line-capture path. Verify each is retained under its exact category and appears through the appropriate `ALL`, `ROOM`, `PRIVATE`, or exact-category filter.

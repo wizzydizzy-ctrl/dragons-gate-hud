@@ -20,11 +20,11 @@ function Adapter:addLineTrigger(fn) return tempRegexTrigger("^.*$",function() fn
 function Adapter:killTrigger(id) return killTrigger(id) end
 function Adapter:epoch() return os.time() end
 function Adapter:timestamp() return os.date("%Y-%m-%dT%H:%M:%S%z") end
-function Adapter:reportChatErrorOnce(message) cecho("\n<red>[DGHUD Chat]</red> "..tostring(message).."\n") end
+function Adapter:reportChatErrorOnce(message) cecho("\n<red>[DGHUD Chat]<reset> "..tostring(message).."\n") end
 function Adapter:reportChatStatus(status)
   status=type(status)=="table" and status or {}
   local storage=status.storage_key or "unknown"; local error=status.last_storage_error or "none"
-  cecho("\n<gold>[DGHUD Chat]</gold> filter="..tostring(status.active_filter or "OFF").." visible="..tostring(status.visible_count or 0).." storage="..tostring(storage).." last storage error="..tostring(error).."\n")
+  cecho("\n<gold>[DGHUD Chat]<reset> filter="..tostring(status.active_filter or "OFF").." visible="..tostring(status.visible_count or 0).." storage="..tostring(storage).." last storage error="..tostring(error).."\n")
   return status
 end
 function Adapter:schedule(seconds,fn) return tempTimer(seconds,fn) end
@@ -34,7 +34,7 @@ function Adapter:getGMCP() return gmcp or {} end
 function Adapter.characterPrompt(value) return tostring(value or ""):match("^>")~=nil end
 function Adapter:isCharacterActive() return Adapter.characterPrompt(getCurrentLine and getCurrentLine() or "") end
 function Adapter:refreshCharacterData() return DGHUD and DGHUD.controller and DGHUD.controller.collector and DGHUD.controller.collector:refresh() end
-function Adapter:openSettings() cecho("\n<gold>[DGHUD]</gold> Settings: "..getMudletHomeDir().."/DragonsGateHUD/settings.lua\n") end
+function Adapter:openSettings() cecho("\n<gold>[DGHUD]<reset> Settings: "..getMudletHomeDir().."/DragonsGateHUD/settings.lua\n") end
 local function readFile(path) local f=io.open(path,"rb"); if not f then return nil end; local data=f:read("*a"); f:close(); return data end
 local function writeFile(path,data) local f=assert(io.open(path,"wb")); f:write(data); f:close() end
 local function hasPackage(name) for _,value in ipairs(getPackages() or {}) do if value==name then return true end end return false end
@@ -45,7 +45,7 @@ function Adapter:startUpdate(updater)
   local manifestPath=staging.."/manifest.json"; local packagePath=Adapter.updateArchivePath(getMudletHomeDir()); local ids={}; local timers={}; local timeoutId
   local function schedule(delay,fn) local id; id=tempTimer(delay,function() for i,value in ipairs(timers) do if value==id then table.remove(timers,i); break end end; fn() end); timers[#timers+1]=id; return id end
   local function cleanup() for _,id in ipairs(ids) do killAnonymousEventHandler(id) end; ids={}; for _,id in ipairs(timers) do killTimer(id) end; timers={}; if timeoutId then killTimer(timeoutId); timeoutId=nil end; updater:release() end
-  local function fail(message) cleanup(); cecho("\n<red>[DGHUD Update]</red> "..tostring(message).."\n") end
+  local function fail(message) cleanup(); cecho("\n<red>[DGHUD Update]<reset> "..tostring(message).."\n") end
   ids[#ids+1]=registerAnonymousEventHandler("sysDownloadError",function(_,message,url) if url and (url:find(github.repository,1,true)) then fail(message) end end)
   ids[#ids+1]=registerAnonymousEventHandler("sysDownloadDone",function(_,path)
     if path==manifestPath then
@@ -79,7 +79,7 @@ function Adapter:startUpdate(updater)
       local started,why=updater:installVerifiedAsync(payload,manifest.sha256,function(installed,message)
         completed=true
         if not installed then fail(message); return end
-        writeFile(current,payload); cleanup(); cecho("\n<green>[DGHUD Update]</green> Installed version "..manifest.version.."\n")
+        writeFile(current,payload); cleanup(); cecho("\n<green>[DGHUD Update]<reset> Installed version "..manifest.version.."\n")
       end)
       if not started and not completed then return fail(why) end
     end

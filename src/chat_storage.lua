@@ -200,7 +200,7 @@ function Storage.mudletApi(home)
     end,
     encode=function(entry) return yajl.to_string(entry) end,
     decode=function(line) return yajl.to_value(line) end,
-    report=function(message) if type(cecho)=="function" then cecho("\n<red>[DGHUD Chat]</red> "..tostring(message).."\n") end end,
+    report=function(message) if type(cecho)=="function" then cecho("\n<red>[DGHUD Chat]<reset> "..tostring(message).."\n") end end,
   }
 end
 

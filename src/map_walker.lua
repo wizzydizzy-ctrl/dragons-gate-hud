@@ -10,10 +10,10 @@ local function direction(value)
 end
 
 function Walker.new(adapter,onStatus,timeoutSeconds)
-  return setmetatable({adapter=adapter,onStatus=onStatus or function() end,timeout_seconds=tonumber(timeoutSeconds) or 12},Walker)
+  return setmetatable({adapter=adapter,onStatus=onStatus or function() end,timeout_seconds=tonumber(timeoutSeconds) or 12,roundtime=0},Walker)
 end
 
-function Walker:status(kind,message) pcall(self.onStatus,kind,message) end
+function Walker:status(kind,message,isError) pcall(self.onStatus,kind,message,isError==true) end
 function Walker:active() return self.route~=nil end
 
 function Walker:clearTimer()
@@ -25,13 +25,13 @@ function Walker:clearTimer()
   return true
 end
 
-function Walker:stop(reason)
+function Walker:stop(reason,isError)
   if not self.route then return true end
   local timerOk,timerErr=self:clearTimer()
-  self.route=nil; self.expected=nil; self.origin=nil; self.index=nil; self.destination=nil
+  self.route=nil; self.expected=nil; self.origin=nil; self.index=nil; self.destination=nil; self.waiting_roundtime=nil
   if self.adapter.clearGenerated then pcall(self.adapter.clearGenerated,self.adapter) end
   if reason=="arrived" then self:status("arrived","Arrived at "..tostring(self.last_destination))
-  else self:status("stopped","Walk stopped: "..tostring(reason or "stopped")) end
+  else self:status("stopped","Walk stopped: "..tostring(reason or "stopped"),isError) end
   if not timerOk then return nil,timerErr end
   return true
 end
@@ -39,15 +39,21 @@ end
 function Walker:sendNext()
   local command=self.route and self.route.commands[self.index]
   if not command then self.last_destination=self.destination; return self:stop("arrived") end
+  if self.roundtime>0 then
+    self.waiting_roundtime=true
+    self:status("paused","Walk paused for roundtime "..tostring(self.roundtime))
+    return true
+  end
+  self.waiting_roundtime=nil
   self.origin=self.route.rooms[self.index]; self.expected=self.route.rooms[self.index+1]
   local callOk,sent,err=pcall(self.adapter.sendCommand,self.adapter,command,true)
   if not callOk then err=sent; sent=nil end
-  if sent==nil or sent==false then local reason=err or "movement command failed"; self:stop(reason); return nil,reason end
-  local scheduleOk,timer,scheduleErr=pcall(self.adapter.schedule,self.adapter,self.timeout_seconds,function() self.timeout=nil; self:stop("movement timed out") end)
+  if sent==nil or sent==false then local reason=err or "movement command failed"; self:stop(reason,true); return nil,reason end
+  local scheduleOk,timer,scheduleErr=pcall(self.adapter.schedule,self.adapter,self.timeout_seconds,function() self.timeout=nil; self:stop("movement timed out",true) end)
   if not scheduleOk then scheduleErr=timer; timer=nil end
   self.timeout=timer
-  if scheduleErr then self:stop(scheduleErr); return nil,scheduleErr end
-  if self.timeout==nil then self:stop("movement timer could not be created"); return nil,"movement timer could not be created" end
+  if scheduleErr then self:stop(scheduleErr,true); return nil,scheduleErr end
+  if self.timeout==nil then self:stop("movement timer could not be created",true); return nil,"movement timer could not be created" end
   return true
 end
 
@@ -75,17 +81,26 @@ function Walker:onRoom(roomID)
   if not self.route then return true end
   local actual=tonumber(roomID)
   if actual==tonumber(self.origin) then return true end
-  if actual~=tonumber(self.expected) then return self:stop("unexpected room "..tostring(roomID)) end
+  if actual~=tonumber(self.expected) then return self:stop("unexpected room "..tostring(roomID),true) end
   local timerOk,timerErr=self:clearTimer()
   if not timerOk then
-    self:stop(timerErr or "movement timer cancellation failed")
+    self:stop(timerErr or "movement timer cancellation failed",true)
     return nil,timerErr or "movement timer cancellation failed"
   end
   self.index=self.index+1
   return self:sendNext()
 end
 
-function Walker:onWrongDirection() if self.route then return self:stop("wrong direction") end; return true end
+function Walker:onRoundtime(value)
+  self.roundtime=math.max(0,math.floor(tonumber(value) or 0))
+  if self.route and self.waiting_roundtime and self.roundtime==0 then
+    self.waiting_roundtime=nil
+    return self:sendNext()
+  end
+  return true
+end
+
+function Walker:onWrongDirection() if self.route then return self:stop("wrong direction",true) end; return true end
 function Walker:onManualMovement(command,generated)
   if self.route and not generated and direction(command) then return self:stop("manual movement") end
   return true

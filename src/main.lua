@@ -1,6 +1,6 @@
 local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local MapWalker=require("map_walker")
 local Main={}; Main.__index=Main
-function Main.new(adapter,settings) return setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=0},Main) end
+function Main.new(adapter,settings) return setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=0,managed_rooms={}},Main) end
 function Main.installChatApi(namespace)
   local chat=type(namespace.chat)=="table" and namespace.chat or {}
   namespace.chat=chat
@@ -59,14 +59,37 @@ function Main:scheduleRoundtimeTick()
 end
 function Main:onRoundtime(value)
   value=math.max(0,math.floor(tonumber(value) or 0)); if self.roundtime_timer then self.adapter:cancelTimer(self.roundtime_timer); self.roundtime_timer=nil end
-  self.roundtime_display=value; self:refresh(); self:scheduleRoundtimeTick(); return true
+  self.roundtime_display=value; if self.walker then self.walker:onRoundtime(value) end; self:refresh(); self:scheduleRoundtimeTick(); return true
 end
 function Main:applyResponsiveLayout()
-  local width,height=self.adapter:getWindowSize(); local layout=Layout.compute(width,height,self.settings.chat); self.current_layout=layout
+  local width,height=self.adapter:getWindowSize(); local layout=Layout.compute(width,height,self.settings.chat,self.settings.mapper); self.current_layout=layout
   self.adapter:setBorders(layout.left,layout.top,layout.right,layout.bottom)
   if self.view and self.view.applyLayout then self.view:applyLayout(layout) end; return layout
 end
-function Main:mapperStatus(kind,message) if self.adapter.reportMapperStatus then self.adapter:reportMapperStatus(kind,message) end end
+function Main:mapperEnabled() return not (self.settings.mapper and self.settings.mapper.enabled==false) end
+function Main:mapperStatus(kind,message,isError)
+  self.last_mapper_status=tostring(message or kind or "none")
+  if kind=="invalid_room" or kind=="ownership_conflict" or kind=="error" or isError==true then self.last_mapper_error=tostring(message or "unknown mapper error") end
+  if self.adapter.reportMapperStatus then self.adapter:reportMapperStatus(kind,message) end
+end
+function Main:mapStatus()
+  local managed=0; for _ in pairs(self.managed_rooms or {}) do managed=managed+1 end
+  return {
+    enabled=self:mapperEnabled(),
+    current_room=self.automapper and self.automapper:currentRoom() or nil,
+    managed_count=managed,
+    active_destination=self.walker and self.walker.destination or "none",
+    last_error=self.last_mapper_error or "none",
+    last_status=self.last_mapper_status or "none",
+  }
+end
+function Main:reportMapStatus()
+  local status=self:mapStatus()
+  if self.adapter and type(self.adapter.reportMapStatus)=="function" then return self.adapter:reportMapStatus(status) end
+  local line="enabled="..tostring(status.enabled).." current room="..tostring(status.current_room or "none").." managed="..tostring(status.managed_count).." destination="..tostring(status.active_destination or "none").." last status="..tostring(status.last_status).." last error="..tostring(status.last_error)
+  if type(_G.cecho)=="function" then pcall(_G.cecho,"\n<gold>[DGHUD Map]<reset> "..line.."\n") end
+  return status
+end
 function Main:routeShape(fromID,toID,route)
   if type(route)~="table" then return nil,"invalid map route" end
   local commands=type(route.commands)=="table" and route.commands or route
@@ -80,6 +103,7 @@ function Main:routeShape(fromID,toID,route)
   return {rooms=rooms,commands=copiedCommands}
 end
 function Main:walkTo(destination,providedRoute)
+  if not self:mapperEnabled() then return nil,"mapper is disabled" end
   destination=tonumber(destination)
   if not destination or destination<=0 or destination%1~=0 then return nil,"destination room must be a positive integer" end
   local current=self.automapper and self.automapper:currentRoom()
@@ -126,30 +150,40 @@ function Main:start()
   function walkerAdapter:schedule(delay,callback) return self.owner.adapter:schedule(delay,callback) end
   function walkerAdapter:cancelTimer(id) return self.owner.adapter:cancelTimer(id) end
   function walkerAdapter:clearGenerated() self.owner.generated_movement=nil end
-  self.walker=MapWalker.new(walkerAdapter,function(kind,message) self:mapperStatus(kind,message) end,12)
+  self.walker=MapWalker.new(walkerAdapter,function(kind,message,isError) self:mapperStatus(kind,message,isError) end,(self.settings.mapper and self.settings.mapper.walk_timeout) or 12)
+  local initialVitals=self.adapter:getGMCP(); initialVitals=initialVitals and initialVitals.Char and initialVitals.Char.Vitals
+  self.walker:onRoundtime(initialVitals and initialVitals.roundtime or 0)
   self:installMapClickHook()
   local startupOk,startupErr=pcall(function()
   self.view=self.adapter:createView(self.settings)
   self:applyResponsiveLayout()
   self.collector=Collector.new(self.adapter,Parser,function() self:refresh() end,function(value) self:onRoundtime(value) end); local collectorOk,collectorErr=self.collector:start(); if not collectorOk then error(collectorErr,0) end
   if self.adapter.isCharacterActive and self.adapter:isCharacterActive() then self.collector:refresh() end
-  for _,name in ipairs(Events.gmcp) do self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(name,function() self:refresh() end) end
+  for _,name in ipairs(Events.gmcp) do local eventName=name; self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(eventName,function()
+    if eventName=="gmcp.Char.Vitals" and self.walker then local data=self.adapter:getGMCP(); local vitals=data and data.Char and data.Char.Vitals; self.walker:onRoundtime(vitals and vitals.roundtime or 0) end
+    self:refresh()
+  end) end
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.room,function()
-    local data=self.adapter:getGMCP(); local info=data and data.Room and data.Room.Info; local ok,err=self.automapper:onRoom(info)
-    if self.walker and self.walker:active() then if not ok then self.walker:stop(err or "room mapping failed") else self.walker:onRoom(info and info.num) end end; self:refresh()
+    local data=self.adapter:getGMCP(); local info=data and data.Room and data.Room.Info; local ok,err
+    if self:mapperEnabled() then ok,err=self.automapper:onRoom(info); if ok and info and tonumber(info.num) then self.managed_rooms[tonumber(info.num)]=true end else ok=true end
+    if self.walker and self.walker:active() then
+      local vitals=data and data.Char and data.Char.Vitals; self.walker:onRoundtime(vitals and vitals.roundtime or 0)
+      if not ok then self.walker:stop(err or "room mapping failed",true) else self.walker:onRoom(info and info.num) end
+    end; self:refresh()
   end)
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.wrong,function(_,direction) self.automapper:onWrongDirection(direction); self.walker:onWrongDirection(); self:refresh() end)
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.outgoing,function(_,command)
     local canonical=MapperModel.direction(command); local generated=canonical~=nil and canonical==self.generated_movement
     if generated then self.generated_movement=nil end
-    self.walker:onManualMovement(command,generated); self.automapper:onOutgoing(command)
+    self.walker:onManualMovement(command,generated); if self:mapperEnabled() then self.automapper:onOutgoing(command) end
   end)
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.disconnect,function() self.automapper:onDisconnect(); self.walker:stop("disconnected") end)
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent("sysWindowResizeEvent",function() self:applyResponsiveLayout() end)
   local function aliasArgument(value) return value or (type(_G.matches)=="table" and _G.matches[2]) end
   local commands={function() if self.updater then self.updater:check() end end,function() if self.updater then self.updater:update() end end,function() self:reload() end,function() if self.adapter.openSettings then self.adapter:openSettings() end end,function() if self.adapter.requestPurge then self.adapter:requestPurge() end end,function() return self:reportChatStatus() end,function(value) return self:walkTo(aliasArgument(value)) end,function() return self.walker:stop("requested") end,function() local room=self.automapper:currentRoom(); if not room then return nil,"current room is unavailable" end; return self.map:center(room) end}
   for i,pattern in ipairs(Events.aliases) do self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias(pattern,commands[i]) end
-  self.started=true; local data=self.adapter:getGMCP(); if data and data.Room and data.Room.Info then self.automapper:onRoom(data.Room.Info) end; self:refresh()
+  self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias("^dghud mapstatus$",function() return self:reportMapStatus() end)
+  self.started=true; local data=self.adapter:getGMCP(); if self:mapperEnabled() and data and data.Room and data.Room.Info then local mapped=self.automapper:onRoom(data.Room.Info); if mapped and tonumber(data.Room.Info.num) then self.managed_rooms[tonumber(data.Room.Info.num)]=true end end; self:refresh()
   local chatStarted,chatErr=self:startChat(); if not chatStarted then error(chatErr,0) end
   end)
   if not startupOk then pcall(function() self:shutdown() end); return nil,startupErr end

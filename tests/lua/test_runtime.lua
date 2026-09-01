@@ -167,6 +167,17 @@ test("roundtime counts down once per second and becomes ready",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:onRoundtime(2); eq(hud.last_state.vitals.roundtime,2)
   f:fireTimer(); eq(hud.last_state.vitals.roundtime,1); f:fireTimer(); eq(hud.last_state.vitals.roundtime,0); eq(f:count(f.timers),0)
 end)
+test("GMCP roundtime pauses controlled walking until a ready vitals update",function()
+  local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1,roundtime=0}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}
+  f.route={rooms={175,176,180},commands={"north","east"}}
+  local hud=Main.new(f,{layout={},mapper={walk_timeout=12}}); assert(hud:start())
+  assert(aliasCallback(f,"^walkto\\s+(\\d+)$")("180")); eq(#f.sentCommands,1)
+  f.gmcp.Char.Vitals.roundtime=4; f.gmcp.Room.Info={num=176,name="B",area=1,exits={"east"}}; f.callbacks["gmcp.Room.Info"]()
+  eq(#f.sentCommands,1); eq(hud.walker.waiting_roundtime,true)
+  f.gmcp.Char.Vitals.roundtime=2; f.callbacks["gmcp.Char.Vitals"](); eq(#f.sentCommands,1)
+  f.gmcp.Char.Vitals.roundtime=0; f.callbacks["gmcp.Char.Vitals"](); eq(#f.sentCommands,2); eq(f.sentCommands[2],"e")
+  hud:shutdown()
+end)
 test("repeated resize changes typography without growing runtime",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); local runtime=f:count(f.events)+f:count(f.triggers)+f:count(f.aliases)
   for _,size in ipairs({{2056,1177},{1200,800},{760,700},{3840,2160},{1200,800}}) do
@@ -265,6 +276,16 @@ test("walk aliases validate current room route safely and share one walker",func
   f.callbacks["gmcp.Room.Info"](); eq(#f.sentCommands,1)
   walkstop(); eq(hud.walker:active(),false)
   mapcenter(); eq(f.map.centered,175)
+end)
+
+test("routine walking stops are statuses and do not overwrite mapper errors",function()
+  local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}; f.route={rooms={175,176},commands={"north"}}
+  local hud=Main.new(f,{layout={}}); assert(hud:start()); hud.last_mapper_error="earlier failure"
+  assert(aliasCallback(f,"^walkto\\s+(\\d+)$")("176")); aliasCallback(f,"^walkstop$")()
+  local status=hud:mapStatus(); eq(status.last_error,"earlier failure"); eq(status.last_status,"Walk stopped: requested")
+  assert(aliasCallback(f,"^walkto\\s+(\\d+)$")("176")); f.callbacks["sysDataSendRequest"](nil,"east")
+  status=hud:mapStatus(); eq(status.last_error,"earlier failure"); eq(status.last_status,"Walk stopped: manual movement")
+  hud:shutdown(); eq(hud.last_mapper_error,"earlier failure")
 end)
 
 test("walkto rejects missing current rooms route errors and special exits",function()

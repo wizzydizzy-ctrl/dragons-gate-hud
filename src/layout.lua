@@ -84,7 +84,7 @@ local function chatMetrics(width,height,layout,settings)
   layout.top=layout.console_top
   return layout
 end
-local function metrics(width,height,layout,chatSettings)
+local function metrics(width,height,layout,chatSettings,mapperSettings)
   layout.console_width=width-layout.left-layout.right
   layout.body_font=clamp(width/100,16,22); layout.small_font=clamp((layout.body_font-2)*2,28,40); layout.heading_font=clamp(layout.body_font+5,21,27)
   layout.attribute_strip_font=clamp(layout.console_width/100,10,14)
@@ -110,7 +110,9 @@ local function metrics(width,height,layout,chatSettings)
   if layout.mode=="compact" then
     layout.mapper_visible=false; layout.lower_mapper_height=0; layout.lower_mapper_min_height=0; layout.lower_room_visible_height=0
   else
-    local minimum=layout.mode=="wide" and 140 or 90
+    mapperSettings=type(mapperSettings)=="table" and mapperSettings or {}
+    local responsiveMinimum=layout.mode=="wide" and 140 or 90
+    local minimum=math.max(responsiveMinimum,math.floor(tonumber(mapperSettings.minimum_height) or 90))
     layout.lower_mapper_min_height=minimum
     local available=math.max(0,height-layout.top)
     local desired=clamp(available*.22,minimum,220)
@@ -120,11 +122,11 @@ local function metrics(width,height,layout,chatSettings)
   end
   return layout
 end
-function Layout.compute(width,height,chatSettings)
+function Layout.compute(width,height,chatSettings,mapperSettings)
   width=tonumber(width) or 1200; height=tonumber(height) or 800
   local rail=math.floor(width*.17)
-  if width>=1400 then return metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=0,show_character_rail=true,show_room_compass=height>=700,vitals_side="left"},chatSettings) end
-  if width>=1000 then return metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="left"},chatSettings) end
-  return metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=0,show_character_rail=false,show_room_compass=false,vitals_side="compact"},chatSettings)
+  if width>=1400 then return metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=0,show_character_rail=true,show_room_compass=height>=700,vitals_side="left"},chatSettings,mapperSettings) end
+  if width>=1000 then return metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="left"},chatSettings,mapperSettings) end
+  return metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=0,show_character_rail=false,show_room_compass=false,vitals_side="compact"},chatSettings,mapperSettings)
 end
 return Layout

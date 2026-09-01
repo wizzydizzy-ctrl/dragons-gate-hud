@@ -34,6 +34,27 @@ test("walker sends one command and waits for each exact GMCP room",function()
   eq(statuses[#statuses][1],"arrived"); eq(statuses[#statuses][2],"Arrived at 180")
 end)
 
+test("walker pauses between rooms during roundtime and resumes when ready",function()
+  local adapter=fakeAdapter(); local statuses={}
+  local walker=Walker.new(adapter,function(kind,message) statuses[#statuses+1]={kind,message} end)
+  assert(walker:start({rooms={176,177,180},commands={"ne","e"}},180))
+  walker:onRoundtime(4)
+  assert(walker:onRoom(177))
+  eq(#adapter.sent,1); eq(walker:active(),true); eq(walker.waiting_roundtime,true); eq(walker.timeout,nil)
+  eq(statuses[#statuses][1],"paused")
+  assert(walker:onRoundtime(2)); eq(#adapter.sent,1)
+  assert(walker:onRoundtime(0)); eq(#adapter.sent,2); eq(adapter.sent[2].command,"e")
+  eq(walker.waiting_roundtime,nil); eq(adapter.timers[walker.timeout].delay,12)
+end)
+
+test("walker clears a roundtime pause safely on stop",function()
+  local adapter=fakeAdapter(); local walker=Walker.new(adapter,function() end)
+  assert(walker:start({rooms={1,2,3},commands={"n","e"}},3))
+  walker:onRoundtime(8); assert(walker:onRoom(2)); eq(walker.waiting_roundtime,true)
+  assert(walker:stop("requested")); eq(walker:active(),false); eq(walker.waiting_roundtime,nil)
+  assert(walker:onRoundtime(0)); eq(#adapter.sent,1)
+end)
+
 test("walker ignores same-origin room refresh while awaiting destination",function()
   local adapter=fakeAdapter(); local walker=Walker.new(adapter,function() end)
   assert(walker:start({rooms={176,177},commands={"ne"}},177)); local timer=walker.timeout

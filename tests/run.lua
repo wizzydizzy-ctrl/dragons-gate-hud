@@ -31,6 +31,7 @@ dofile(root .. "/tests/lua/test_chat_history.lua")
 dofile(root .. "/tests/lua/test_chat_storage.lua")
 dofile(root .. "/tests/lua/test_chat_controller.lua")
 dofile(root .. "/tests/lua/test_chat_acceptance.lua")
+dofile(root .. "/tests/lua/test_mapper_acceptance.lua")
 dofile(root .. "/tests/lua/test_entry.lua")
 
 print(string.format("%d tests, %d failures", total, failed))

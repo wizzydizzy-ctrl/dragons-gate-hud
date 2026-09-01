@@ -26,6 +26,7 @@ local function runtime(world)
   function f:reportMapStatus(status) self.map_status=status; return status end
   function f:createMapAdapter()
     local map={world=self.world}
+    local directions={"n","ne","e","se","s","sw","w","nw","up","down","in","out"}
     local reverse={n="s",ne="sw",e="w",se="nw",s="n",sw="ne",w="e",nw="se",up="down",down="up",["in"]="out",out="in"}
     local function normalize(command) return tostring(command or ""):lower():match("^%s*(.-)%s*$") end
     local function ensureArea(partition)
@@ -70,7 +71,10 @@ local function runtime(world)
     end
     function map:validateRouteStep(from,to,command)
       local direction=MapperModel.direction(command)
-      if direction then return true,direction end
+      if direction then
+        if self:isOwned(from) and self:isOwned(to) and self.world.links[from..":"..direction]==to then return true,direction end
+        return nil,"standard exit is not persisted from "..from.." to "..to
+      end
       if self:isOwned(from) and self:isOwned(to) and self:specialExitMatches(from,to,command) then return true,command end
       return nil,"special exit is not confirmed from "..from.." to "..to
     end
@@ -85,9 +89,38 @@ local function runtime(world)
     function map:roomsAt(partition,x,y,z) local result={}; for id,room in pairs(self.world.rooms) do local p=room.coordinates; if room.owner=="DragonsGateHUD" and tostring(room.partition)==tostring(partition) and p and p.x==x and p.y==y and p.z==z then result[#result+1]=id end end; return result end
     function map:isOwned(id) return self.world.rooms[id] and self.world.rooms[id].owner=="DragonsGateHUD" end
     function map:route(from,to)
-      if self.world.route then return self.world.route end
-      for _,direction in ipairs({"n","ne","e","se","s","sw","w","nw","up","down","in","out"}) do
-        if self.world.links[from..":"..direction]==to then return {rooms={from,to},commands={direction}} end
+      from=tonumber(from); to=tonumber(to)
+      if not self:isOwned(from) or not self:isOwned(to) then return nil,"no route" end
+      local queue={{room=from,rooms={from},commands={}}}; local seen={[from]=true}; local cursor=1
+      while queue[cursor] do
+        local path=queue[cursor]; cursor=cursor+1
+        if path.room==to then
+          for index,command in ipairs(path.commands) do
+            local valid,validErr=self:validateRouteStep(path.rooms[index],path.rooms[index+1],command)
+            if not valid then return nil,validErr end
+          end
+          return {rooms=path.rooms,commands=path.commands}
+        end
+        local neighbors={}
+        for _,direction in ipairs(directions) do
+          local destination=self.world.links[path.room..":"..direction]
+          if destination then neighbors[#neighbors+1]={to=destination,command=direction} end
+        end
+        local special={}
+        for key in pairs(self.world.special or {}) do
+          local source,destination,command=key:match("^(%d+):(%d+):(.*)$")
+          if tonumber(source)==path.room then special[#special+1]={to=tonumber(destination),command=command} end
+        end
+        table.sort(special,function(a,b) return a.to==b.to and a.command<b.command or a.to<b.to end)
+        for _,edge in ipairs(special) do neighbors[#neighbors+1]=edge end
+        for _,edge in ipairs(neighbors) do
+          if self:isOwned(edge.to) and not seen[edge.to] then
+            seen[edge.to]=true
+            local rooms={}; for index,id in ipairs(path.rooms) do rooms[index]=id end; rooms[#rooms+1]=edge.to
+            local commands={}; for index,command in ipairs(path.commands) do commands[index]=command end; commands[#commands+1]=edge.command
+            queue[#queue+1]={room=edge.to,rooms=rooms,commands=commands}
+          end
+        end
       end
       return nil,"no route"
     end
@@ -136,19 +169,30 @@ test("special submaps persist canonical rooms zoom and mixed walking end to end"
   eq(world.special["1200:901:leave"],true)
   eq(world.special["900:100:leave door"],nil)
 
-  assert(hud:reload()); arrive(f,900,{"north"})
+  observeCommand(f,"go arch"); arrive(f,1200,{"out"})
+  observeCommand(f,"out"); arrive(f,100,{"in"})
+  eq(count(world.special),3); eq(world.links["1200:out"],100); eq(world.links["100:in"],1200)
+
+  assert(hud:reload()); observeCommand(f,"go door"); arrive(f,900,{"north"})
   eq(count(world.rooms),4); eq(count(world.special),3); eq(world.rooms[900].partition,"special:900")
   for _,id in ipairs({100,900,901,1200}) do eq(world.creations[id],1) end
   local savedArea=world.rooms[900].area; world.zoom[savedArea]=20
   eq(f.zoomCallback("larger"),17.5); eq(world.lastZoomArea,savedArea); eq(world.zoom[savedArea],17.5)
 
-  world.route={rooms={900,901,1200,901,100},commands={"north","go arch","leave","south"}}
+  local invalid,invalidErr=hud.map:validateRouteStep(901,100,"south")
+  eq(invalid,nil); eq(invalidErr,"standard exit is not persisted from 901 to 100")
+  local route,routeErr=hud.map:route(900,100); assert(route,routeErr)
+  eq(table.concat(route.rooms,","),"900,901,1200,100")
+  eq(table.concat(route.commands,","),"n,go arch,out")
+  for index,command in ipairs(route.commands) do
+    local valid,canonical=hud.map:validateRouteStep(route.rooms[index],route.rooms[index+1],command)
+    assert(valid,canonical); eq(canonical,command)
+  end
   local walk=assert(findAlias(f,"^walkto\\s+(\\d+)$")); local sentBefore=#world.sent
   assert(walk("100")); eq(#world.sent,sentBefore+1); eq(world.sent[#world.sent],"n")
   observeCommand(f,"n"); arrive(f,901,{"south"}); eq(#world.sent,sentBefore+2); eq(world.sent[#world.sent],"go arch")
-  observeCommand(f,"go arch"); arrive(f,1200,{}); eq(#world.sent,sentBefore+3); eq(world.sent[#world.sent],"leave")
-  observeCommand(f,"leave"); arrive(f,901,{"south"}); eq(#world.sent,sentBefore+4); eq(world.sent[#world.sent],"s")
-  observeCommand(f,"s"); arrive(f,100,{}); eq(hud.walker:active(),false); eq(#world.sent,sentBefore+4); eq(count(world.special),3)
+  observeCommand(f,"go arch"); arrive(f,1200,{"out"}); eq(#world.sent,sentBefore+3); eq(world.sent[#world.sent],"out")
+  observeCommand(f,"out"); arrive(f,100,{"in"}); eq(hud.walker:active(),false); eq(#world.sent,sentBefore+3); eq(count(world.special),3)
 end)
 
 test("mapping walking reload and shutdown preserve personal map and runtime",function()

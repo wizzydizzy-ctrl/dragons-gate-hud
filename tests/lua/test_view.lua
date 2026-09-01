@@ -131,6 +131,18 @@ test("native mapper is embedded immediately above the compass",function()
   eq(view.mapper.raised,true); eq(view.compass_area.raised,true)
 end)
 
+test("vitals render at the bottom of the right rail and stay out of navigation",function()
+  local layout=require("layout").compute(1920,1080); local view=chatView()
+  view.last_state={vitals={psi={visible=true},web={visible=false}},equipment={items={}}}
+  view:applyLayout(layout)
+  eq(view.vitals_right~=nil,true)
+  eq(view.hp.parent,view.vitals_right); eq(view.fatigue.parent,view.vitals_right); eq(view.carry.parent,view.vitals_right)
+  eq(view.vitals_right.x,"100%-"..layout.right)
+  eq(type(view.vitals_right.y),"string"); eq(view.vitals_right.y:find("100%-",1,true)==1,true)
+  eq(view.mapper_frame.height>=300,true)
+  eq(view.room.y,layout.lower_panel_padding)
+end)
+
 test("mapper owns visible minus center and plus controls without covering compass",function()
   local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
   eq(view.map_zoom_out.visible,true); eq(view.map_center.visible,true); eq(view.map_zoom_in.visible,true)
@@ -169,14 +181,34 @@ test("responsive mapper survives short layouts and hides cleanly in compact mode
   eq(view.map_zoom_out.visible,false); eq(view.map_center.visible,false); eq(view.map_zoom_in.visible,false)
 end)
 
-test("short layouts reduce optional detail before allowing vitals to overlap the mapper",function()
+test("short layouts keep right-side vitals separate from the mapper",function()
   local layout=require("layout").compute(1200,650); local view=chatView()
   view.last_state={vitals={psi={visible=true},web={visible=true}},equipment={items={}}}
   view:applyLayout(layout)
-  local last_gauge=view.web.visible and view.web or (view.psi.visible and view.psi or view.carry)
-  local gauges_bottom=last_gauge.y+last_gauge.height
-  eq(gauges_bottom<=view.mapper_frame.y,true)
+  eq(view.hp.parent,view.vitals_right); eq(view.vitals_right.x,"100%-"..layout.right)
   if view.room.visible then eq(view.room.y+view.room.height<=view.mapper_frame.y,true) end
+end)
+
+test("right-side vitals preserve inventory before optional combat details",function()
+  local layout=require("layout").compute(1200,600); local view=chatView()
+  view.last_state={vitals={psi={visible=false},web={visible=false}},equipment={items={}}}
+  view:applyLayout(layout)
+  eq(view.inventory.visible,true)
+  eq(view.inventory.height>=layout.heading_font+layout.inventory_row_height*3+layout.panel_padding*2+30,true)
+  eq(view.details.visible,false)
+  eq(view.inventory.y+view.inventory.height<=layout.window_height-view.vitals_right.height-12,true)
+end)
+
+test("wide short windows drop optional gauges before overlapping equipment",function()
+  for _,size in ipairs({{1920,420},{2560,420}}) do
+    local layout=require("layout").compute(size[1],size[2]); local view=chatView()
+    view.last_state={vitals={psi={visible=true},web={visible=true}},equipment={items={}}}
+    view:applyLayout(layout)
+    local vitals_top=layout.window_height-view.vitals_right.height
+    eq(view.equipment.y+view.equipment.height+12<=vitals_top,true)
+    eq(view.hp.visible,true); eq(view.fatigue.visible,true); eq(view.carry.visible,true)
+    eq(view.psi.visible and view.web.visible,false)
+  end
 end)
 
 test("mapper stack has exact non-overlapping bounds across resolutions and vital states",function()

@@ -241,7 +241,8 @@ function MapAdapter:ensureRoom(room,coordinates,partitionKey)
     {"setRoomUserData",room.id,"dghud.mapper_schema",self.schema},
     {"setRoomUserData",room.id,"dghud.environment",tostring(room.environment or "")},
     {"setRoomUserData",room.id,"dghud.flags",table.concat(room.flags or {},",")},
-    {"setRoomName",room.id,tostring(room.name or ("Room "..tostring(room.id)))},
+    {"setRoomUserData",room.id,"dghud.room_name",tostring(room.name or ("Room "..tostring(room.id)))},
+    {"setRoomName",room.id,""},
   }
   if not record.partition then operations[#operations+1]={"setRoomUserData",room.id,"dghud.partition",effectiveKey} end
   if record.game_area==nil then operations[#operations+1]={"setRoomUserData",room.id,"dghud.game_area",tostring(room.area_key)} end

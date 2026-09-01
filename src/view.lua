@@ -129,7 +129,8 @@ function View.new(settings)
   self.right=Geyser.Container:new({name="DGHUD.RightRail",x=0,y=0,width=300,height=500},self.root)
   self.right_bg=label("DGHUD.RightBackground",self.right,"background:"..t.panel..";border-right:1px solid "..t.border..";")
   self.right_title=label("DGHUD.RightTitle",self.right,"background:transparent;color:"..t.accent..";font-size:13px;font-weight:700;padding:10px 14px;")
-  self.hp=gauge("DGHUD.Health",self.right,t.hp,t); self.fatigue=gauge("DGHUD.Fatigue",self.right,t.fatigue,t); self.carry=gauge("DGHUD.Carry",self.right,"#c9a359",t); self.psi=gauge("DGHUD.Psi",self.right,"#6a72c9",t); self.web=gauge("DGHUD.Web",self.right,"#9b78b5",t)
+  self.vitals_right=Geyser.Container:new({name="DGHUD.RightVitals",x=0,y=0,width=300,height=180},self.root)
+  self.hp=gauge("DGHUD.Health",self.vitals_right,t.hp,t); self.fatigue=gauge("DGHUD.Fatigue",self.vitals_right,t.fatigue,t); self.carry=gauge("DGHUD.Carry",self.vitals_right,"#c9a359",t); self.psi=gauge("DGHUD.Psi",self.vitals_right,"#6a72c9",t); self.web=gauge("DGHUD.Web",self.vitals_right,"#9b78b5",t)
   self.room=label("DGHUD.Room",self.right,"background:#101a16;border:1px solid #385044;border-radius:6px;color:"..t.text..";padding:10px 12px;")
   self.mapper_frame=label("DGHUD.MapperFrame",self.right,"background:#101713;border:1px solid "..t.border..";border-radius:7px;")
   self.mapper=self.geyser.Mapper:new({name="DGHUD.Mapper",x=4,y=4,width="100%-8",height="100%-8"},self.mapper_frame)
@@ -255,33 +256,45 @@ function View:applyLayout(layout)
     local panel_height=math.min(available,lower.panel_height)
     layout.lower_geometry=lower
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
+    local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=2
+    local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18
+    local show_psi,show_web=psi_visible,web_visible
+    local function vitalsHeight()
+      local count=3+(show_psi and 1 or 0)+(show_web and 1 or 0)
+      return lp*2+count*layout.lower_gauge_height+math.max(0,count-1)*layout.lower_row_gap
+    end
+    local vitals_h=vitalsHeight()
+    local equipment_bottom=top+p+equipment_h
+    if equipment_bottom+12>(layout.window_height or 800)-bottom-vitals_h then show_web=false; vitals_h=vitalsHeight() end
+    if equipment_bottom+12>(layout.window_height or 800)-bottom-vitals_h then show_psi=false; vitals_h=vitalsHeight() end
+    place(self.vitals_right,"100%-"..layout.right,"100%-"..(bottom+vitals_h),layout.right,vitals_h)
+    local vitals_y=lp
+    for _,g in ipairs({self.hp,self.fatigue,self.carry}) do place(g,lp,vitals_y,"100%-"..(lp*2),layout.lower_gauge_height); vitals_y=vitals_y+layout.lower_gauge_height+layout.lower_row_gap end
+    if show_psi then place(self.psi,lp,vitals_y,"100%-"..(lp*2),layout.lower_gauge_height); vitals_y=vitals_y+layout.lower_gauge_height+layout.lower_row_gap else self.psi:hide() end
+    if show_web then place(self.web,lp,vitals_y,"100%-"..(lp*2),layout.lower_gauge_height) else self.web:hide() end
     local details_placement=Layout.detailsPlacement()
     layout.details_columns=2
     self.details:hide()
-    local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=2
-    local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18
     place(self.equipment,card_x,top+p,card_w,equipment_h)
-    local inventory_y=top+p+equipment_h+12; local rail_bottom=(layout.window_height or 800)-bottom-p
+    local inventory_y=top+p+equipment_h+12; local rail_bottom=(layout.window_height or 800)-bottom-vitals_h-12
     local minimum_inventory_h=layout.heading_font+layout.inventory_row_height*3+p*2+30
     local right_details_h=layout.details_line_height*Layout.detailsCardRows(layout.details_columns)+p*2+18
-    if rail_bottom-inventory_y>=right_details_h+12 then place(self.details,card_x,rail_bottom-right_details_h,card_w,right_details_h); rail_bottom=rail_bottom-right_details_h-12 else self.details:hide() end
+    if rail_bottom-inventory_y>=right_details_h+12+minimum_inventory_h then place(self.details,card_x,rail_bottom-right_details_h,card_w,right_details_h); rail_bottom=rail_bottom-right_details_h-12 else self.details:hide() end
     local inventory_h=rail_bottom-inventory_y
     if inventory_h>=minimum_inventory_h then place(self.inventory,card_x,inventory_y,card_w,inventory_h); self.inventory_capacity=math.max(1,math.floor((inventory_h-layout.heading_font-p*2-30)/layout.inventory_row_height)-2) else self.inventory:hide(); self.inventory_capacity=0 end
     View.raiseCards({self.equipment,self.inventory,self.details})
   else
-    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
+    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.vitals_right:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
   end
   if layout.mode~="compact" then
     place(self.right_bg,0,0,"100%","100%"); self.right_title:hide()
     local panel_height=tonumber(self.right.height) or math.max(0,(layout.window_height or 800)-top-bottom)
     local lower=layout.lower_geometry or Layout.lowerPanelGeometry(layout,false,false)
-    local inset=lp; local y=layout.lower_title_height; for _,g in ipairs({self.hp,self.fatigue,self.carry}) do place(g,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap end
-    if lower.show_psi then place(self.psi,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap else self.psi:hide() end
-    if lower.show_web then place(self.web,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap else self.web:hide() end
+    local inset=lp
     local compass_h,utility_h=lower.compass_height,lower.utility_height
     local utility_y,compass_y=lower.utility_y,lower.compass_y
     local mapper_h,mapper_y=lower.mapper_height,lower.mapper_y
-    local content_top=y
+    local content_top=lower.content_top
     local room_h=lower.room_height
     layout.lower_room_visible_height=room_h
     if room_h>0 then place(self.room,inset,content_top,"100%-"..(inset*2),room_h) else self.room:hide() end

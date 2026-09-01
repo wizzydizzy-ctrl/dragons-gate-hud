@@ -1,38 +1,30 @@
 local Layout={}
 function Layout.lowerPanelGeometry(layout,psiVisible,webVisible)
   local available=math.max(0,(layout.window_height or 0)-(layout.header_height or 0)-(layout.bottom or 0))
-  local requested={}
-  if psiVisible then requested[#requested+1]="psi" end
-  if webVisible then requested[#requested+1]="web" end
   local inset=layout.lower_panel_padding
   local compass=layout.lower_compass_cell*3
   local utility=layout.lower_utility_height*2+5
   local fixed_bottom=inset+utility+6+compass
-  local function contentTop(optional)
-    return (3+optional)*(layout.lower_gauge_height+layout.lower_row_gap)
-  end
+  local function contentTop() return inset end
   local room=layout.lower_room_height
   local mapper=layout.mapper_visible and layout.lower_mapper_height or 0
   local mapper_min=(layout.lower_mapper_min_height or 0)+(layout.lower_mapper_toolbar_height or 0)
   local room_min=layout.lower_room_min_height or 1
-  local optional=#requested
   local function required(r,m)
-    return contentTop(optional)+r+layout.lower_row_gap+fixed_bottom+(m>0 and (m+layout.lower_mapper_gap) or 0)
+    return contentTop()+r+layout.lower_row_gap+fixed_bottom+(m>0 and (m+layout.lower_mapper_gap) or 0)
   end
-  while optional>0 and required(room,mapper)>available do optional=optional-1 end
   local pressure=math.max(0,required(room,mapper)-available)
   local cut=math.min(pressure,room-room_min); room=room-cut; pressure=pressure-cut
   cut=math.min(pressure,math.max(0,mapper-mapper_min)); mapper=mapper-cut; pressure=pressure-cut
   if pressure>0 and mapper>0 then mapper=0; pressure=math.max(0,required(room,mapper)-available) end
   cut=math.min(pressure,room-room_min); room=room-cut; pressure=pressure-cut
   local panel=math.min(available,required(room,mapper))
-  local gauge_y=(3+optional)*(layout.lower_gauge_height+layout.lower_row_gap)
-  local content_top=gauge_y
+  local content_top=contentTop()
   local utility_y=panel-inset-utility
   local compass_y=utility_y-6-compass
   local mapper_y=mapper>0 and compass_y-layout.lower_mapper_gap-mapper or compass_y
-  return {panel_height=panel,optional_count=optional,show_psi=psiVisible and optional>=1,
-    show_web=webVisible and optional>=(psiVisible and 2 or 1),room_height=room,
+  return {panel_height=panel,optional_count=(psiVisible and 1 or 0)+(webVisible and 1 or 0),show_psi=psiVisible==true,
+    show_web=webVisible==true,room_height=room,
     mapper_height=mapper,content_top=content_top,mapper_y=mapper_y,compass_y=compass_y,
     utility_y=utility_y,compass_height=compass,utility_height=utility}
 end
@@ -108,7 +100,7 @@ local function metrics(width,height,layout,chatSettings,mapperSettings)
     layout.lower_mapper_min_height=minimum
     layout.lower_mapper_toolbar_height=toolbar
     local available=math.max(0,height-layout.top)
-    local desired=clamp(available*.30,minimum,320)
+    local desired=clamp(available*.40,minimum,380)
     layout.mapper_visible=available>=minimum+toolbar+180
     layout.lower_mapper_height=layout.mapper_visible and desired+toolbar or 0
     layout.lower_room_visible_height=layout.lower_room_height
@@ -118,8 +110,8 @@ end
 function Layout.compute(width,height,chatSettings,mapperSettings)
   width=tonumber(width) or 1200; height=tonumber(height) or 800
   local rail=math.floor(width*.17)
-  if width>=1400 then return metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=0,show_character_rail=true,show_room_compass=height>=700,vitals_side="left"},chatSettings,mapperSettings) end
-  if width>=1000 then return metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="left"},chatSettings,mapperSettings) end
+  if width>=1400 then return metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=0,show_character_rail=true,show_room_compass=height>=700,vitals_side="right"},chatSettings,mapperSettings) end
+  if width>=1000 then return metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="right"},chatSettings,mapperSettings) end
   return metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=0,show_character_rail=false,show_room_compass=false,vitals_side="compact"},chatSettings,mapperSettings)
 end
 return Layout

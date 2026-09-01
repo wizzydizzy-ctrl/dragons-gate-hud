@@ -64,9 +64,19 @@ test("creates a fully tagged room and finalizes readiness last",function()
   local api=fakeMapApi(); local calls={}; local native=api.setRoomUserData
   api.setRoomUserData=function(id,k,v) calls[#calls+1]=k; return native(id,k,v) end
   assert(Adapter.new(api):ensureRoom(descriptor(176,"1","Training square."),{x=0,y=1,z=2}))
-  local r=api.rooms[176]; eq(r.name,"Training square."); eq(r.user["dghud.owner"],"DragonsGateHUD"); eq(calls[#calls],"dghud.state"); eq(r.user["dghud.state"],"ready")
+  local r=api.rooms[176]; eq(r.name,""); eq(r.user["dghud.owner"],"DragonsGateHUD"); eq(calls[#calls],"dghud.state"); eq(r.user["dghud.state"],"ready")
   eq(r.user["dghud.mapper_schema"],"1"); eq(r.user["dghud.environment"],"Plain"); eq(r.user["dghud.flags"],"indoor")
   eq(r.x,0); eq(r.y,1); eq(r.z,2); eq(api.areaUser[r.area]["dghud.owner"],"DragonsGateHUD")
+end)
+
+test("HUD rooms keep native mapper labels blank while preserving descriptive metadata",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(176,"1","Training square."),{x=0,y=0,z=0}))
+  eq(api.rooms[176].name,"")
+  eq(api.rooms[176].user["dghud.room_name"],"Training square.")
+  assert(map:ensureRoom(descriptor(176,"1","Training Center."),{x=9,y=9,z=9}))
+  eq(api.rooms[176].name,"")
+  eq(api.rooms[176].user["dghud.room_name"],"Training Center.")
 end)
 
 test("reuses a persisted owned area after adapter reload",function()
@@ -102,7 +112,7 @@ test("existing canonical rooms retain their area coordinates and partition",func
   eq(api.rooms[900].area,area); eq(api.rooms[900].x,0); eq(api.rooms[900].y,0); eq(api.rooms[900].z,0)
   eq(api.rooms[900].user["dghud.partition"],"special:900")
   eq(api.rooms[900].user["dghud.game_area"],"1")
-  eq(api.rooms[900].name,"Revisited")
+  eq(api.rooms[900].name,""); eq(api.rooms[900].user["dghud.room_name"],"Revisited")
 end)
 
 test("migrates an existing owned room to its current effective partition without moving it",function()
@@ -147,7 +157,7 @@ test("refuses an unowned canonical room collision with zero mutation",function()
 end)
 
 test("updates owned rooms and retains ownership on failure",function()
-  local api=fakeMapApi(); local map=Adapter.new(api); assert(map:ensureRoom(descriptor(1),{})); assert(map:ensureRoom(descriptor(1,"A","Changed"),{x=2,y=3,z=0})); eq(api.rooms[1].name,"Changed")
+  local api=fakeMapApi(); local map=Adapter.new(api); assert(map:ensureRoom(descriptor(1),{})); assert(map:ensureRoom(descriptor(1,"A","Changed"),{x=2,y=3,z=0})); eq(api.rooms[1].name,""); eq(api.rooms[1].user["dghud.room_name"],"Changed")
   api.fail.setRoomName=true; local ok,e=map:ensureRoom(descriptor(1,"A","Nope"),{}); eq(ok,nil); eq(e,"setRoomName rejected"); eq(api.rooms[1].user["dghud.owner"],"DragonsGateHUD")
 end)
 
@@ -269,7 +279,7 @@ test("mature owned legacy room without state is never relocated",function()
   local existing={name="Legacy",area=41,x=3,y=4,z=1,user={["dghud.owner"]="DragonsGateHUD",["dghud.mapper_schema"]="1"},exits={},stubs={}}
   local api=fakeMapApi({[24]=existing}); api.areas["Dragons Gate - Castle"]=41; api.areaUser[41]={["dghud.owner"]="DragonsGateHUD"}; api.nextArea=42
   assert(Adapter.new(api):ensureRoom(descriptor(24,"2","Refreshed"),{x=8,y=8,z=4},"special:24"))
-  eq(existing.area,41); eq(existing.x,3); eq(existing.y,4); eq(existing.z,1); eq(existing.name,"Refreshed")
+  eq(existing.area,41); eq(existing.x,3); eq(existing.y,4); eq(existing.z,1); eq(existing.name,""); eq(existing.user["dghud.room_name"],"Refreshed")
   eq(existing.user["dghud.partition"],"Castle"); eq(existing.user["dghud.game_area"],"2"); eq(existing.user["dghud.state"],"ready")
   eq(api.nextArea,42); eq(#api.deletedRooms,0)
 end)

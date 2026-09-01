@@ -104,6 +104,9 @@ function MapAdapter:roomRecord(roomID)
   local owner,ownerErr=read(self.api,"getRoomUserData",roomID,"dghud.owner")
   if owner==nil and ownerErr~=nil then return nil,ownerErr end
   record.owned=owner==self.owner
+  local state,stateErr=read(self.api,"getRoomUserData",roomID,"dghud.state")
+  if state==nil and stateErr~=nil then return nil,stateErr end
+  if state~=nil and tostring(state)~="" then record.state=tostring(state) end
   local partition,partitionErr=read(self.api,"getRoomUserData",roomID,"dghud.partition")
   if partition==nil and partitionErr~=nil then return nil,partitionErr end
   if partition~=nil and tostring(partition)~="" then record.partition=tostring(partition) end
@@ -129,7 +132,6 @@ local function partitionForArea(self,area)
     end
   end
   partition=partition or ("area:"..tostring(area))
-  self.areas[partition]=area
   return partition
 end
 
@@ -153,7 +155,8 @@ function MapAdapter:ensureRoom(room,coordinates,partitionKey)
   if exists and not record.owned and self.createdRooms[room.id]~=true then
     return nil,"room "..tostring(room.id).." is not owned by DragonsGateHUD"
   end
-  local continuingCreation=exists and self.createdRooms[room.id]==true
+  local ownerOnlyInterrupted=record.owned and record.state==nil and record.area==nil and record.partition==nil and record.coordinates==nil
+  local continuingCreation=exists and (self.createdRooms[room.id]==true or (record.owned and record.state=="provisional") or ownerOnlyInterrupted)
   local needsPlacement=not exists or continuingCreation
   local effectiveKey
   if needsPlacement then

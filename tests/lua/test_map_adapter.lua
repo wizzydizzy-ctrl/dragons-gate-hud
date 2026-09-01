@@ -90,6 +90,23 @@ test("migrates an existing owned room to its current effective partition without
   eq(assert(map:effectivePartition(900)),"Castle"); eq(api.nextArea,42)
 end)
 
+test("migration from an unowned area never authorizes new placement",function()
+  local existing={name="Legacy",area=41,x=3,y=4,z=1,user={["dghud.owner"]="DragonsGateHUD",["dghud.state"]="ready"},exits={},stubs={}}
+  local api=fakeMapApi({[900]=existing}); api.areas["Dragons Gate - Castle"]=41; api.areaUser[41]={}; api.nextArea=42
+  local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(900,"1","Migrated"),{x=8,y=8,z=4},"special:900"))
+  eq(existing.area,41); eq(existing.x,3); eq(existing.y,4); eq(existing.z,1); eq(existing.user["dghud.partition"],"Castle")
+
+  local mutations=0
+  for _,name in ipairs({"addRoom","deleteRoom","addAreaName","deleteArea","setAreaUserData","setRoomArea","setRoomName","setRoomCoordinates","setRoomUserData"}) do
+    local native=api[name]
+    api[name]=function(...) mutations=mutations+1; return native(...) end
+  end
+  local ok,e=map:ensureRoom(descriptor(901,"Castle"),{x=5,y=5,z=0},"Castle")
+  eq(ok,nil); eq(e,"area Dragons Gate - Castle is not owned by DragonsGateHUD")
+  eq(mutations,0); eq(api.rooms[901],nil); eq(api.nextArea,42)
+end)
+
 test("refuses an unowned canonical room collision with zero mutation",function()
   local original={name="Personal",area=9,user={},x=8,y=7,z=6,exits={},stubs={}}; local api=fakeMapApi({[176]=original})
   local mutations=0
@@ -122,6 +139,43 @@ test("post-create room mutation failures remain safely retryable",function()
     local ok,e=map:ensureRoom(descriptor(21),{}); eq(ok,nil); eq(e,"room metadata rejected"); api.setRoomUserData=native
     assert(map:ensureRoom(descriptor(21),{})); eq(api.rooms[21].user["dghud.owner"],"DragonsGateHUD"); eq(api.rooms[21].user["dghud.state"],"ready")
   end
+end)
+
+test("fresh adapter recovers an owned room after its provisional state write failed",function()
+  local api=fakeMapApi(); local native=api.setRoomUserData; local rejectProvisional=true
+  api.setRoomUserData=function(id,k,v)
+    if rejectProvisional and k=="dghud.state" and v=="provisional" then return nil,"provisional state rejected" end
+    return native(id,k,v)
+  end
+  local ok,e=Adapter.new(api):ensureRoom(descriptor(22,"Castle"),{x=1,y=2,z=3},"special:22")
+  eq(ok,nil); eq(e,"provisional state rejected"); assert(api.rooms[22]); eq(api.rooms[22].user["dghud.owner"],"DragonsGateHUD")
+  eq(api.rooms[22].user["dghud.state"],nil); eq(api.rooms[22].area,nil); eq(#api.deletedRooms,0)
+
+  rejectProvisional=false
+  assert(Adapter.new(api):ensureRoom(descriptor(22,"Castle"),{x=1,y=2,z=3},"special:22"))
+  eq(api.rooms[22].area,api.areas["Dragons Gate - Submap 22"])
+  eq(api.rooms[22].user["dghud.partition"],"special:22"); eq(api.rooms[22].user["dghud.game_area"],"Castle")
+  eq(api.rooms[22].x,1); eq(api.rooms[22].y,2); eq(api.rooms[22].z,3); eq(api.rooms[22].user["dghud.state"],"ready")
+  eq(#api.deletedRooms,0)
+end)
+
+test("fresh adapter finishes provisional coordinates before marking the room ready",function()
+  local api=fakeMapApi(); api.fail.setRoomCoordinates=true
+  local ok,e=Adapter.new(api):ensureRoom(descriptor(23,"Castle"),{x=1,y=2,z=3},"special:23")
+  eq(ok,nil); eq(e,"setRoomCoordinates rejected"); eq(api.rooms[23].user["dghud.state"],"provisional")
+  assert(api.rooms[23].area); eq(api.rooms[23].x,nil); eq(#api.deletedRooms,0)
+  local record=assert(Adapter.new(api):roomRecord(23)); eq(record.state,"provisional")
+
+  ok,e=Adapter.new(api):ensureRoom(descriptor(23,"Castle"),{x=7,y=8,z=9},"special:23")
+  eq(ok,nil); eq(e,"setRoomCoordinates rejected"); eq(api.rooms[23].user["dghud.state"],"provisional"); eq(#api.deletedRooms,0)
+
+  api.fail.setRoomCoordinates=nil
+  local mutations={}; local nativeCoordinates=api.setRoomCoordinates; local nativeUserData=api.setRoomUserData
+  api.setRoomCoordinates=function(...) mutations[#mutations+1]="coordinates"; return nativeCoordinates(...) end
+  api.setRoomUserData=function(id,k,v) mutations[#mutations+1]=k.."="..v; return nativeUserData(id,k,v) end
+  assert(Adapter.new(api):ensureRoom(descriptor(23,"Castle"),{x=7,y=8,z=9},"special:23"))
+  eq(api.rooms[23].x,7); eq(api.rooms[23].y,8); eq(api.rooms[23].z,9)
+  eq(api.rooms[23].user["dghud.state"],"ready"); eq(mutations[#mutations],"dghud.state=ready"); eq(#api.deletedRooms,0)
 end)
 
 test("post-create area metadata failures remain safely retryable",function()

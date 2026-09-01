@@ -10,6 +10,17 @@ function Adapter.new() return setmetatable({},Adapter) end
 function Adapter:getBorders() return getBorderLeft(),getBorderTop(),getBorderRight(),getBorderBottom() end
 function Adapter:getWindowSize() return getMainWindowSize() end
 function Adapter:setBorders(l,t,r,b) setBorderLeft(l);setBorderTop(t);setBorderRight(r);setBorderBottom(b) end
+function Adapter:suppressDefaultMapInfo(api)
+  api=api or _G
+  if type(api.disableMapInfo)~="function" then return true end
+  local ok,err=pcall(function()
+    api.disableMapInfo("Short")
+    api.disableMapInfo("Full")
+    if type(api.updateMap)=="function" then api.updateMap() end
+  end)
+  if not ok then return nil,tostring(err) end
+  return true
+end
 function Adapter:centerMap(roomID)
   local ok,err=pcall(function() centerview(roomID); updateMap() end)
   if not ok then return nil,tostring(err) end

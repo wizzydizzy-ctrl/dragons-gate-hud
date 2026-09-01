@@ -105,12 +105,24 @@ local function fake()
     end
     self.createdMaps=(self.createdMaps or 0)+1; self.map=map; return map
   end
+  function f:suppressDefaultMapInfo() self.mapInfoSuppressions=(self.mapInfoSuppressions or 0)+1; return true end
   function f:reportMapperStatus(kind,message) self.mapperStatuses=self.mapperStatuses or {}; self.mapperStatuses[#self.mapperStatuses+1]={kind,message} end
   return f
 end
 
 test("startup performs the owned-room label migration once",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); eq(f.mapLabelCleanups,1)
+end)
+test("startup suppresses only Mudlet's duplicate default map information",function()
+  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); eq(f.mapInfoSuppressions,1)
+end)
+test("Mudlet adapter suppresses the Short and Full default map information",function()
+  local disabled={}; local updates=0
+  local adapter=MudletAdapter.new(); eq(adapter:suppressDefaultMapInfo({
+    disableMapInfo=function(name) disabled[#disabled+1]=name end,
+    updateMap=function() updates=updates+1 end,
+  }),true)
+  eq(disabled[1],"Short"); eq(disabled[2],"Full"); eq(#disabled,2); eq(updates,1)
 end)
 
 local function gmcpRoom(id)

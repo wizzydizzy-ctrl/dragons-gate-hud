@@ -188,6 +188,11 @@ function Main:start()
   if not mapOk then self:shutdown(); return nil,map end
   if not map then self:shutdown(); return nil,mapErr or "map adapter construction failed" end
   self.map=map
+  if self.adapter.suppressDefaultMapInfo then
+    local infoOk,infoResult,infoErr=pcall(self.adapter.suppressDefaultMapInfo,self.adapter)
+    if not infoOk then self:mapperStatus("warning","Map information cleanup failed: "..tostring(infoResult),true)
+    elseif infoResult==nil then self:mapperStatus("warning","Map information cleanup failed: "..tostring(infoErr),true) end
+  end
   if type(self.map.clearOwnedRoomNames)=="function" then
     local cleanupOk,cleanupResult,cleanupErr=pcall(self.map.clearOwnedRoomNames,self.map)
     if not cleanupOk then self:mapperStatus("warning","Map label cleanup failed: "..tostring(cleanupResult),true)

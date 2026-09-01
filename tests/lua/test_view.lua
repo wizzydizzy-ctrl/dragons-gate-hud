@@ -104,7 +104,7 @@ local function fakeGeyser()
     function item:setWrap(value) self.wrap=value; return true end
     function item:setFontSize(value) self.fontSize=value end
     function item:setFont(value) self.font=value end
-    function item:getSizeHint() return math.ceil((self.fontSize or 8)*.65),math.ceil((self.fontSize or 8)*1.6) end
+    function item:getSizeHint() local _,rows=tostring(self.message or ""):gsub("<br>",""); return math.ceil((self.fontSize or 8)*.65),math.ceil((self.fontSize or 8)*1.6)*(rows+1) end
     function item:enableScrollBar() self.scrollBar=true end
     function item:disableHorizontalScrollBar() self.horizontalScrollBar=false end
     function item:getScroll() return self.currentScroll end
@@ -146,6 +146,7 @@ test("inventory and skills own five-row scrollable consoles",function()
   eq(view.inventory_title.fontSize,layout.list_font); eq(view.skills_title.fontSize,layout.list_font)
   eq(view.skills_title.font,view.skills_content.font)
   eq(view.inventory_output.height,view.list_row_height*5); eq(view.skills_output.height,view.list_row_height*5)
+  eq(view.inventory_output.height,layout.list_viewport_height); eq(view.skills_output.height,layout.list_viewport_height)
 end)
 test("scrollable list content uses resolved numeric widths",function()
   local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)

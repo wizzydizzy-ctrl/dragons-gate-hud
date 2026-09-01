@@ -267,9 +267,11 @@ function View:applyLayout(layout)
     if widget.setFont then widget:setFont(self.list_font_family) end
     if widget.setFontSize then widget:setFontSize(layout.list_font) end
   end
-  self.list_measure:echo("Ag")
+  self.list_measure:echo("Ag<br>Ag<br>Ag<br>Ag<br>Ag")
   local measured; if self.list_measure.getSizeHint then local ok,_,height=pcall(self.list_measure.getSizeHint,self.list_measure); if ok then measured=tonumber(height) end end
-  layout.list_row_height=math.max(math.ceil(layout.list_font*1.3),math.ceil(measured or 0))
+  local fallback=math.ceil(layout.list_font*1.3)*5
+  layout.list_viewport_height=measured and measured>0 and math.ceil(measured) or fallback
+  layout.list_row_height=layout.list_viewport_height/5
   self.list_row_height=layout.list_row_height
   for _,content in ipairs({self.inventory_content,self.skills_content}) do content:setStyleSheet("background:#101713;color:"..t.text..";font-family:'"..self.list_font_family.."';font-size:"..layout.list_font.."px;") end
   self.right_title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.lower_body_font.."px;font-weight:700;padding:"..lp.."px;")
@@ -321,7 +323,7 @@ function View:applyLayout(layout)
     self.details:hide()
     place(self.equipment,card_x,top+p,card_w,equipment_h)
     local inventory_y=top+p+equipment_h+12; local rail_bottom=(layout.window_height or 800)-bottom-vitals_h-12
-    local rows=layout.list_visible_rows or 5; local list_h=layout.list_row_height*rows; local title_h=layout.list_row_height+4; local footer_h=layout.list_row_height*2
+    local rows=layout.list_visible_rows or 5; local list_h=layout.list_viewport_height or layout.list_row_height*rows; local title_h=layout.list_row_height+4; local footer_h=layout.list_row_height*2
     local inventory_h=p*2+title_h+list_h+footer_h+8; local skills_h=p*2+title_h+list_h+4
     local right_details_h=layout.details_line_height*Layout.detailsCardRows(layout.details_columns)+p*2+18
     local required=inventory_h+12+skills_h

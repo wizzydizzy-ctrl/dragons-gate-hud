@@ -4,7 +4,7 @@ function Layout.detailsPlacement(available_height,line_height,left_width)
   local enough_width=left_width==nil or (tonumber(left_width) or 0)>=420
   return enough_height and enough_width and "left" or "right"
 end
-function Layout.detailsCardRows(columns) return tonumber(columns)==2 and 11 or 7 end
+function Layout.detailsCardRows(columns) return 3 end
 function Layout.detailsFit(rail_bottom,inventory_y,details_height,minimum_inventory_height)
   return (tonumber(rail_bottom) or 0)-(tonumber(details_height) or 0)-12-(tonumber(inventory_y) or 0)>=(tonumber(minimum_inventory_height) or 0)
 end
@@ -46,6 +46,7 @@ end
 local function metrics(width,height,layout,chatSettings)
   layout.console_width=width-layout.left-layout.right
   layout.body_font=clamp(width/100,16,22); layout.small_font=clamp((layout.body_font-2)*2,28,40); layout.heading_font=clamp(layout.body_font+5,21,27)
+  layout.attribute_strip_font=clamp(layout.console_width/100,10,14)
   layout.panel_padding=clamp(width/120,12,22); layout.gauge_height=clamp(layout.small_font+10,38,50); layout.row_gap=clamp(layout.body_font*.7,11,15)
   layout.title_height=layout.heading_font+30; layout.status_height=layout.body_font*4+40
   layout.room_height=layout.heading_font+layout.body_font*6+54; layout.exit_height=layout.small_font+16

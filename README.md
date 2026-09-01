@@ -87,3 +87,35 @@ The HUD reads at most the newest 1,000 valid entries into memory, but leaves old
 Private communications such as whispers, ESP, Dragon, and Contact traffic are saved locally in these plain JSONL files. Anyone with access to your Mudlet profile, computer account, backups, or copied profile data may be able to read them. The HUD does not transmit chat logs, but you should treat the directory as sensitive local data.
 
 Run `dghud chatstatus` to print the active filter, the current visible-entry count, the sanitized current-character storage key, and the most recent storage error (`none` when no storage error has occurred in the running chat session).
+
+## Embedded automapper
+
+The native Mudlet map is embedded in the lower-left HUD immediately above the compass. While the mapper is enabled, each valid `gmcp.Room.Info.num` becomes the canonical Dragons Gate room ID. Walking through the twelve standard directions (`n`, `ne`, `e`, `se`, `s`, `sw`, `w`, `nw`, `up`, `down`, `in`, and `out`) discovers rooms, creates advertised exit stubs, and confirms links only after the destination room arrives through GMCP. Teleports do not invent links.
+
+The default mapper settings are:
+
+```lua
+mapper = {
+  enabled = true,
+  walk_timeout = 12,
+  minimum_height = 90,
+  schema = 1,
+}
+```
+
+Nested user overrides and unknown future settings are preserved during merge and migration. Set `DGHUD.user_settings.mapper.enabled = false` and run `DGHUD.reload()` to disable discovery and walking. `walk_timeout` controls how many seconds a sent movement command waits for its expected room update. `minimum_height` sets the visible mapper floor when the window can accommodate it; wide layouts retain a 140-pixel responsive floor, while medium layouts default to 90 pixels. If the configured floor cannot fit without overlapping essential HUD content, the mapper hides cleanly.
+
+Click a known destination in the embedded map or use:
+
+```text
+walkto 176
+walkstop
+mapcenter
+dghud mapstatus
+```
+
+Walking sends exactly one standard movement command at a time and waits for the expected GMCP room number. After arrival, nonzero GMCP roundtime pauses the route until a later Vitals update reports zero. The per-step movement timeout is canceled while paused because no command is in flight; a fresh timeout starts only when the next direction is sent. Wrong directions, unexpected rooms, manual movement, disconnection, timeout, and shutdown stop the route. Automatic special-exit traversal is intentionally excluded from this release; portal, door, gate, arch, and other nonstandard transitions must be used manually.
+
+The HUD tags only its own rooms and areas with `dghud.owner=DragonsGateHUD`. It refuses to rewrite an existing unowned room or area and never deletes personal map data. The only internal deletion is transactional rollback of the exact brand-new room or area whose creation cannot receive its first ownership tag; preexisting and successfully owned map data is never eligible. Discovered native Mudlet map records remain when the HUD reloads, updates, or is uninstalled. `dghud mapstatus` reports only whether mapping is enabled, the current room, the number of rooms managed during the HUD session, an active walking destination, the latest mapper status, and the latest actual mapper error. Routine stops such as `walkstop`, manual movement, route replacement, and shutdown update the status but do not overwrite the last error. It does not dump room names, routes, personal map records, or unrelated data.
+
+Updating with `dghud update` replaces only the `DragonsGateHUD` package code. It preserves native map records, chat logs, user settings, and unrelated Mudlet scripts, aliases, triggers, packages, and map content.

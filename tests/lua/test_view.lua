@@ -94,6 +94,7 @@ local function fakeGeyser()
   geyser.Container={new=function(_,cons,parent) return widget(cons,parent,"container") end}
   geyser.Label={new=function(_,cons,parent) return widget(cons,parent,"label") end}
   geyser.MiniConsole={new=function(_,cons,parent) return widget(cons,parent,"console") end}
+  geyser.Mapper={new=function(_,cons,parent) return widget(cons,parent,"mapper") end}
   geyser.Gauge={new=function(_,cons,parent)
     local item=widget(cons,parent,"gauge"); item.front=widget({},item,"label"); item.back=widget({},item,"label"); item.text=widget({},item,"label"); return item
   end}
@@ -106,6 +107,69 @@ local function chatView()
   Geyser=original
   return view
 end
+
+test("native mapper is embedded immediately above the compass",function()
+  local layout=require("layout").compute(1920,1080); local view=chatView(); view:applyLayout(layout)
+  eq(view.mapper_frame~=nil,true); eq(view.mapper~=nil,true)
+  eq(view.mapper.parent,view.mapper_frame); eq(view.mapper_frame.visible,true)
+  eq(view.mapper_frame.y+view.mapper_frame.height+layout.lower_mapper_gap,view.compass_area.y)
+  eq(view.mapper.raised,true); eq(view.compass_area.raised,true)
+end)
+
+test("responsive mapper survives short layouts and hides cleanly in compact mode",function()
+  local Layout=require("layout"); local view=chatView()
+  for _,size in ipairs({{1200,800},{1200,650},{1000,650}}) do
+    local layout=Layout.compute(size[1],size[2]); view:applyLayout(layout)
+    eq(view.mapper_frame.visible,true); eq(view.mapper_frame.height>=90,true)
+    eq(view.utility_area.y+view.utility_area.height<=view.right.height,true)
+  end
+  view:applyLayout(Layout.compute(760,700))
+  eq(view.mapper_frame.visible,false); eq(view.mapper.visible,false)
+end)
+
+test("short layouts reduce optional detail before allowing vitals to overlap the mapper",function()
+  local layout=require("layout").compute(1200,650); local view=chatView()
+  view.last_state={vitals={psi={visible=true},web={visible=true}},equipment={items={}}}
+  view:applyLayout(layout)
+  local last_gauge=view.web.visible and view.web or (view.psi.visible and view.psi or view.carry)
+  local gauges_bottom=last_gauge.y+last_gauge.height
+  eq(gauges_bottom<=view.mapper_frame.y,true)
+  if view.readiness.visible then eq(view.readiness.y+view.readiness.height<=view.mapper_frame.y,true) end
+  if view.room.visible then eq(view.room.y+view.room.height<=view.mapper_frame.y,true) end
+end)
+
+test("mapper stack has exact non-overlapping bounds across resolutions and vital states",function()
+  local Layout=require("layout")
+  local sizes={{1920,1080},{2560,1400},{1200,800},{1200,650},{1000,650}}
+  local states={{false,false},{true,false},{false,true},{true,true}}
+  for _,size in ipairs(sizes) do for _,flags in ipairs(states) do
+    local layout=Layout.compute(size[1],size[2]); local view=chatView()
+    view.last_state={vitals={psi={visible=flags[1]},web={visible=flags[2]}},equipment={items={}}}
+    view:applyLayout(layout)
+    local panel=view.right.height
+    eq(view.readiness.y+view.readiness.height<=view.room.y,true)
+    if view.room.visible then
+      eq(view.room.height>=layout.lower_room_min_height,true)
+      if view.mapper_frame.visible then eq(view.room.y+view.room.height<=view.mapper_frame.y,true) end
+    end
+    if view.mapper_frame.visible then
+      eq(view.mapper_frame.height>=layout.lower_mapper_min_height,true)
+      eq(view.mapper_frame.y+view.mapper_frame.height+layout.lower_mapper_gap,view.compass_area.y)
+      eq(view.mapper_frame.y>=0,true)
+    end
+    eq(view.compass_area.y+view.compass_area.height<=view.utility_area.y,true)
+    eq(view.utility_area.y+view.utility_area.height<=panel,true)
+    for _,widget in ipairs({view.hp,view.fatigue,view.carry,view.readiness,view.room,view.compass_area,view.utility_area}) do
+      if widget.visible then eq(widget.y>=0 and widget.y+widget.height<=panel,true) end
+    end
+  end end
+end)
+
+test("view centers the native map through its adapter boundary",function()
+  local view=chatView(); local calls={}
+  view:setMapCenterCallback(function(roomID) calls[#calls+1]=roomID; return true end)
+  eq(view:centerMap(175),true); eq(calls[1],175)
+end)
 
 test("chat output colors its trusted prefix without printing HTML markup literally",function()
   local view=chatView()

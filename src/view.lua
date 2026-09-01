@@ -128,6 +128,8 @@ function View.new(settings)
   self.hp=gauge("DGHUD.Health",self.right,t.hp,t); self.fatigue=gauge("DGHUD.Fatigue",self.right,t.fatigue,t); self.carry=gauge("DGHUD.Carry",self.right,"#c9a359",t); self.psi=gauge("DGHUD.Psi",self.right,"#6a72c9",t); self.web=gauge("DGHUD.Web",self.right,"#9b78b5",t)
   self.readiness=label("DGHUD.Readiness",self.right,"background:#131a16;border:1px solid #2b3731;border-radius:6px;color:"..t.text..";padding:9px 12px;")
   self.room=label("DGHUD.Room",self.right,"background:#101a16;border:1px solid #385044;border-radius:6px;color:"..t.text..";padding:10px 12px;")
+  self.mapper_frame=label("DGHUD.MapperFrame",self.right,"background:#101713;border:1px solid "..t.border..";border-radius:7px;")
+  self.mapper=self.geyser.Mapper:new({name="DGHUD.Mapper",x=4,y=4,width="100%-8",height="100%-8"},self.mapper_frame)
   self.compass_area=Geyser.Container:new({name="DGHUD.Compass",x=0,y=0,width=100,height=100},self.right)
   self.compass_center=label("DGHUD.Compass.Center",self.compass_area,"background:transparent;color:"..t.muted..";"); self.compass_center:echo("<center>◆</center>")
   for i,direction in ipairs(Navigation.directions) do local b=label("DGHUD.Compass."..direction.key,self.compass_area); b:setClickCallback(function() if self.exit_available[direction.key] then send(direction.command) end end); self.direction_buttons[i]={label=b,direction=direction} end
@@ -231,9 +233,11 @@ function View:applyLayout(layout)
     place(self.identity,0,top,layout.left,layout.identity_height)
     place(self.left,"100%-"..layout.right,top,layout.right,"100%-"..(top+bottom))
     local available=math.max(100,(layout.window_height or 800)-top-bottom)
-    local optional=(self.last_state and self.last_state.vitals.psi.visible and 1 or 0)+(self.last_state and self.last_state.vitals.web.visible and 1 or 0)
-    local navigation_height=layout.lower_compass_cell*3+layout.lower_utility_height*2+math.floor(22*layout.lower_scale+.5)
-    local panel_height=math.min(available,layout.lower_title_height+(3+optional)*(layout.lower_gauge_height+layout.lower_row_gap)+layout.lower_status_height+layout.lower_room_height+navigation_height+layout.lower_section_gap)
+    local psi_visible=self.last_state and self.last_state.vitals.psi.visible or false
+    local web_visible=self.last_state and self.last_state.vitals.web.visible or false
+    local lower=Layout.lowerPanelGeometry(layout,psi_visible,web_visible)
+    local panel_height=math.min(available,lower.panel_height)
+    layout.lower_geometry=lower
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
     local details_y=top+layout.identity_height+12; local vitals_y=(layout.window_height or 800)-bottom-panel_height; local details_h=vitals_y-details_y-12
     local details_placement=Layout.detailsPlacement(details_h,layout.details_line_height,layout.left)
@@ -252,22 +256,39 @@ function View:applyLayout(layout)
     if inventory_h>=minimum_inventory_h then place(self.inventory,card_x,inventory_y,card_w,inventory_h); self.inventory_capacity=math.max(1,math.floor((inventory_h-layout.heading_font-p*2-30)/layout.inventory_row_height)) else self.inventory:hide(); self.inventory_capacity=0 end
     View.raiseCards({self.equipment,self.wealth,self.inventory,self.details})
   else
-    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.wealth:hide(); self.inventory:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
+    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.wealth:hide(); self.inventory:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
   end
   if layout.mode~="compact" then
     place(self.right_bg,0,0,"100%","100%"); self.right_title:hide()
+    local panel_height=tonumber(self.right.height) or math.max(0,(layout.window_height or 800)-top-bottom)
+    local lower=layout.lower_geometry or Layout.lowerPanelGeometry(layout,false,false)
     local inset=lp; local y=layout.lower_title_height; for _,g in ipairs({self.hp,self.fatigue,self.carry}) do place(g,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap end
-    if self.last_state and self.last_state.vitals.psi.visible then place(self.psi,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap else self.psi:hide() end
-    if self.last_state and self.last_state.vitals.web.visible then place(self.web,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap else self.web:hide() end
-    place(self.readiness,inset,y+3,"100%-"..(inset*2),layout.lower_status_height)
-    place(self.room,inset,y+layout.lower_status_height+13,"100%-"..(inset*2),layout.lower_room_height)
-    local nav_y=y+layout.lower_status_height+layout.lower_room_height+22; place(self.compass_area,inset,nav_y,"100%-"..(inset*2),layout.lower_compass_cell*3)
+    if lower.show_psi then place(self.psi,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap else self.psi:hide() end
+    if lower.show_web then place(self.web,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap else self.web:hide() end
+    place(self.readiness,inset,y+3,"100%-"..(inset*2),lower.status_height)
+    local compass_h,utility_h=lower.compass_height,lower.utility_height
+    local utility_y,compass_y=lower.utility_y,lower.compass_y
+    local mapper_h,mapper_y=lower.mapper_height,lower.mapper_y
+    local content_top=y+lower.status_height+13
+    local room_h=lower.room_height
+    layout.lower_room_visible_height=room_h
+    if room_h>0 then place(self.room,inset,content_top,"100%-"..(inset*2),room_h) else self.room:hide() end
+    if layout.mapper_visible and mapper_h>0 then
+      place(self.mapper_frame,inset,mapper_y,"100%-"..(inset*2),mapper_h)
+      place(self.mapper,4,4,"100%-8","100%-8"); self.mapper:raise()
+    else self.mapper_frame:hide(); self.mapper:hide() end
+    place(self.compass_area,inset,compass_y,"100%-"..(inset*2),compass_h); self.compass_area:raise()
     local cell_width=33.333; for _,entry in ipairs(self.direction_buttons) do local d=entry.direction; place(entry.label,(d.col-1)*cell_width.."%",(d.row-1)*layout.lower_compass_cell,cell_width.."%",layout.lower_compass_cell) end
     place(self.compass_center,cell_width.."%",layout.lower_compass_cell,cell_width.."%",layout.lower_compass_cell)
-    place(self.utility_area,inset,nav_y+layout.lower_compass_cell*3+6,"100%-"..(inset*2),layout.lower_utility_height*2+5)
+    place(self.utility_area,inset,utility_y,"100%-"..(inset*2),utility_h); self.utility_area:raise()
     for i,entry in ipairs(self.utility_buttons) do local col=(i-1)%2; local row=math.floor((i-1)/2); place(entry.label,(col*50).."%",row*(layout.lower_utility_height+2),"49%",layout.lower_utility_height) end
   end
   self:applyChatWrap(layout)
+end
+function View:setMapCenterCallback(callback) self.map_center_callback=type(callback)=="function" and callback or nil; return true end
+function View:centerMap(roomID)
+  if not self.map_center_callback then return nil,"map center callback is unavailable" end
+  return self.map_center_callback(roomID)
 end
 function View:renderNavigation(exits)
   if not self.layout or self.layout.mode=="compact" then return end

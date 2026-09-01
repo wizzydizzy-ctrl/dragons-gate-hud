@@ -24,7 +24,7 @@ Dragons Gate `gmcp.Room.Info.num` is the canonical game room identifier and is u
 
 Existing unowned Mudlet rooms are never deleted or silently rewritten. If a canonical game room ID collides with an unowned room, the mapper records the conflict, leaves that room untouched, and does not create unsafe links until the conflict is resolved.
 
-HUD updates and package removal preserve discovered map data. Map deletion requires a separate explicit purge operation.
+HUD updates and package removal preserve discovered map data. Map deletion requires a separate explicit purge operation. The sole internal exception is transactional rollback of the exact brand-new native room or area when its first ownership metadata write fails; rollback occurs before links or unrelated content can be added and never applies to preexisting or successfully owned objects.
 
 ## Room Discovery
 

@@ -1,4 +1,4 @@
-local View=require("view"); local Storage=require("chat_storage")
+local View=require("view"); local Storage=require("chat_storage"); local MapAdapter=require("map_adapter")
 local Adapter={}; Adapter.__index=Adapter
 function Adapter.updateBase(home) return home.."/DGHUDUpdater" end
 function Adapter.updateArchivePath(home) return Adapter.updateBase(home).."/staging/DragonsGateHUD.mpackage" end
@@ -10,7 +10,24 @@ function Adapter.new() return setmetatable({},Adapter) end
 function Adapter:getBorders() return getBorderLeft(),getBorderTop(),getBorderRight(),getBorderBottom() end
 function Adapter:getWindowSize() return getMainWindowSize() end
 function Adapter:setBorders(l,t,r,b) setBorderLeft(l);setBorderTop(t);setBorderRight(r);setBorderBottom(b) end
-function Adapter:createView(settings) return View.new(settings) end
+function Adapter:centerMap(roomID)
+  local ok,err=pcall(function() centerview(roomID); updateMap() end)
+  if not ok then return nil,tostring(err) end
+  return true
+end
+function Adapter:createView(settings)
+  local view=View.new(settings)
+  if view.setMapCenterCallback then view:setMapCenterCallback(function(roomID) return self:centerMap(roomID) end) end
+  return view
+end
+function Adapter:createMapAdapter(api)
+  local map=MapAdapter.new(api or MapAdapter.mudletApi(_G))
+  function map:setCurrent(roomID)
+    if not self:isOwned(roomID) then return nil,"room "..tostring(roomID).." is not owned by DragonsGateHUD" end
+    return self:center(roomID)
+  end
+  return map
+end
 function Adapter:createChatStorage(visibleLimit) return Storage.new(Storage.mudletApi(),getMudletHomeDir().."/DragonsGateHUD/chat",visibleLimit) end
 function Adapter:addEvent(name,fn) return registerAnonymousEventHandler(name,fn) end
 function Adapter:killEvent(id) return killAnonymousEventHandler(id) end

@@ -16,6 +16,7 @@ local function fakeMapApi(seed)
   function api.setAreaUserData(id,k,v) local ok,e=gate("setAreaUserData"); if not ok then return nil,e end; api.areaUser[id]=api.areaUser[id] or {}; api.areaUser[id][k]=v; return true end
   function api.getAreaUserData(id,k) local ok,e=gate("getAreaUserData"); if not ok then return nil,e end; return api.areaUser[id] and api.areaUser[id][k] end
   function api.setRoomArea(id,v) local ok,e=gate("setRoomArea"); if not ok then return nil,e end; api.rooms[id].area=v; return true end
+  function api.getRoomArea(id) local ok,e=gate("getRoomArea"); if not ok then return nil,e end; return api.rooms[id] and api.rooms[id].area end
   function api.setRoomName(id,v) local ok,e=gate("setRoomName"); if not ok then return nil,e end; api.rooms[id].name=v; return true end
   function api.setRoomCoordinates(id,x,y,z) local ok,e=gate("setRoomCoordinates"); if not ok then return nil,e end; local r=api.rooms[id]; r.x=x;r.y=y;r.z=z; return true end
   function api.setRoomUserData(id,k,v) local ok,e=gate("setRoomUserData"); if not ok then return nil,e end; api.rooms[id].user[k]=v; return true end
@@ -57,9 +58,50 @@ test("creates distinct areas with distinct IDs",function()
   local api=fakeMapApi(); local map=Adapter.new(api); assert(map:ensureRoom(descriptor(1,"A"),{})); assert(map:ensureRoom(descriptor(2,"B"),{})); assert(api.rooms[1].area~=api.rooms[2].area)
 end)
 
-test("refuses an unowned canonical room collision without mutation",function()
-  local original={name="Personal",user={},x=8,exits={},stubs={}}; local api=fakeMapApi({[176]=original})
-  local ok,e=Adapter.new(api):ensureRoom(descriptor(176),{x=0}); eq(ok,nil); eq(e,"room 176 is not owned by DragonsGateHUD"); eq(original.name,"Personal"); eq(original.x,8)
+test("persists a special destination partition keyed by canonical room ID",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(900,"1","Vault"),{x=0,y=0,z=0},"special:900"))
+  eq(api.rooms[900].user["dghud.partition"],"special:900")
+  eq(api.rooms[900].user["dghud.game_area"],"1")
+  eq(api.areas["Dragons Gate - Submap 900"],api.rooms[900].area)
+  local record=assert(Adapter.new(api):roomRecord(900))
+  eq(record.exists,true); eq(record.owned,true); eq(record.partition,"special:900"); eq(record.area,api.rooms[900].area)
+  eq(record.coordinates.x,0); eq(record.coordinates.y,0); eq(record.coordinates.z,0)
+end)
+
+test("existing canonical rooms retain their area coordinates and partition",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(900,"1"),{x=0,y=0,z=0},"special:900"))
+  local area=api.rooms[900].area
+  assert(map:ensureRoom(descriptor(900,"2","Revisited"),{x=8,y=8,z=4},"special:other"))
+  eq(api.rooms[900].area,area); eq(api.rooms[900].x,0); eq(api.rooms[900].y,0); eq(api.rooms[900].z,0)
+  eq(api.rooms[900].user["dghud.partition"],"special:900")
+  eq(api.rooms[900].user["dghud.game_area"],"1")
+  eq(api.rooms[900].name,"Revisited")
+end)
+
+test("migrates an existing owned room to its current effective partition without moving it",function()
+  local existing={name="Legacy",area=41,x=3,y=4,z=1,user={["dghud.owner"]="DragonsGateHUD",["dghud.state"]="ready"},exits={},stubs={}}
+  local api=fakeMapApi({[900]=existing}); api.areas["Dragons Gate - Castle"]=41; api.areaUser[41]={["dghud.owner"]="DragonsGateHUD"}; api.nextArea=42
+  local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(900,"1","Migrated"),{x=8,y=8,z=4},"special:900"))
+  eq(existing.area,41); eq(existing.x,3); eq(existing.y,4); eq(existing.z,1)
+  eq(existing.user["dghud.partition"],"Castle"); eq(existing.user["dghud.game_area"],"1")
+  eq(assert(map:effectivePartition(900)),"Castle"); eq(api.nextArea,42)
+end)
+
+test("refuses an unowned canonical room collision with zero mutation",function()
+  local original={name="Personal",area=9,user={},x=8,y=7,z=6,exits={},stubs={}}; local api=fakeMapApi({[176]=original})
+  local mutations=0
+  for _,name in ipairs({"addRoom","deleteRoom","addAreaName","deleteArea","setAreaUserData","setRoomArea","setRoomName","setRoomCoordinates","setRoomUserData"}) do
+    local native=api[name]
+    api[name]=function(...) mutations=mutations+1; return native(...) end
+  end
+  local map=Adapter.new(api); local record=assert(map:roomRecord(176))
+  eq(record.exists,true); eq(record.owned,false); eq(record.area,9); eq(record.coordinates.x,8)
+  local ok,e=map:ensureRoom(descriptor(176),{x=0},"special:176")
+  eq(ok,nil); eq(e,"room 176 is not owned by DragonsGateHUD"); eq(mutations,0)
+  eq(original.name,"Personal"); eq(original.area,9); eq(original.x,8); eq(original.y,7); eq(original.z,6); eq(next(original.user),nil)
 end)
 
 test("updates owned rooms and retains ownership on failure",function()
@@ -71,7 +113,8 @@ test("post-create room mutation failures remain safely retryable",function()
   for _,name in ipairs({"setRoomArea","setRoomName","setRoomCoordinates"}) do
     local api=fakeMapApi(); local map=Adapter.new(api); api.fail[name]=true; local ok,e=map:ensureRoom(descriptor(20),{})
     eq(ok,nil); eq(e,name.." rejected"); eq(api.rooms[20].user["dghud.owner"],"DragonsGateHUD"); eq(api.rooms[20].user["dghud.state"],"provisional")
-    api.fail[name]=nil; assert(map:ensureRoom(descriptor(20),{})); eq(api.rooms[20].user["dghud.state"],"ready")
+    api.fail[name]=nil; assert(map:ensureRoom(descriptor(20),{x=2,y=3,z=4})); eq(api.rooms[20].user["dghud.state"],"ready")
+    assert(api.rooms[20].area); eq(api.rooms[20].x,2); eq(api.rooms[20].y,3); eq(api.rooms[20].z,4)
   end
   for failureCall=2,6 do
     local api=fakeMapApi(); local map=Adapter.new(api); local native=api.setRoomUserData; local calls=0

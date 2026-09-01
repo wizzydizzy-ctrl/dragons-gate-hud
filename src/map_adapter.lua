@@ -4,6 +4,11 @@ local unpackValues=table.unpack or unpack
 
 local reverse={n="s",ne="sw",e="w",se="nw",s="n",sw="ne",w="e",nw="se",up="down",down="up",["in"]="out",out="in"}
 
+local function areaName(key)
+  local destination=tostring(key):match("^special:(%d+)$")
+  return destination and ("Dragons Gate - Submap "..destination) or ("Dragons Gate - "..tostring(key))
+end
+
 local function missing(name)
   return nil,"Mudlet mapper API "..name.." is unavailable"
 end
@@ -55,7 +60,7 @@ end
 function MapAdapter:ensureArea(areaKey)
   local key=tostring(areaKey or "unknown")
   if self.areas[key]~=nil then return self.areas[key] end
-  local name="Dragons Gate - "..key
+  local name=areaName(key)
   local areas,areasErr=read(self.api,"getAreaTable")
   if areas==nil then return nil,areasErr end
   local area=areas[name]
@@ -89,19 +94,83 @@ function MapAdapter:ensureArea(areaKey)
   return area
 end
 
-function MapAdapter:ensureRoom(room,coordinates)
+function MapAdapter:roomRecord(roomID)
+  local ready,readyErr=requireCapabilities(self.api,{"roomExists","getRoomUserData","getRoomArea","getRoomCoordinates"})
+  if not ready then return nil,readyErr end
+  local exists,existsErr=read(self.api,"roomExists",roomID)
+  if exists==nil then return nil,existsErr or "Mudlet mapper API roomExists failed" end
+  local record={exists=not not exists,owned=false}
+  if not exists then return record end
+  local owner,ownerErr=read(self.api,"getRoomUserData",roomID,"dghud.owner")
+  if owner==nil and ownerErr~=nil then return nil,ownerErr end
+  record.owned=owner==self.owner
+  local partition,partitionErr=read(self.api,"getRoomUserData",roomID,"dghud.partition")
+  if partition==nil and partitionErr~=nil then return nil,partitionErr end
+  if partition~=nil and tostring(partition)~="" then record.partition=tostring(partition) end
+  local area,areaErr=read(self.api,"getRoomArea",roomID)
+  if area==nil and areaErr~=nil then return nil,areaErr end
+  record.area=area
+  local x,y,z=read(self.api,"getRoomCoordinates",roomID)
+  if x==nil and y~=nil then return nil,y end
+  if x~=nil then record.coordinates={x=x,y=y,z=z} end
+  return record
+end
+
+local function partitionForArea(self,area)
+  if area==nil then return nil,"map area is unavailable" end
+  local areas,areasErr=read(self.api,"getAreaTable")
+  if areas==nil then return nil,areasErr end
+  local partition
+  for name,id in pairs(areas) do
+    if id==area then
+      local destination=tostring(name):match("^Dragons Gate %- Submap (%d+)$")
+      partition=destination and ("special:"..destination) or tostring(name):match("^Dragons Gate %- (.+)$")
+      if partition then break end
+    end
+  end
+  partition=partition or ("area:"..tostring(area))
+  self.areas[partition]=area
+  return partition
+end
+
+function MapAdapter:effectivePartition(roomID)
+  local record,recordErr=self:roomRecord(roomID)
+  if record==nil then return nil,recordErr end
+  if not record.exists then return nil,"room "..tostring(roomID).." does not exist" end
+  if not record.owned then return nil,"room "..tostring(roomID).." is not owned by DragonsGateHUD" end
+  if record.partition then return record.partition end
+  return partitionForArea(self,record.area)
+end
+
+function MapAdapter:ensureRoom(room,coordinates,partitionKey)
   if type(room)~="table" or room.id==nil then return nil,"room ID is required" end
   coordinates=coordinates or {}
-  local ready,readyErr=requireCapabilities(self.api,{"roomExists","addRoom","deleteRoom","getAreaTable","addAreaName","deleteArea","setAreaUserData","getAreaUserData","setRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData"})
+  local ready,readyErr=requireCapabilities(self.api,{"roomExists","addRoom","deleteRoom","getAreaTable","addAreaName","deleteArea","setAreaUserData","getAreaUserData","setRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","getRoomArea","getRoomCoordinates"})
   if not ready then return nil,readyErr end
-  local existsCall,exists,existsErr=pcall(self.api.roomExists,room.id)
-  if not existsCall then return nil,"Mudlet mapper API roomExists failed: "..tostring(exists) end
-  if exists==nil then return nil,existsErr or "Mudlet mapper API roomExists failed" end
-  if exists and not self:isOwned(room.id) and self.createdRooms[room.id]~=true then
+  local record,recordErr=self:roomRecord(room.id)
+  if record==nil then return nil,recordErr end
+  local exists=record.exists
+  if exists and not record.owned and self.createdRooms[room.id]~=true then
     return nil,"room "..tostring(room.id).." is not owned by DragonsGateHUD"
   end
-  local area,areaErr=self:ensureArea(room.area_key)
-  if area==nil then return nil,areaErr end
+  local continuingCreation=exists and self.createdRooms[room.id]==true
+  local needsPlacement=not exists or continuingCreation
+  local effectiveKey
+  if needsPlacement then
+    effectiveKey=record.partition or tostring(partitionKey or room.area_key or "unknown")
+  else
+    effectiveKey=record.partition
+    if not effectiveKey then
+      effectiveKey,recordErr=partitionForArea(self,record.area)
+      if effectiveKey==nil then return nil,recordErr end
+    end
+  end
+  local area=record.area
+  if needsPlacement then
+    local areaErr
+    area,areaErr=self:ensureArea(effectiveKey)
+    if area==nil then return nil,areaErr end
+  end
   local createdThisCall=false
   if not exists then
     local added,addErr=invoke(self.api,"addRoom",room.id)
@@ -109,24 +178,32 @@ function MapAdapter:ensureRoom(room,coordinates)
     createdThisCall=true
     self.createdRooms[room.id]=true
   end
-  local ownerOk,ownerErr=invoke(self.api,"setRoomUserData",room.id,"dghud.owner",self.owner)
-  if ownerOk==nil then
-    if createdThisCall then
-      local _,rollbackError=rollbackCreated(self.api,"deleteRoom",room.id,ownerErr)
-      self.createdRooms[room.id]=nil
-      return nil,rollbackError
+  if needsPlacement then
+    local ownerOk,ownerErr=invoke(self.api,"setRoomUserData",room.id,"dghud.owner",self.owner)
+    if ownerOk==nil then
+      if createdThisCall then
+        local _,rollbackError=rollbackCreated(self.api,"deleteRoom",room.id,ownerErr)
+        self.createdRooms[room.id]=nil
+        return nil,rollbackError
+      end
+      return nil,ownerErr
     end
-    return nil,ownerErr
+    local provisionalOk,provisionalErr=invoke(self.api,"setRoomUserData",room.id,"dghud.state","provisional"); if provisionalOk==nil then return nil,provisionalErr end
   end
-  local provisionalOk,provisionalErr=invoke(self.api,"setRoomUserData",room.id,"dghud.state","provisional"); if provisionalOk==nil then return nil,provisionalErr end
   local operations={
     {"setRoomUserData",room.id,"dghud.mapper_schema",self.schema},
     {"setRoomUserData",room.id,"dghud.environment",tostring(room.environment or "")},
     {"setRoomUserData",room.id,"dghud.flags",table.concat(room.flags or {},",")},
-    {"setRoomArea",room.id,area},
     {"setRoomName",room.id,tostring(room.name or ("Room "..tostring(room.id)))},
-    {"setRoomCoordinates",room.id,tonumber(coordinates.x) or 0,tonumber(coordinates.y) or 0,tonumber(coordinates.z) or 0},
   }
+  if not record.partition then operations[#operations+1]={"setRoomUserData",room.id,"dghud.partition",effectiveKey} end
+  local gameArea,gameAreaErr=read(self.api,"getRoomUserData",room.id,"dghud.game_area")
+  if gameArea==nil and gameAreaErr~=nil then return nil,gameAreaErr end
+  if gameArea==nil or tostring(gameArea)=="" then operations[#operations+1]={"setRoomUserData",room.id,"dghud.game_area",tostring(room.area_key)} end
+  if needsPlacement then
+    operations[#operations+1]={"setRoomArea",room.id,area}
+    operations[#operations+1]={"setRoomCoordinates",room.id,tonumber(coordinates.x) or 0,tonumber(coordinates.y) or 0,tonumber(coordinates.z) or 0}
+  end
   for _,operation in ipairs(operations) do
     local ok,err=invoke(self.api,unpackValues(operation))
     if ok==nil then return nil,err end
@@ -198,7 +275,7 @@ end
 function MapAdapter.mudletApi(globals)
   globals=globals or _G
   local api={}
-  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","setAreaUserData","getAreaUserData","setRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","getRoomCoordinates","getRoomsByPosition","setRoomIDbyHash","centerview","updateMap"}
+  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","getRoomCoordinates","getRoomsByPosition","setRoomIDbyHash","centerview","updateMap"}
   local function wrapper(name)
     return function(...)
       local fn=globals[name]

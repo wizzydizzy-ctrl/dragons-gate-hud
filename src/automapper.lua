@@ -54,13 +54,13 @@ end
 function Automapper:roomRecord(roomID)
   if type(self.map.roomRecord)=="function" then return self.map:roomRecord(roomID) end
   local coordinates,coordinatesErr=self.map:coordinates(roomID)
-  if coordinates then return {exists=true,owned=true,coordinates=coordinates,legacy=true} end
+  if coordinates then return {exists=true,owned=true,coordinates=coordinates,placement_needed=false,legacy=true} end
   if coordinatesErr then return nil,coordinatesErr end
-  return {exists=false,owned=false,legacy=true}
+  return {exists=false,owned=false,placement_needed=true,legacy=true}
 end
 
 function Automapper:partitionFor(room,record)
-  if record.exists then
+  if record.exists and not record.placement_needed then
     if record.partition then return record.partition end
     if record.legacy then return room.area_key end
     if record.owned then return self.map:effectivePartition(room.id) end
@@ -83,10 +83,12 @@ function Automapper:partitionFor(room,record)
 end
 
 function Automapper:coordinatesFor(room,partition,record)
-  if record and record.coordinates then return record.coordinates end
-  local existing,existingErr=self.map:coordinates(room.id)
-  if existing then return existing end
-  if existingErr then return nil,existingErr end
+  if not record or not record.placement_needed then
+    if record and record.coordinates then return record.coordinates end
+    local existing,existingErr=self.map:coordinates(room.id)
+    if existing then return existing end
+    if existingErr then return nil,existingErr end
+  end
   local desired={x=0,y=0,z=0}
   if self.pending then
     local origin=self.map:coordinates(self.pending.from)
@@ -123,7 +125,7 @@ function Automapper:onRoom(raw)
     self:status("invalid_room",partitionErr); return nil,partitionErr
   end
   local coordinates,coordinatesErr
-  if specialArrival and not record.exists then coordinates={x=0,y=0,z=0} else coordinates,coordinatesErr=self:coordinatesFor(room,partition,record) end
+  if specialArrival and (not record.exists or record.placement_needed) then coordinates={x=0,y=0,z=0} else coordinates,coordinatesErr=self:coordinatesFor(room,partition,record) end
   if not coordinates then
     if not sameOrigin or specialArrival then self.pending=nil end
     self:status("invalid_room",coordinatesErr); return nil,coordinatesErr

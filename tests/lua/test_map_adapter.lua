@@ -1,4 +1,6 @@
 local Adapter=require("map_adapter")
+local Automapper=require("automapper")
+local Model=require("mapper_model")
 
 local function fakeMapApi(seed)
   local api={rooms=seed or {},areas={},areaUser={},nextArea=1,fail={},path=nil,refreshed=0,deletedRooms={},deletedAreas={},special={},specialAdds=0}
@@ -50,6 +52,10 @@ local function descriptor(id,area,name)
   return {id=id,name=name or ("Room "..id),area_key=area or "A",environment="Plain",flags={"indoor"},exits={}}
 end
 
+local function gmcpRoom(id,area,name,exits)
+  return {num=id,name=name or ("Room "..id),area=area or 1,environment="Plain",flags={"indoor"},exits=exits or {}}
+end
+
 test("creates a fully tagged room and finalizes readiness last",function()
   local api=fakeMapApi(); local calls={}; local native=api.setRoomUserData
   api.setRoomUserData=function(id,k,v) calls[#calls+1]=k; return native(id,k,v) end
@@ -81,7 +87,7 @@ test("persists a special destination partition keyed by canonical room ID",funct
   eq(api.areas["Dragons Gate - Submap 900"],api.rooms[900].area)
   local record=assert(Adapter.new(api):roomRecord(900))
   eq(record.exists,true); eq(record.owned,true); eq(record.partition,"special:900"); eq(record.area,api.rooms[900].area)
-  eq(record.coordinates.x,0); eq(record.coordinates.y,0); eq(record.coordinates.z,0)
+  eq(record.coordinates.x,0); eq(record.coordinates.y,0); eq(record.coordinates.z,0); eq(record.placement_needed,false)
 end)
 
 test("existing canonical rooms retain their area coordinates and partition",function()
@@ -169,7 +175,7 @@ test("fresh adapter recovers an owned room after its provisional state write fai
   eq(api.rooms[22].area,-1); eq(api.rooms[22].x,0); eq(api.rooms[22].y,0); eq(api.rooms[22].z,0); eq(#api.deletedRooms,0)
   local interrupted=assert(Adapter.new(api):roomRecord(22))
   eq(interrupted.state,nil); eq(interrupted.mapper_schema,nil); eq(interrupted.environment,nil)
-  eq(interrupted.flags,nil); eq(interrupted.partition,nil); eq(interrupted.game_area,nil)
+  eq(interrupted.flags,nil); eq(interrupted.partition,nil); eq(interrupted.game_area,nil); eq(interrupted.placement_needed,true)
 
   rejectProvisional=false
   local mutations={}; local nativeArea=api.setRoomArea; local nativeCoordinates=api.setRoomCoordinates
@@ -183,6 +189,59 @@ test("fresh adapter recovers an owned room after its provisional state write fai
   eq(mutations[#mutations-4],"dghud.partition=special:22"); eq(mutations[#mutations-3],"dghud.game_area=Castle")
   eq(mutations[#mutations-2],"area="..intendedArea); eq(mutations[#mutations-1],"coordinates=1,2,3"); eq(mutations[#mutations],"dghud.state=ready")
   eq(#api.deletedRooms,0)
+end)
+
+test("fresh automapper retry places an owner-only special destination in its destination submap",function()
+  local api=fakeMapApi(); local rejectProvisional=false; local nativeUserData=api.setRoomUserData
+  api.setRoomUserData=function(id,key,value)
+    if rejectProvisional and id==900 and key=="dghud.state" and value=="provisional" then return nil,"provisional state rejected" end
+    return nativeUserData(id,key,value)
+  end
+  local first=Automapper.new(Model,Adapter.new(api),function() end)
+  assert(first:onRoom(gmcpRoom(100,1,"Outside")))
+  assert(first:onSpecialTransition({from=100,to=900,command="go gate",kind="special"}))
+  rejectProvisional=true
+  local ok,e=first:onRoom(gmcpRoom(900,1,"Inside")); eq(ok,nil); eq(e,"provisional state rejected")
+  eq(api.rooms[900].area,-1); eq(api.rooms[900].x,0); eq(api.rooms[900].y,0); eq(api.rooms[900].z,0)
+
+  rejectProvisional=false
+  local retried=Automapper.new(Model,Adapter.new(api),function() end)
+  assert(retried:onRoom(gmcpRoom(100,1,"Outside")))
+  assert(retried:onSpecialTransition({from=100,to=900,command="go gate",kind="special"}))
+  assert(retried:onRoom(gmcpRoom(900,1,"Inside")))
+  local submapArea=api.areas["Dragons Gate - Submap 900"]
+  local record=assert(Adapter.new(api):roomRecord(900))
+  eq(record.partition,"special:900"); eq(record.area,submapArea)
+  eq(record.coordinates.x,0); eq(record.coordinates.y,0); eq(record.coordinates.z,0); eq(record.state,"ready")
+  eq(api.special[100][900]["go gate"],"0")
+end)
+
+test("fresh automapper retry derives coordinates for a provisional directional continuation",function()
+  local api=fakeMapApi()
+  assert(Adapter.new(api):ensureRoom(descriptor(900,"1","Root"),{x=0,y=0,z=0},"special:900"))
+  local submapArea=api.areas["Dragons Gate - Submap 900"]
+
+  local first=Automapper.new(Model,Adapter.new(api),function() end)
+  assert(first:onRoom(gmcpRoom(900,1,"Root",{"north"})))
+  assert(first:onOutgoing("north"))
+  api.fail.setRoomCoordinates=true
+  local ok,e=first:onRoom(gmcpRoom(901,1,"Hall",{"south"}))
+  eq(ok,nil); eq(e,"setRoomCoordinates rejected")
+  local interrupted=assert(Adapter.new(api):roomRecord(901))
+  eq(interrupted.state,"provisional"); eq(interrupted.placement_needed,true)
+  eq(interrupted.partition,"special:900"); eq(interrupted.area,submapArea)
+  eq(interrupted.coordinates.x,0); eq(interrupted.coordinates.y,0); eq(interrupted.coordinates.z,0)
+
+  api.fail.setRoomCoordinates=nil
+  local retried=Automapper.new(Model,Adapter.new(api),function() end)
+  assert(retried:onRoom(gmcpRoom(900,1,"Root",{"north"})))
+  assert(retried:onOutgoing("north"))
+  assert(retried:onRoom(gmcpRoom(901,1,"Hall",{"south"})))
+  local record=assert(Adapter.new(api):roomRecord(901))
+  eq(record.state,"ready"); eq(record.placement_needed,false)
+  eq(record.partition,"special:900"); eq(record.area,submapArea)
+  eq(record.coordinates.x,0); eq(record.coordinates.y,1); eq(record.coordinates.z,0)
+  eq(api.rooms[900].exits.n,901); eq(api.rooms[901].exits.s,900)
 end)
 
 test("mature owned legacy room without state is never relocated",function()
@@ -199,7 +258,7 @@ test("fresh adapter finishes provisional coordinates before marking the room rea
   local ok,e=Adapter.new(api):ensureRoom(descriptor(23,"Castle"),{x=1,y=2,z=3},"special:23")
   eq(ok,nil); eq(e,"setRoomCoordinates rejected"); eq(api.rooms[23].user["dghud.state"],"provisional")
   assert(api.rooms[23].area); eq(api.rooms[23].x,0); eq(api.rooms[23].y,0); eq(api.rooms[23].z,0); eq(#api.deletedRooms,0)
-  local record=assert(Adapter.new(api):roomRecord(23)); eq(record.state,"provisional")
+  local record=assert(Adapter.new(api):roomRecord(23)); eq(record.state,"provisional"); eq(record.placement_needed,true)
 
   ok,e=Adapter.new(api):ensureRoom(descriptor(23,"Castle"),{x=7,y=8,z=9},"special:23")
   eq(ok,nil); eq(e,"setRoomCoordinates rejected"); eq(api.rooms[23].user["dghud.state"],"provisional"); eq(#api.deletedRooms,0)

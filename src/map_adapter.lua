@@ -116,7 +116,7 @@ function MapAdapter:roomRecord(roomID)
   if not ready then return nil,readyErr end
   local exists,existsErr=read(self.api,"roomExists",roomID)
   if exists==nil then return nil,existsErr or "Mudlet mapper API roomExists failed" end
-  local record={exists=not not exists,owned=false}
+  local record={exists=not not exists,owned=false,placement_needed=not exists}
   if not exists then return record end
   local owner,ownerErr=read(self.api,"getRoomUserData",roomID,"dghud.owner")
   if owner==nil and ownerErr~=nil then return nil,ownerErr end
@@ -145,6 +145,8 @@ function MapAdapter:roomRecord(roomID)
   local x,y,z=read(self.api,"getRoomCoordinates",roomID)
   if x==nil and y~=nil then return nil,y end
   if x~=nil then record.coordinates={x=x,y=y,z=z} end
+  local ownerOnlyInterrupted=record.owned and record.state==nil and record.mapper_schema==nil and record.environment==nil and record.flags==nil and record.partition==nil and record.game_area==nil
+  record.placement_needed=self.createdRooms[roomID]==true or (record.owned and record.state=="provisional") or ownerOnlyInterrupted
   return record
 end
 
@@ -184,8 +186,7 @@ function MapAdapter:ensureRoom(room,coordinates,partitionKey)
   if exists and not record.owned and self.createdRooms[room.id]~=true then
     return nil,"room "..tostring(room.id).." is not owned by DragonsGateHUD"
   end
-  local ownerOnlyInterrupted=record.owned and record.state==nil and record.mapper_schema==nil and record.environment==nil and record.flags==nil and record.partition==nil and record.game_area==nil
-  local continuingCreation=exists and (self.createdRooms[room.id]==true or (record.owned and record.state=="provisional") or ownerOnlyInterrupted)
+  local continuingCreation=exists and record.placement_needed
   local needsPlacement=not exists or continuingCreation
   local effectiveKey
   if needsPlacement then

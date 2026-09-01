@@ -26,10 +26,12 @@ end)
 test("identity details render while attributes move to the top strip",function()
   local theme={accent="#d8ae53",jade="#72bd82",muted="#91a098"}; local layout={body_font=20,heading_font=25}
   local identity=View.identityContent({full_name="Test Tester",race="Monitanian",class="Fighter",alignment="entropy",physical={age=28,sex="Male",height="6'10\""}},theme,layout)
-  local details=View.detailsContent({body_armor=4,or_rating=18,dr=70,stance="Aggressive"},{STR="Good",APP="Fair"},theme,layout)
+  local details=View.detailsContent({body_armor=4,or_rating=18,dr=70,stance="Aggressive"},{STR="Good",APP="Fair"},theme,layout,{roundtime=8,position=1})
   local equipment=View.equipmentContent({weapon_readied=true,shield_readied=true},{"A spear","A shield"},theme,layout)
   local strip=View.attributeStripContent({STR="Good",APP="Fair"},theme,{attribute_strip_font=12})
   eq(identity:find("28",1,true)~=nil,true); eq(details:find("Aggressive",1,true)~=nil,true); eq(details:find("STR",1,true),nil)
+  eq(details:find("COMBAT",1,true)~=nil,true); eq(details:find("CHARACTER",1,true),nil)
+  eq(details:find("Roundtime",1,true)~=nil,true); eq(details:find("Position",1,true)~=nil,true)
   eq(strip:find("STR",1,true)~=nil,true); eq(strip:find("Good",1,true)~=nil,true); eq(strip:find("APP",1,true)~=nil,true); eq(strip:find("Fair",1,true)~=nil,true)
   eq(equipment:find("A spear",1,true),nil); eq(equipment:find("Weapon",1,true)~=nil,true); eq(equipment:find("Shield",1,true)~=nil,true)
 end)
@@ -48,9 +50,10 @@ test("right rail cards can be raised above their shared background",function()
   local raised=0; local card={raise=function() raised=raised+1 end}
   View.raiseCards({card,card,card}); eq(raised,3)
 end)
-test("compact lower status does not spend a row on blank space",function()
-  local html=View.statusContent({roundtime=0,position=1},{accent="#d8ae53"},{lower_body_font=18})
-  eq(html:find("<br><br>",1,true),nil); eq(html:find("Position",1,true)~=nil,true)
+test("combat card renders ready roundtime and position without a status heading",function()
+  local html=View.detailsContent({},nil,{accent="#d8ae53"},{inventory_font=18},{roundtime=0,position=1})
+  eq(html:find("COMBAT",1,true)~=nil,true); eq(html:find("STATUS",1,true),nil)
+  eq(html:find("Roundtime",1,true)~=nil,true); eq(html:find("READY",1,true)~=nil,true); eq(html:find("Position",1,true)~=nil,true)
 end)
 
 local function fakeGeyser()
@@ -134,7 +137,6 @@ test("short layouts reduce optional detail before allowing vitals to overlap the
   local last_gauge=view.web.visible and view.web or (view.psi.visible and view.psi or view.carry)
   local gauges_bottom=last_gauge.y+last_gauge.height
   eq(gauges_bottom<=view.mapper_frame.y,true)
-  if view.readiness.visible then eq(view.readiness.y+view.readiness.height<=view.mapper_frame.y,true) end
   if view.room.visible then eq(view.room.y+view.room.height<=view.mapper_frame.y,true) end
 end)
 
@@ -147,7 +149,6 @@ test("mapper stack has exact non-overlapping bounds across resolutions and vital
     view.last_state={vitals={psi={visible=flags[1]},web={visible=flags[2]}},equipment={items={}}}
     view:applyLayout(layout)
     local panel=view.right.height
-    eq(view.readiness.y+view.readiness.height<=view.room.y,true)
     if view.room.visible then
       eq(view.room.height>=layout.lower_room_min_height,true)
       if view.mapper_frame.visible then eq(view.room.y+view.room.height<=view.mapper_frame.y,true) end
@@ -159,7 +160,7 @@ test("mapper stack has exact non-overlapping bounds across resolutions and vital
     end
     eq(view.compass_area.y+view.compass_area.height<=view.utility_area.y,true)
     eq(view.utility_area.y+view.utility_area.height<=panel,true)
-    for _,widget in ipairs({view.hp,view.fatigue,view.carry,view.readiness,view.room,view.compass_area,view.utility_area}) do
+    for _,widget in ipairs({view.hp,view.fatigue,view.carry,view.room,view.compass_area,view.utility_area}) do
       if widget.visible then eq(widget.y>=0 and widget.y+widget.height<=panel,true) end
     end
   end end

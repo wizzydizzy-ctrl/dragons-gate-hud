@@ -90,10 +90,8 @@ end)
 test("content boxes scale with typography instead of clipping",function()
   local compact=Layout.compute(760,700); local wide=Layout.compute(1920,1080)
   eq(wide.title_height>=wide.heading_font+24,true)
-  eq(wide.status_height>=wide.body_font*4+32,true)
   eq(wide.room_height>=wide.heading_font+wide.body_font*6+44,true)
   eq(wide.exit_height>=wide.small_font+12,true)
-  eq(wide.status_height>compact.status_height,true)
   eq(wide.identity_height>=wide.heading_font+wide.body_font*6+48,true)
 end)
 
@@ -102,15 +100,13 @@ test("new cards derive dimensions from responsive fonts",function()
     local r=Layout.compute(size[1],size[2]); eq(r.inventory_row_height>=r.inventory_font+8,true); eq(r.details_line_height>=r.body_font+4,true); eq(r.compass_cell>=r.compass_font+10,true); eq(r.utility_height>=r.utility_font+10,true); eq(r.console_width>=size[1]*.66,true)
   end
 end)
-test("character details move to the roomier rail when the left stack is short",function()
-  eq(Layout.detailsPlacement(240,26,500),"left")
-  eq(Layout.detailsPlacement(240,26,300),"right")
-  eq(Layout.detailsPlacement(180,26,500),"right")
-  eq(Layout.detailsPlacement(120,26,500),"right")
+test("combat details stay in the right rail",function()
+  eq(Layout.detailsPlacement(240,26,500),"right")
+  eq(Layout.detailsPlacement(120,26,300),"right")
 end)
-test("two-column character details reserve every rendered row",function()
-  eq(Layout.detailsCardRows(2),3)
-  eq(Layout.detailsCardRows(4),3)
+test("combat details reserve armor stance roundtime and position rows",function()
+  eq(Layout.detailsCardRows(2),5)
+  eq(Layout.detailsCardRows(4),5)
 end)
 test("right rail preserves minimum inventory before showing character details",function()
   eq(Layout.detailsFit(900,400,240,140),true)
@@ -125,13 +121,13 @@ test("lower-left vitals stack uses compact readable gauge typography",function()
   for _,pair in ipairs({
     {r.lower_body_font,r.body_font},{r.lower_heading_font,r.heading_font},
     {r.lower_panel_padding,r.panel_padding},{r.lower_row_gap,r.row_gap},
-    {r.lower_status_height,r.status_height},{r.lower_room_height,r.room_height},{r.lower_compass_cell,r.compass_cell},
+    {r.lower_room_height,r.room_height},{r.lower_compass_cell,r.compass_cell},
     {r.lower_utility_height,r.utility_height}
   }) do eq(pair[1],math.floor(pair[2]*.8+.5)) end
 end)
 test("embedded mapper is allocated immediately above compass on wide screens",function()
   local r=Layout.compute(1920,1080)
-  eq(r.mapper_visible,true); eq(r.lower_mapper_height>=140,true)
+  eq(r.mapper_visible,true); eq(r.lower_mapper_height>=200,true)
   eq(r.lower_mapper_gap,r.lower_row_gap)
 end)
 test("configured mapper minimum height affects feasible responsive layouts",function()

@@ -66,13 +66,17 @@ function View.inventoryRows(items,capacity)
   if capacity>0 then rows[#rows+1]={label="+"..(#items-visible).." more",overflow=#items-visible} end
   return rows
 end
-function View.detailsContent(combat,attributes,t,layout)
+function View.detailsContent(combat,attributes,t,layout,vitals)
   combat=combat or {}; attributes=attributes or {}; local parts={}; local columns=layout.details_columns or 4
   if combat.body_armor then
     parts[#parts+1]="Armor <b>"..combat.body_armor.."%</b> &nbsp; OR <b>"..esc(combat.or_rating or "—").."</b> &nbsp; DR <b>"..esc(combat.dr or "—").."</b>"
     if combat.stance then if columns<=2 then parts[#parts+1]="Stance <b>"..esc(combat.stance).."</b>" else parts[#parts]=parts[#parts].." &nbsp; <b>"..esc(combat.stance).."</b>" end end
   elseif combat.stance then parts[#parts+1]="Stance <b>"..esc(combat.stance).."</b>" end
-  return View.withFont("<span style='color:"..t.accent.."'><b>CHARACTER &amp; COMBAT</b></span><br><br>"..table.concat(parts,"<br>"),layout.inventory_font or layout.body_font)
+  vitals=vitals or {}
+  local roundtime=tonumber(vitals.roundtime) or 0
+  parts[#parts+1]="Roundtime &nbsp; <b>"..(roundtime==0 and "READY" or esc(roundtime)).."</b>"
+  parts[#parts+1]="Position &nbsp; <b>"..esc(vitals.position or "—").."</b>"
+  return View.withFont("<span style='color:"..t.accent.."'><b>COMBAT</b></span><br><br>"..table.concat(parts,"<br>"),layout.inventory_font or layout.body_font)
 end
 function View.attributeStripContent(attributes,t,layout)
   local parts={}; attributes=attributes or {}
@@ -89,10 +93,6 @@ function View.equipmentContent(v,items,t,layout)
 end
 function View.wealthContent(v,t,layout)
   return View.withFont("<span style='color:"..t.accent.."'><b>WEALTH</b></span><br><br>Gold &nbsp; <b>"..v.gold.."</b><br>Silver &nbsp; <b>"..v.silver.."</b>",layout.body_font)
-end
-function View.statusContent(v,t,layout)
-  local round=v.roundtime==0 and "READY" or v.roundtime
-  return View.withFont("<span style='color:"..t.accent.."'><b>STATUS</b></span><br>Roundtime &nbsp; <b>"..round.."</b><br>Position &nbsp; <b>"..v.position.."</b>",layout.lower_body_font)
 end
 local function label(name,parent,style,geyser)
   local item=(geyser or Geyser).Label:new({name=name,x=0,y=0,width=10,height=10},parent); item:setStyleSheet(style or "background:transparent;"); return item
@@ -126,7 +126,6 @@ function View.new(settings)
   self.right_bg=label("DGHUD.RightBackground",self.right,"background:"..t.panel..";border-right:1px solid "..t.border..";")
   self.right_title=label("DGHUD.RightTitle",self.right,"background:transparent;color:"..t.accent..";font-size:13px;font-weight:700;padding:10px 14px;")
   self.hp=gauge("DGHUD.Health",self.right,t.hp,t); self.fatigue=gauge("DGHUD.Fatigue",self.right,t.fatigue,t); self.carry=gauge("DGHUD.Carry",self.right,"#c9a359",t); self.psi=gauge("DGHUD.Psi",self.right,"#6a72c9",t); self.web=gauge("DGHUD.Web",self.right,"#9b78b5",t)
-  self.readiness=label("DGHUD.Readiness",self.right,"background:#131a16;border:1px solid #2b3731;border-radius:6px;color:"..t.text..";padding:9px 12px;")
   self.room=label("DGHUD.Room",self.right,"background:#101a16;border:1px solid #385044;border-radius:6px;color:"..t.text..";padding:10px 12px;")
   self.mapper_frame=label("DGHUD.MapperFrame",self.right,"background:#101713;border:1px solid "..t.border..";border-radius:7px;")
   self.mapper=self.geyser.Mapper:new({name="DGHUD.Mapper",x=4,y=4,width="100%-8",height="100%-8"},self.mapper_frame)
@@ -217,7 +216,6 @@ function View:applyLayout(layout)
   self.left:setStyleSheet("background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   for _,card in ipairs({self.equipment,self.wealth,self.inventory}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
   self.right_title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.lower_body_font.."px;font-weight:700;padding:"..lp.."px;")
-  self.readiness:setStyleSheet("background:#131a16;border:1px solid #2b3731;border-radius:7px;color:"..t.text..";padding:"..lp.."px;font-size:"..layout.lower_body_font.."px;")
   self.room:setStyleSheet("background:#101a16;border:1px solid #385044;border-radius:7px;color:"..t.text..";padding:"..lp.."px;font-size:"..layout.lower_body_font.."px;")
   self.bottom:setStyleSheet("background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px "..p.."px;font-size:"..layout.small_font.."px;")
   self.compact:setStyleSheet("background:"..t.panel..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
@@ -239,19 +237,16 @@ function View:applyLayout(layout)
     local panel_height=math.min(available,lower.panel_height)
     layout.lower_geometry=lower
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
-    local details_y=top+layout.identity_height+12; local vitals_y=(layout.window_height or 800)-bottom-panel_height; local details_h=vitals_y-details_y-12
-    local details_placement=Layout.detailsPlacement(details_h,layout.details_line_height,layout.left)
-    layout.details_columns=details_placement=="right" and 2 or 4
-    if details_placement=="left" then place(self.details,0,details_y,layout.left,details_h) else self.details:hide() end
+    local details_placement=Layout.detailsPlacement()
+    layout.details_columns=2
+    self.details:hide()
     local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=2
     local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18; local wealth_h=layout.heading_font+layout.details_line_height*2+p*2+18
     place(self.equipment,card_x,top+p,card_w,equipment_h); place(self.wealth,card_x,top+p+equipment_h+12,card_w,wealth_h)
     local inventory_y=top+p+equipment_h+wealth_h+24; local rail_bottom=(layout.window_height or 800)-bottom-p
     local minimum_inventory_h=layout.heading_font+layout.inventory_row_height+p*2+30
-    if details_placement=="right" then
-      local right_details_h=layout.details_line_height*Layout.detailsCardRows(layout.details_columns)+p*2+18
-      if Layout.detailsFit(rail_bottom,inventory_y,right_details_h,minimum_inventory_h) then place(self.details,card_x,rail_bottom-right_details_h,card_w,right_details_h); rail_bottom=rail_bottom-right_details_h-12 else self.details:hide() end
-    end
+    local right_details_h=layout.details_line_height*Layout.detailsCardRows(layout.details_columns)+p*2+18
+    if rail_bottom-inventory_y>=right_details_h+12 then place(self.details,card_x,rail_bottom-right_details_h,card_w,right_details_h); rail_bottom=rail_bottom-right_details_h-12 else self.details:hide() end
     local inventory_h=rail_bottom-inventory_y
     if inventory_h>=minimum_inventory_h then place(self.inventory,card_x,inventory_y,card_w,inventory_h); self.inventory_capacity=math.max(1,math.floor((inventory_h-layout.heading_font-p*2-30)/layout.inventory_row_height)) else self.inventory:hide(); self.inventory_capacity=0 end
     View.raiseCards({self.equipment,self.wealth,self.inventory,self.details})
@@ -265,11 +260,10 @@ function View:applyLayout(layout)
     local inset=lp; local y=layout.lower_title_height; for _,g in ipairs({self.hp,self.fatigue,self.carry}) do place(g,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap end
     if lower.show_psi then place(self.psi,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap else self.psi:hide() end
     if lower.show_web then place(self.web,inset,y,"100%-"..(inset*2),layout.lower_gauge_height); y=y+layout.lower_gauge_height+layout.lower_row_gap else self.web:hide() end
-    place(self.readiness,inset,y+3,"100%-"..(inset*2),lower.status_height)
     local compass_h,utility_h=lower.compass_height,lower.utility_height
     local utility_y,compass_y=lower.utility_y,lower.compass_y
     local mapper_h,mapper_y=lower.mapper_height,lower.mapper_y
-    local content_top=y+lower.status_height+13
+    local content_top=y
     local room_h=lower.room_height
     layout.lower_room_visible_height=room_h
     if room_h>0 then place(self.room,inset,content_top,"100%-"..(inset*2),room_h) else self.room:hide() end
@@ -378,11 +372,10 @@ function View:update(s)
   self.equipment:echo(View.equipmentContent(v,s.equipment.items,t,layout)); self.wealth:echo(View.wealthContent(v,t,layout))
   self.hp:setValue(v.hp.current,math.max(v.hp.maximum,1),"Health  "..v.hp.current.." / "..v.hp.maximum); self.fatigue:setValue(v.fatigue.current,math.max(v.fatigue.maximum,1),"Fatigue  "..v.fatigue.current.." / "..v.fatigue.maximum); self.carry:setValue(v.carry.current,math.max(v.carry.maximum,1),"Carry  "..v.carry.current.." / "..v.carry.maximum)
   if v.psi.visible then self.psi:setValue(v.psi.current,v.psi.maximum,"PSI  "..v.psi.current.." / "..v.psi.maximum) end; if v.web.visible then self.web:setValue(v.web.current,v.web.maximum,"Web  "..v.web.current.." / "..v.web.maximum) end
-  self.readiness:echo(View.statusContent(v,t,layout))
   self.room:echo(View.withFont("<span style='color:"..t.accent..";font-size:"..layout.lower_heading_font.."px'><b>"..esc(s.room.name).."</b></span><br><span style='color:"..t.muted.."'>Room "..esc(s.room.num or "—").." · Area "..esc(s.room.area or "—").."</span><br><br>"..esc(s.room.environment).."<br>Players &nbsp; <b>"..#s.room.players.."</b><br>Flags &nbsp; "..esc(table.concat(s.room.flags,", ")),layout.lower_body_font))
   self.compact:echo(View.withFont("<b>HP "..v.hp.current.."/"..v.hp.maximum.."</b> &nbsp; FAT "..v.fatigue.current.."/"..v.fatigue.maximum.." &nbsp; WPN "..(v.weapon_readied and "✓" or "×").." &nbsp; SHD "..(v.shield_readied and "✓" or "×").." &nbsp; <span style='color:"..t.accent.."'>"..esc(s.room.name).."</span>",layout.body_font))
   self.bottom:echo(View.withFont("EXITS &nbsp; <b>"..esc(table.concat(s.room.exits,", ")).."</b> &nbsp;&nbsp; | &nbsp;&nbsp; CARRY &nbsp; <b>"..v.carry.current.." / "..v.carry.maximum.."</b> &nbsp;&nbsp; | &nbsp;&nbsp; ROUND &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b>",layout.small_font))
-  if self.layout then self:applyLayout(self.layout); self.details:echo(View.detailsContent(s.combat,s.attributes,t,self.layout)); self:renderInventory(s); self:renderNavigation(s.room.exits) end
+  if self.layout then self:applyLayout(self.layout); self.details:echo(View.detailsContent(s.combat,s.attributes,t,self.layout,v)); self:renderInventory(s); self:renderNavigation(s.room.exits) end
 end
 function View:delete() if self.root then self.root:delete(); self.root=nil end end
 return View

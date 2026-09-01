@@ -47,8 +47,8 @@ local function fire(f,name,arg)
   for _,event in pairs(f.events) do if event.name==name then event.fn(nil,arg) end end
 end
 
-test("mapper release defaults are ready after version 0.2.49",function()
-  eq(Defaults.version,"0.2.50"); eq(Defaults.mapper.enabled,true); eq(Defaults.mapper.walk_timeout,12)
+test("mapper release defaults are ready after version 0.2.50",function()
+  eq(Defaults.version,"0.2.51"); eq(Defaults.mapper.enabled,true); eq(Defaults.mapper.walk_timeout,12)
   eq(Defaults.mapper.minimum_height,90); eq(Defaults.mapper.schema,1)
 end)
 

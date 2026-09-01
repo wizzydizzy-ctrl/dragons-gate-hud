@@ -8,44 +8,36 @@ function Layout.lowerPanelGeometry(layout,psiVisible,webVisible)
   local compass=layout.lower_compass_cell*3
   local utility=layout.lower_utility_height*2+5
   local fixed_bottom=inset+utility+6+compass
-  local function contentTop(optional,status)
-    return (3+optional)*(layout.lower_gauge_height+layout.lower_row_gap)+status+13
+  local function contentTop(optional)
+    return (3+optional)*(layout.lower_gauge_height+layout.lower_row_gap)
   end
   local room=layout.lower_room_height
-  local status=layout.lower_status_height
   local mapper=layout.mapper_visible and layout.lower_mapper_height or 0
   local mapper_min=layout.lower_mapper_min_height or 0
   local room_min=layout.lower_room_min_height or 1
-  local status_min=layout.lower_status_min_height or status
   local optional=#requested
-  local function required(r,s,m)
-    return contentTop(optional,s)+r+layout.lower_row_gap+fixed_bottom+(m>0 and (m+layout.lower_mapper_gap) or 0)
+  local function required(r,m)
+    return contentTop(optional)+r+layout.lower_row_gap+fixed_bottom+(m>0 and (m+layout.lower_mapper_gap) or 0)
   end
-  while optional>0 and required(room,status,mapper)>available do optional=optional-1 end
-  local pressure=math.max(0,required(room,status,mapper)-available)
+  while optional>0 and required(room,mapper)>available do optional=optional-1 end
+  local pressure=math.max(0,required(room,mapper)-available)
   local cut=math.min(pressure,room-room_min); room=room-cut; pressure=pressure-cut
-  cut=math.min(pressure,status-status_min); status=status-cut; pressure=pressure-cut
   cut=math.min(pressure,math.max(0,mapper-mapper_min)); mapper=mapper-cut; pressure=pressure-cut
-  if pressure>0 and mapper>0 then mapper=0; pressure=math.max(0,required(room,status,mapper)-available) end
+  if pressure>0 and mapper>0 then mapper=0; pressure=math.max(0,required(room,mapper)-available) end
   cut=math.min(pressure,room-room_min); room=room-cut; pressure=pressure-cut
-  cut=math.min(pressure,status-status_min); status=status-cut; pressure=pressure-cut
-  local panel=math.min(available,required(room,status,mapper))
+  local panel=math.min(available,required(room,mapper))
   local gauge_y=(3+optional)*(layout.lower_gauge_height+layout.lower_row_gap)
-  local content_top=gauge_y+status+13
+  local content_top=gauge_y
   local utility_y=panel-inset-utility
   local compass_y=utility_y-6-compass
   local mapper_y=mapper>0 and compass_y-layout.lower_mapper_gap-mapper or compass_y
   return {panel_height=panel,optional_count=optional,show_psi=psiVisible and optional>=1,
-    show_web=webVisible and optional>=(psiVisible and 2 or 1),status_height=status,room_height=room,
+    show_web=webVisible and optional>=(psiVisible and 2 or 1),room_height=room,
     mapper_height=mapper,content_top=content_top,mapper_y=mapper_y,compass_y=compass_y,
     utility_y=utility_y,compass_height=compass,utility_height=utility}
 end
-function Layout.detailsPlacement(available_height,line_height,left_width)
-  local enough_height=(tonumber(available_height) or 0)>=(tonumber(line_height) or 0)*8
-  local enough_width=left_width==nil or (tonumber(left_width) or 0)>=420
-  return enough_height and enough_width and "left" or "right"
-end
-function Layout.detailsCardRows(columns) return 3 end
+function Layout.detailsPlacement() return "right" end
+function Layout.detailsCardRows(columns) return 5 end
 function Layout.detailsFit(rail_bottom,inventory_y,details_height,minimum_inventory_height)
   return (tonumber(rail_bottom) or 0)-(tonumber(details_height) or 0)-12-(tonumber(inventory_y) or 0)>=(tonumber(minimum_inventory_height) or 0)
 end
@@ -89,7 +81,7 @@ local function metrics(width,height,layout,chatSettings,mapperSettings)
   layout.body_font=clamp(width/100,16,22); layout.small_font=clamp((layout.body_font-2)*2,28,40); layout.heading_font=clamp(layout.body_font+5,21,27)
   layout.attribute_strip_font=clamp(layout.console_width/100,10,14)
   layout.panel_padding=clamp(width/120,12,22); layout.gauge_height=clamp(layout.small_font+10,38,50); layout.row_gap=clamp(layout.body_font*.7,11,15)
-  layout.title_height=layout.heading_font+30; layout.status_height=layout.body_font*4+40
+  layout.title_height=layout.heading_font+30
   layout.room_height=layout.heading_font+layout.body_font*6+54; layout.exit_height=layout.small_font+16
   layout.identity_height=layout.heading_font+layout.body_font*6+56
   layout.inventory_font=clamp(layout.body_font-2,14,20); layout.inventory_row_height=layout.inventory_font+10
@@ -99,8 +91,7 @@ local function metrics(width,height,layout,chatSettings,mapperSettings)
   layout.lower_scale=.8
   layout.lower_body_font=scaled(layout.body_font); layout.lower_small_font=layout.lower_body_font; layout.lower_heading_font=scaled(layout.heading_font)
   layout.lower_panel_padding=scaled(layout.panel_padding); layout.lower_gauge_height=layout.lower_small_font+14; layout.lower_row_gap=scaled(layout.row_gap)
-  layout.lower_title_height=0; layout.lower_status_height=scaled(layout.status_height); layout.lower_room_height=scaled(layout.room_height)
-  layout.lower_status_min_height=math.max(layout.lower_body_font*2+20,48)
+  layout.lower_title_height=0; layout.lower_room_height=scaled(layout.room_height)
   layout.lower_room_min_height=math.max(layout.lower_heading_font+layout.lower_body_font+20,56)
   layout.lower_compass_font=scaled(layout.compass_font); layout.lower_compass_cell=scaled(layout.compass_cell)
   layout.lower_utility_font=scaled(layout.utility_font); layout.lower_utility_height=scaled(layout.utility_height); layout.lower_section_gap=scaled(44)
@@ -115,7 +106,7 @@ local function metrics(width,height,layout,chatSettings,mapperSettings)
     local minimum=math.max(responsiveMinimum,math.floor(tonumber(mapperSettings.minimum_height) or 90))
     layout.lower_mapper_min_height=minimum
     local available=math.max(0,height-layout.top)
-    local desired=clamp(available*.22,minimum,220)
+    local desired=clamp(available*.30,minimum,320)
     layout.mapper_visible=available>=minimum+180
     layout.lower_mapper_height=layout.mapper_visible and desired or 0
     layout.lower_room_visible_height=layout.lower_room_height

@@ -6,7 +6,6 @@ function Adapter.manifestUrl(github,nonce)
   return "https://github.com/"..github.owner.."/"..github.repository.."/releases/latest/download/manifest.json?dghud="..tostring(nonce)
 end
 local updateNonce=0
-local cleanupNonce=0
 function Adapter.new() return setmetatable({},Adapter) end
 function Adapter:getBorders() return getBorderLeft(),getBorderTop(),getBorderRight(),getBorderBottom() end
 function Adapter:getWindowSize() return getMainWindowSize() end
@@ -49,11 +48,16 @@ function Adapter:addLineTrigger(fn) return tempRegexTrigger("^.*$",function() fn
 function Adapter:killTrigger(id) return killTrigger(id) end
 function Adapter:epoch() return os.time() end
 function Adapter:cleanupClock() return os.time() end
-function Adapter:cleanupToken()
-  cleanupNonce=cleanupNonce+1
-  local entropy={tostring(os.time()),tostring(os.clock()),tostring(cleanupNonce),tostring({}),tostring(math.random())}
-  if type(_G.getEpoch)=="function" then local ok,value=pcall(_G.getEpoch); if ok then entropy[#entropy+1]=tostring(value) end end
-  return SHA256.hex(table.concat(entropy,"|")):sub(1,16)
+function Adapter:cleanupToken(source)
+  source=source or io
+  if type(source)~="table" or type(source.open)~="function" then return nil,"secure random source is unavailable" end
+  local openOK,file=pcall(source.open,"/dev/urandom","rb")
+  if not openOK or not file then return nil,"secure random source is unavailable" end
+  local readOK,bytes=pcall(file.read,file,16)
+  if type(file.close)=="function" then pcall(file.close,file) end
+  if not readOK then return nil,"secure random source read failed" end
+  if type(bytes)~="string" or #bytes~=16 then return nil,"secure random source returned incomplete data" end
+  return SHA256.hex(bytes):sub(1,16)
 end
 function Adapter:refreshMap(api)
   api=api or _G

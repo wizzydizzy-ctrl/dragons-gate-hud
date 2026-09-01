@@ -188,6 +188,48 @@ test("cleanup safety blocks current active and uncertain movement state",functio
   _G.speedWalkPath="malformed"; ok,err=room({"","101"}); eq(ok,nil); eq(err,"cleanup safety state is unavailable"); _G.speedWalkPath=nil
 end)
 
+test("cleanup safety rejects partial sparse and inconsistent native speedwalk state",function()
+  local oldPath,oldDir=_G.speedWalkPath,_G.speedWalkDir
+  local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
+  local room=aliasCallback(f,"^dghud map delete room (\\d+)$")
+  local invalid={
+    {{1,100},nil},
+    {nil,{"n"}},
+    {{[1]=1,[3]=100},{[1]="n",[2]="n"}},
+    {{1,100},{[1]="n",[3]="e"}},
+    {{1,100},{"n","e","s"}},
+    {{1,-100},{"n"}},
+    {{"100"},{"n"}},
+    {{1,100},{""}},
+  }
+  for _,state in ipairs(invalid) do
+    _G.speedWalkPath,_G.speedWalkDir=state[1],state[2]
+    local ok,err=room({"","100"}); _G.speedWalkPath,_G.speedWalkDir=nil,nil
+    eq(ok,nil); eq(err,"cleanup safety state is unavailable"); eq(f.map.rooms[100]~=nil,true)
+  end
+  _G.speedWalkPath,_G.speedWalkDir={100},{"n"}
+  local ok,err=room({"","100"}); _G.speedWalkPath,_G.speedWalkDir=nil,nil
+  eq(ok,nil); eq(err,"map walking is active")
+  _G.speedWalkPath,_G.speedWalkDir=oldPath,oldDir
+end)
+
+test("cleanup safety rejects inconsistent walker route destination and index state",function()
+  local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
+  local room=aliasCallback(f,"^dghud map delete room (\\d+)$")
+  local invalid={
+    {route={rooms={[1]=1,[3]=100},commands={"n"}},index=1,destination=100},
+    {route={rooms={1,100},commands={}},index=1,destination=100},
+    {route={rooms={1,100},commands={"n"}},index=2,destination=100},
+    {route={rooms={1,100},commands={"n"}},index=1,destination=999},
+  }
+  for _,state in ipairs(invalid) do
+    hud.walker.route=state.route; hud.walker.index=state.index; hud.walker.destination=state.destination
+    local ok,err=room({"","100"}); hud.walker.route=nil; hud.walker.index=nil; hud.walker.destination=nil
+    eq(ok,nil); eq(err,"cleanup safety state is unavailable"); eq(f.map.rooms[100]~=nil,true)
+  end
+  hud.walker.route=nil; hud.walker.index=nil; hud.walker.destination=nil
+end)
+
 test("cleanup safety blocks pending automapper and special transitions",function()
   local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
   local room=aliasCallback(f,"^dghud map delete room (\\d+)$")
@@ -202,18 +244,74 @@ test("cleanup lifecycle stops movement clears caches refreshes and remaps surviv
   eq(hud.managed_rooms[100],nil); eq(f.map.invalidated.ids[1],100); eq(f.mapRefreshes,1); eq(remaps,1)
 end)
 
+test("cleanup preparation requires explicit automapper cancellation success",function()
+  for _,returned in ipairs({false,"nil"}) do
+    local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
+    assert(aliasCallback(f,"^dghud map delete room (\\d+)$")({"","100"}))
+    hud.automapper.onWrongDirection=function() if returned=="nil" then return nil,"automapper cancel failed" end; return false,"automapper cancel failed" end
+    local result,err=aliasCallback(f,"^dghud map confirm (\\S+)$")({"","ABC123"})
+    eq(result,nil); eq(err,"automapper cancel failed"); eq(f.map.rooms[100]~=nil,true)
+  end
+end)
+
+test("cleanup preparation requires explicit special transition cancellation success",function()
+  for _,returned in ipairs({false,"nil"}) do
+    local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
+    assert(aliasCallback(f,"^dghud map delete room (\\d+)$")({"","100"}))
+    hud.special_transition.cancel=function() if returned=="nil" then return nil,"special cancel failed" end; return false,"special cancel failed" end
+    local result,err=aliasCallback(f,"^dghud map confirm (\\S+)$")({"","ABC123"})
+    eq(result,nil); eq(err,"special cancel failed"); eq(f.map.rooms[100]~=nil,true)
+  end
+end)
+
+test("cleanup reconciliation reports GMCP read exceptions after mutation",function()
+  local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
+  assert(aliasCallback(f,"^dghud map delete room (\\d+)$")({"","100"}))
+  local reads=0; function f:getGMCP() reads=reads+1; if reads==1 then return gmcpRoom(1) end; error("GMCP read failed") end
+  local result=assert(aliasCallback(f,"^dghud map confirm (\\S+)$")({"","ABC123"}))
+  eq(f.map.rooms[100],nil); eq(result.lifecycle_error,"cleanup current room state is unavailable"); eq(result.error,result.lifecycle_error)
+end)
+
+test("cleanup reconciliation requires a valid fresh current room after mutation",function()
+  local invalid={false,{},{Room={Info={}}},{Room={Info={num=0}}},{Room={Info={num="bad"}}}}
+  for _,gmcpValue in ipairs(invalid) do
+    local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
+    assert(aliasCallback(f,"^dghud map delete room (\\d+)$")({"","100"})); local reads=0
+    function f:getGMCP() reads=reads+1; if reads==1 then return gmcpRoom(1) end; return gmcpValue==false and nil or gmcpValue end
+    local result=assert(aliasCallback(f,"^dghud map confirm (\\S+)$")({"","ABC123"}))
+    eq(f.map.rooms[100],nil); eq(result.lifecycle_error,"cleanup current room state is unavailable"); eq(result.error,result.lifecycle_error)
+  end
+end)
+
 test("cleanup shutdown removes all five owned aliases",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); local before=f:count(f.aliases); eq(before,#Events.aliases+6)
   local owned={}; for id,alias in pairs(f.aliases) do if alias.pattern:match("%^dghud map ") then owned[id]=true end end; eq(f:count(owned),5)
   assert(hud:shutdown()); for id in pairs(owned) do eq(f.killed[id],true) end; eq(f:count(f.aliases),0)
 end)
 
-test("Mudlet cleanup adapter contains refresh exceptions and creates opaque tokens",function()
+test("Mudlet cleanup adapter contains refresh exceptions and creates opaque tokens from secure bytes",function()
   local adapter=MudletAdapter.new(); local updates=0
   eq(adapter:cleanupClock(),os.time())
-  local first,second=adapter:cleanupToken(),adapter:cleanupToken(); eq(type(first),"string"); eq(first:match("^[A-Za-z0-9]+$")~=nil,true); eq(#first>=8 and #first<=24,true); eq(first~=second,true)
+  local closed=0; local source={open=function(path,mode) eq(path,"/dev/urandom"); eq(mode,"rb"); return {read=function(_,count) eq(count,16); return "0123456789abcdef" end,close=function() closed=closed+1 end} end}
+  local token=assert(adapter:cleanupToken(source)); eq(token,"9f9f5111f7b27a78"); eq(token:match("^[A-Za-z0-9]+$")~=nil,true); eq(closed,1)
   eq(adapter:refreshMap({updateMap=function() updates=updates+1 end}),true); eq(updates,1)
   local ok,err=adapter:refreshMap({updateMap=function() error("native refresh failed") end}); eq(ok,nil); eq(type(err),"string")
+end)
+
+test("Mudlet cleanup token generation fails closed without complete secure entropy",function()
+  local adapter=MudletAdapter.new()
+  local token,err=adapter:cleanupToken({open=function() return nil,"unsupported" end}); eq(token,nil); eq(err,"secure random source is unavailable")
+  local closed=0; token,err=adapter:cleanupToken({open=function() return {read=function() return "short" end,close=function() closed=closed+1 end} end})
+  eq(token,nil); eq(err,"secure random source returned incomplete data"); eq(closed,1)
+  token,err=adapter:cleanupToken({open=function() return {read=function() error("read failed") end,close=function() error("close failed") end} end})
+  eq(token,nil); eq(err,"secure random source read failed")
+end)
+
+test("cleanup preview fails closed when secure token entropy is unavailable",function()
+  local f=fake(); f.gmcp=gmcpRoom(1); function f:cleanupToken() return nil,"secure random source is unavailable" end
+  local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
+  local preview,err=aliasCallback(f,"^dghud map delete room (\\d+)$")({"","100"})
+  eq(preview,nil); eq(err,"secure random source is unavailable"); eq(hud.cleanup:pending(),nil); eq(f.map.rooms[100]~=nil,true); eq(f.cleanupReports[#f.cleanupReports].error,true)
 end)
 
 test("successful room ingestion centers the embedded mapper",function()

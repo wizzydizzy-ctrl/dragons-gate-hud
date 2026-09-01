@@ -141,40 +141,60 @@ local function positiveRoom(value)
   local room=tonumber(value)
   return room and room==room and room~=math.huge and room~=-math.huge and room>0 and room%1==0 and room or nil
 end
-local function appendRoute(target,source,startIndex)
-  if source==nil then return true end
-  if type(source)~="table" then return nil,"cleanup safety state is unavailable" end
-  for index=startIndex or 1,#source do
-    local room=positiveRoom(source[index]); if not room then return nil,"cleanup safety state is unavailable" end
-    target[#target+1]=room
+local function denseArray(value,validate,allowEmpty)
+  if type(value)~="table" then return nil end
+  local count,maximum=0,0
+  for key,item in pairs(value) do
+    if type(key)~="number" or key<1 or key%1~=0 or not validate(item) then return nil end
+    count=count+1; if key>maximum then maximum=key end
   end
-  return true
+  if count~=maximum or not allowEmpty and count==0 then return nil end
+  return count
+end
+local function validRoomID(value) return type(value)=="number" and positiveRoom(value)~=nil end
+local function validCommand(value) return type(value)=="string" and value:match("%S")~=nil end
+local function appendRooms(target,source,first,last)
+  for index=first,last do target[#target+1]=source[index] end
 end
 function Main:safetySnapshot()
   local ok,data=pcall(self.adapter.getGMCP,self.adapter)
   local info=ok and type(data)=="table" and type(data.Room)=="table" and type(data.Room.Info)=="table" and data.Room.Info or nil
   local current=info and positiveRoom(info.num) or nil
   if not current or not self.walker or type(self.walker.active)~="function" or not self.automapper or not self.special_transition then return nil,"cleanup safety state is unavailable" end
-  local activeOK,walking=pcall(self.walker.active,self.walker); if not activeOK or type(walking)~="boolean" then return nil,"cleanup safety state is unavailable" end
+  local activeOK,walkerActive=pcall(self.walker.active,self.walker); if not activeOK or type(walkerActive)~="boolean" then return nil,"cleanup safety state is unavailable" end
   local route={}
-  if walking then
-    if type(self.walker.route)~="table" or type(self.walker.route.rooms)~="table" or not positiveRoom(self.walker.index) then return nil,"cleanup safety state is unavailable" end
-    local routeOK,routeErr=appendRoute(route,self.walker.route.rooms,self.walker.index); if not routeOK then return nil,routeErr end
+  if walkerActive then
+    local ownedRoute=self.walker.route
+    local roomCount=type(ownedRoute)=="table" and denseArray(ownedRoute.rooms,validRoomID,false) or nil
+    local commandCount=type(ownedRoute)=="table" and denseArray(ownedRoute.commands,validCommand,false) or nil
+    local index=positiveRoom(self.walker.index); local destination=positiveRoom(self.walker.destination)
+    if not roomCount or not commandCount or roomCount~=commandCount+1 or not index or index>commandCount or not destination or ownedRoute.rooms[roomCount]~=destination then return nil,"cleanup safety state is unavailable" end
+    appendRooms(route,ownedRoute.rooms,index,roomCount)
   elseif self.generated_command~=nil then return nil,"cleanup safety state is unavailable" end
   local globalPath=rawget(_G,"speedWalkPath")
-  local globalOK,globalErr=appendRoute(route,globalPath,1); if not globalOK then return nil,globalErr end
+  local globalDirections=rawget(_G,"speedWalkDir")
+  local nativeActive=globalPath~=nil or globalDirections~=nil
+  if nativeActive then
+    local pathCount=denseArray(globalPath,validRoomID,false)
+    local directionCount=denseArray(globalDirections,validCommand,false)
+    if not pathCount or not directionCount or pathCount~=directionCount then return nil,"cleanup safety state is unavailable" end
+    local destination=globalPath[pathCount]
+    if walkerActive and destination~=self.walker.destination then return nil,"cleanup safety state is unavailable" end
+    appendRooms(route,globalPath,1,pathCount)
+  end
   local specialOK,special=pcall(self.special_transition.pending,self.special_transition); if not specialOK then return nil,"cleanup safety state is unavailable" end
   if self.automapper.pending~=nil and type(self.automapper.pending)~="table" then return nil,"cleanup safety state is unavailable" end
-  return {current_room=current,walking=walking,route_rooms=route,pending_automap=self.automapper.pending~=nil,pending_special=special~=nil}
+  return {current_room=current,walking=walkerActive or nativeActive,route_rooms=route,pending_automap=self.automapper.pending~=nil,pending_special=special~=nil}
 end
 function Main:beforeCleanupDelete()
   local walkOK,walkErr=self.walker:stop("map cleanup")
   if not walkOK then return nil,walkErr end
   self.generated_command=nil
-  local automapOK,automapErr=pcall(self.automapper.onWrongDirection,self.automapper)
-  if not automapOK then return nil,tostring(automapErr) end
+  local automapCallOK,automapOK,automapErr=pcall(self.automapper.onWrongDirection,self.automapper)
+  if not automapCallOK then return nil,tostring(automapOK) end
+  if automapOK~=true then return nil,automapErr or "automapper cancellation failed" end
   local specialOK,specialErr=self:callSpecialTransition("cancel","map_cleanup")
-  if specialOK==nil and specialErr then return nil,specialErr end
+  if specialOK~=true then return nil,specialErr or "special transition cancellation failed" end
   return true
 end
 function Main:afterCleanupDelete(result)
@@ -183,8 +203,11 @@ function Main:afterCleanupDelete(result)
   local refreshed,refreshErr=true,nil
   if type(self.adapter.refreshMap)=="function" then refreshed,refreshErr=self.adapter:refreshMap() end
   if not refreshed then return nil,refreshErr or "map refresh failed" end
-  local data=self.adapter:getGMCP(); local info=data and data.Room and data.Room.Info; local current=info and positiveRoom(info.num)
-  if current and not deleted[current] and self:mapperEnabled() then
+  local gmcpOK,data=pcall(self.adapter.getGMCP,self.adapter)
+  local info=gmcpOK and type(data)=="table" and type(data.Room)=="table" and type(data.Room.Info)=="table" and data.Room.Info or nil
+  local current=info and positiveRoom(info.num) or nil
+  if not current then return nil,"cleanup current room state is unavailable" end
+  if not deleted[current] and self:mapperEnabled() then
     local mapped,mapErr=self:callAutomapper("onRoom",info); if not mapped then return nil,mapErr or "current room remap failed" end
     self.managed_rooms[current]=true
   end
@@ -196,7 +219,8 @@ function Main:reportCleanup(message,isError)
   return isError and nil or true,message
 end
 function Main:previewCleanup(method,target)
-  local preview,err=self.cleanup[method](self.cleanup,target)
+  local callOK,preview,err=pcall(self.cleanup[method],self.cleanup,target)
+  if not callOK then err=preview; preview=nil end
   if not preview then self:reportCleanup(err,true); return nil,err end
   local ids={}; for index,roomID in ipairs(preview.room_ids) do ids[index]=tostring(roomID) end
   local message="Operation: "..preview.operation.."\nArea: "..tostring(preview.area_id or "none").."\nCount: "..tostring(#preview.room_ids).."\nRoom IDs: "..table.concat(ids,",").."\n[DGHUD Map] Preview "..preview.token.." expires in 30 seconds.\n[DGHUD Map] Confirm with: dghud map confirm "..preview.token
@@ -297,7 +321,7 @@ function Main:start()
   function cleanupRuntime:beforeDelete(plan) return self.owner:beforeCleanupDelete(plan) end
   function cleanupRuntime:afterDelete(result) return self.owner:afterCleanupDelete(result) end
   local clock=function() return self.adapter:cleanupClock() end
-  local tokenFactory=function() return self.adapter:cleanupToken() end
+  local tokenFactory=function() local token,err=self.adapter:cleanupToken(); if not token then error(err or "secure random source is unavailable",0) end; return token end
   self.cleanup=Cleanup.new(self.map,cleanupRuntime,clock,tokenFactory,30)
   self:installMapClickHook()
   local startupOk,startupErr=pcall(function()

@@ -3,7 +3,7 @@ local Automapper=require("automapper")
 local Model=require("mapper_model")
 
 local function fakeMapApi(seed)
-  local api={rooms=seed or {},areas={},areaUser={},labels={},nextArea=1,fail={},path=nil,refreshed=0,deletedRooms={},deletedAreas={},special={},specialAdds=0,zoom={}}
+  local api={rooms=seed or {},areas={},areaUser={},mapUser={},labels={},nextArea=1,fail={},path=nil,refreshed=0,deletedRooms={},deletedAreas={},special={},specialAdds=0,zoom={}}
   local function gate(name)
     if api.fail[name]=="throw" then error(name.." exploded") end
     if api.fail[name] then return nil,name.." rejected" end
@@ -55,6 +55,8 @@ local function fakeMapApi(seed)
   end
   function api.getRoomCoordinates(id) local ok,e=gate("getRoomCoordinates"); if not ok then return nil,e end; local r=api.rooms[id]; return r and r.x,r and r.y,r and r.z end
   function api.getRooms() local ok,e=gate("getRooms"); if not ok then return nil,e end; local out={}; for id,r in pairs(api.rooms) do out[id]=r.name or ("Room "..id) end; return out end
+  function api.getAllMapUserData() local ok,e=gate("getAllMapUserData"); if not ok then return nil,e end; local out={}; for k,v in pairs(api.mapUser) do out[k]=v end; return out end
+  function api.setMapUserData(k,v) local ok,e=gate("setMapUserData"); if not ok then return nil,e end; api.mapUser[k]=v; return true end
   function api.getRoomsByPosition(area,x,y,z) local ok,e=gate("getRoomsByPosition"); if not ok then return nil,e end; local out,i={},0; for id,r in pairs(api.rooms) do if r.area==area and r.x==x and r.y==y and r.z==z then out[i]=id;i=i+1 end end; return out end
   function api.getMapZoom(area) local ok,e=gate("getMapZoom"); if not ok then return nil,e end; return api.zoom[area] end
   function api.setMapZoom(value,area) local ok,e=gate("setMapZoom"); if not ok then return nil,e end; api.zoom[area]=value; return true end
@@ -120,6 +122,27 @@ test("legacy label cleanup never interprets a numeric room name as an ID",functi
   api.getRooms=function() return {[50]="100"} end
   local count=assert(Adapter.new(api):clearOwnedRoomNames())
   eq(count,1); eq(api.rooms[50].name,""); eq(api.rooms[100].name,"Keep room 100")
+end)
+
+test("legacy label migration scans once and persists a map-level completion gate",function()
+  local api=fakeMapApi({
+    [10]={name="Old HUD label",user={["dghud.owner"]="DragonsGateHUD"}},
+    [11]={name="Personal room",user={}},
+  })
+  local calls=0; local nativeGetRooms=api.getRooms
+  api.getRooms=function(...) calls=calls+1; return nativeGetRooms(...) end
+  local changed,ran=assert(Adapter.new(api):migrateLegacyRoomNames())
+  eq(changed,1); eq(ran,true); eq(calls,1); eq(api.rooms[10].name,""); eq(api.rooms[11].name,"Personal room")
+  changed,ran=assert(Adapter.new(api):migrateLegacyRoomNames())
+  eq(changed,0); eq(ran,false); eq(calls,1)
+end)
+
+test("legacy label migration marks complete only after an ownership-safe scan succeeds",function()
+  local api=fakeMapApi({[10]={name="Old HUD label",user={["dghud.owner"]="DragonsGateHUD"}}})
+  api.fail.setRoomName=true
+  local changed,err=Adapter.new(api):migrateLegacyRoomNames(); eq(changed,nil); eq(err,"setRoomName rejected"); eq(api.mapUser["dghud.legacy_room_names_schema"],nil)
+  api.fail.setRoomName=nil; api.fail.setMapUserData=true
+  changed,err=Adapter.new(api):migrateLegacyRoomNames(); eq(changed,nil); eq(err,"setMapUserData rejected"); eq(api.mapUser["dghud.legacy_room_names_schema"],nil)
 end)
 
 test("reuses a persisted owned area after adapter reload",function()

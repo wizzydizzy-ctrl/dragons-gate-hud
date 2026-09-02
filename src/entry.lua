@@ -1,11 +1,12 @@
 local previous=rawget(_G,"DGHUD")
 local userSettings=previous and previous.user_settings
+local updateReinstallPending=previous and previous._update_reinstall_pending
 if previous and previous.shutdown then pcall(previous.shutdown) end
 local chat=previous and type(previous.chat)=="table" and previous.chat or {}
 chat.capture=function() return nil,"chatbox is not running" end
 chat.setFilter=function() return nil,"chatbox is not running" end
 chat.status=function() return nil,"HUD is not running" end
-DGHUD = {user_settings=userSettings,chat=chat}
+DGHUD = {user_settings=userSettings,chat=chat,_update_reinstall_pending=updateReinstallPending}
 local moduleNames={"defaults","command_parser","command_collector","chat_parser","chat_history","chat_storage","chat_controller","output_colorizer","navigation","mapper_model","map_adapter","map_cleanup","automapper","special_transition","map_walker","state","settings","sha256","release","events","layout","view","mudlet_adapter","main","updater"}
 for _,name in ipairs(moduleNames) do package.loaded[name]=nil end
 local defaults=require("defaults")

@@ -133,7 +133,19 @@ function Adapter:refreshCharacterData()
   if type(controller.onCharacterEntry)=="function" then return controller:onCharacterEntry() end
   return nil,"HUD startup refresh is unavailable"
 end
+function Adapter:consumeUpdateReinstall()
+  if not DGHUD or DGHUD._update_reinstall_pending~=true then return false end
+  DGHUD._update_reinstall_pending=nil
+  return true
+end
 function Adapter:reportUpdateCheckFailure(message) cecho("\n<yellow>[DGHUD Update]<reset> Version check failed: "..tostring(message).."; refreshing character data.\n") end
+function Adapter:updateClock()
+  if type(getEpoch)=="function" then return tonumber(getEpoch()) or os.time() end
+  return os.time()
+end
+function Adapter:reportUpdateStage(stage,elapsed)
+  cecho(string.format("\n<gold>[DGHUD Update]<reset> %s (%.1fs)\n",tostring(stage),tonumber(elapsed) or 0))
+end
 function Adapter:openSettings() cecho("\n<gold>[DGHUD]<reset> Settings: "..getMudletHomeDir().."/DragonsGateHUD/settings.lua\n") end
 local function readFile(path) local f=io.open(path,"rb"); if not f then return nil end; local data=f:read("*a"); f:close(); return data end
 local function writeFile(path,data) local f=assert(io.open(path,"wb")); f:write(data); f:close() end
@@ -151,14 +163,14 @@ function Adapter:checkLatestAsync(updater,done)
     local raw=readFile(path); if not raw or #raw>(policy.manifest_limit or 65536) then finish(nil,"manifest is missing or too large"); return end
     local ok,manifest=pcall(yajl.to_value,raw); if not ok then finish(nil,"manifest JSON is invalid"); return end
     local valid,why=updater:validateManifest(manifest); if not valid then finish(nil,why); return end
-    finish(manifest)
+    finish(manifest,nil,raw)
   end)
   updateNonce=updateNonce+1
   downloadFile(manifestPath,Adapter.manifestUrl(github,tostring(os.time()).."-"..tostring(updateNonce)))
   timeoutId=tempTimer(policy.timeout_seconds or 30,function() timeoutId=nil; finish(nil,"download timed out") end)
   return true
 end
-function Adapter:startUpdate(updater,done)
+function Adapter:startUpdate(updater,done,validatedManifest,validatedManifestRaw)
   local settings=updater.settings; local github=settings.github or {}; local policy=settings.update or {}
   if github.owner=="GITHUB_OWNER" or not tostring(github.owner):match("^[%w_.-]+$") or not tostring(github.repository):match("^[%w_.-]+$") then return nil,"configure the GitHub owner and repository first" end
   local base=Adapter.updateBase(getMudletHomeDir()); local staging=base.."/staging"; lfs.mkdir(base); lfs.mkdir(staging)
@@ -185,6 +197,7 @@ function Adapter:startUpdate(updater,done)
     writeFile(previousPath,payload); previousDigest=SHA256.hex(payload); beginReplacement()
   end
   local function bootstrapRollback()
+    updater:stage("Preparing rollback")
     local cached=readFile(currentPath); local cachedManifestRaw=readFile(currentManifestPath)
     if cached and cachedManifestRaw then
       local ok,cachedManifest=pcall(yajl.to_value,cachedManifestRaw)
@@ -197,10 +210,12 @@ function Adapter:startUpdate(updater,done)
     request(rollbackManifestPath,Adapter.versionManifestUrl(github,settings.version,tostring(os.time()).."-"..tostring(updateNonce)))
   end
   beginReplacement=function()
+    updater:stage("Installing")
     disarmTimeout(); expectedPath=nil; expectedUrl=nil
     self.replacePackageAsync=function(_,data,name,replaceDone)
       if name~="DragonsGateHUD" then replaceDone(nil,"package identity mismatch"); return end
       writeFile(packagePath,data)
+      if DGHUD then DGHUD._update_reinstall_pending=true end
       if DGHUD and DGHUD.shutdown then pcall(DGHUD.shutdown) end
       if hasPackage(name) then local removed=uninstallPackage(name); if removed==nil then replaceDone(nil,"could not remove existing HUD package"); return end end
       schedule(0.25,function()
@@ -214,6 +229,7 @@ function Adapter:startUpdate(updater,done)
       local rollbackPayload=readFile(previousPath)
       if name~="DragonsGateHUD" or not rollbackPayload then rollbackDone(nil,"no rollback package available"); return end
       if not Adapter.verifyArchive(rollbackPayload,previousDigest) then rollbackDone(nil,"rollback package checksum mismatch"); return end
+      if DGHUD then DGHUD._update_reinstall_pending=true end
       if DGHUD and DGHUD.shutdown then pcall(DGHUD.shutdown) end
       if hasPackage(name) then uninstallPackage(name) end
       schedule(0.25,function()
@@ -226,7 +242,7 @@ function Adapter:startUpdate(updater,done)
       completed=true
       if not installed then fail(message); return end
       writeFile(currentPath,readFile(packagePath)); writeFile(currentManifestPath,targetManifestRaw)
-      if finished then return end; finished=true; cleanup(); cecho("\n<green>[DGHUD Update]<reset> Installed version "..targetManifest.version.."\n"); if done then done(true) end
+      if finished then return end; updater:stage("Completed"); local elapsed=updater.update_started_at and math.max(0,updater.adapter:updateClock()-updater.update_started_at) or 0; finished=true; cleanup(); cecho(string.format("\n<green>[DGHUD Update]<reset> Installed version %s (%.1fs)\n",tostring(targetManifest.version),elapsed)); if done then done(true) end
     end)
     if not started and not completed then fail(why) end
   end
@@ -236,7 +252,7 @@ function Adapter:startUpdate(updater,done)
     disarmTimeout(); expectedPath=nil; expectedUrl=nil
     if path==manifestPath then
       local manifest,raw,why=parseManifest(path); if not manifest then return fail(why) end
-      targetManifest=manifest; targetManifestRaw=raw; request(packagePath,manifest.archive_url)
+      targetManifest=manifest; targetManifestRaw=raw; updater:stage("Downloading package"); request(packagePath,manifest.archive_url)
     elseif path==packagePath then
       local payload=readFile(path)
       if not payload or #payload>(policy.package_limit or 10485760) then return fail("package is missing or too large") end
@@ -255,9 +271,19 @@ function Adapter:startUpdate(updater,done)
       stageRollback(payload)
     end
   end)
-  updateNonce=updateNonce+1
-  local latest=Adapter.manifestUrl(github,tostring(os.time()).."-"..tostring(updateNonce))
-  request(manifestPath,latest)
+  if validatedManifest then
+    local valid,why=updater:validateManifest(validatedManifest); if not valid then cleanup(); return nil,why end
+    targetManifest=validatedManifest
+    targetManifestRaw=validatedManifestRaw
+    if type(targetManifestRaw)~="string" and yajl and type(yajl.to_string)=="function" then targetManifestRaw=yajl.to_string(validatedManifest) end
+    if type(targetManifestRaw)~="string" then cleanup(); return nil,"validated manifest source is unavailable" end
+    updater:stage("Downloading package"); request(packagePath,targetManifest.archive_url)
+  else
+    updater:stage("Checking")
+    updateNonce=updateNonce+1
+    local latest=Adapter.manifestUrl(github,tostring(os.time()).."-"..tostring(updateNonce))
+    request(manifestPath,latest)
+  end
   return true
 end
 return Adapter

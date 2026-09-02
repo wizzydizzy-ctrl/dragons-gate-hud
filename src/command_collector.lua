@@ -1,8 +1,10 @@
 local Collector={}; Collector.__index=Collector
 local SPECS={inventory={parser="parseInventory",snapshot="inventory"},stat={parser="parseStat",snapshot="stat"},info={parser="parseInfo",snapshot="info"},["info religion"]={parser="parseReligion",snapshot="religion"},["info mag"]={parser="parseRunes",snapshot="runes"},skill={parser="parseSkills",snapshot="skills"},time={parser="parseTime",snapshot="time"}}
 local PROMPT_NUDGE={inventory=true,stat=true,info=true,["info religion"]=true,["info mag"]=true,skill=true,time=true}
+local RESPONSE_WAIT={inventory=2.5,stat=2,info=2.5,["info religion"]=2,["info mag"]=2.5,skill=3,time=2}
+local RECOVERY_WAIT={inventory=2.5,stat=2,info=2.5,["info religion"]=2,["info mag"]=2.5,skill=3,time=2}
 function Collector.new(adapter,parser,onChange,onRoundtime,onCharacterEntry)
-  return setmetatable({adapter=adapter,parser=parser,onChange=onChange,onRoundtime=onRoundtime,onCharacterEntry=onCharacterEntry,snapshot={},sequence={"inventory","stat","info","info religion","info mag","skill","time"},runtime={triggers={},events={}},started=false,refreshed=false,prompt_nudge_delay=.15,response_timeout=8},Collector)
+  return setmetatable({adapter=adapter,parser=parser,onChange=onChange,onRoundtime=onRoundtime,onCharacterEntry=onCharacterEntry,snapshot={},sequence={"inventory","stat","info","info religion","info mag","skill","time"},runtime={triggers={},events={}},started=false,refreshed=false,prompt_nudge_delay=.15,drain_delay=.5},Collector)
 end
 function Collector:cancelActive()
   if self.timeout then self.adapter:cancelTimer(self.timeout); self.timeout=nil end
@@ -16,10 +18,28 @@ function Collector:schedulePromptNudge(command)
     if self.active and self.active.command==command then self.adapter:sendCommand("") end
   end)
 end
+function Collector:scheduleTimeout(active,delay,fn)
+  self.timeout=self.adapter:schedule(delay,function()
+    self.timeout=nil
+    if self.active==active then fn() end
+  end)
+end
+function Collector:startRecovery(active)
+  active.timeout_stage="recovery"
+  -- Keep the same capture active: a delayed response must never become input for
+  -- the following command. A second blank prompt request is safe and cheap.
+  if PROMPT_NUDGE[active.command] then self.adapter:sendCommand("") end
+  self:scheduleTimeout(active,RECOVERY_WAIT[active.command] or 2.5,function() self:startDrain(active) end)
+end
+function Collector:startDrain(active)
+  active.timeout_stage="drain"
+  self:scheduleTimeout(active,self.drain_delay,function() self:finish(nil) end)
+end
 function Collector:begin(command,startup)
   if self.active then return false end
-  self.active={command=command,lines={},startup=startup==true}
-  self.timeout=self.adapter:schedule(self.response_timeout,function() self.timeout=nil; self:finish(nil) end)
+  self.active={command=command,lines={},startup=startup==true,timeout_stage="initial"}
+  local active=self.active
+  self:scheduleTimeout(active,RESPONSE_WAIT[command] or 2.5,function() self:startRecovery(active) end)
   if startup then self.sending_startup_command=command; self.adapter:sendCommand(command); self.sending_startup_command=nil end
   self:schedulePromptNudge(command)
   return true
@@ -62,6 +82,8 @@ function Collector:onLine(value)
     return
   end
   if not self.active then return end
+  -- Lines remain owned by the timed-out command throughout recovery/drain. A
+  -- complete delayed response can still succeed before the bounded drain ends.
   if #self.active.lines==1 and self.active.lines[1]:match("^>%s*$") and not value:match("^>%s*$") then self.active.lines={} end
   self.active.lines[#self.active.lines+1]=value
   if self.parser.isComplete(self.active.command,self.active.lines) then self:finish(self.active.lines) end

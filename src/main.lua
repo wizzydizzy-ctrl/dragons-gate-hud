@@ -104,6 +104,7 @@ function Main:onCharacterEntry(name)
     local collector=self.collector
     if collector then collector:refresh() end
   end
+  if self.adapter.consumeUpdateReinstall and self.adapter:consumeUpdateReinstall() then refreshCommands(); return true end
   if not self.updater or not self.updater.checkAtCharacterEntry then refreshCommands(); return true end
   local ok,err=self.updater:checkAtCharacterEntry(function() refreshCommands() end)
   if not ok then refreshCommands() end
@@ -395,8 +396,8 @@ function Main:start()
     if not infoOk then self:mapperStatus("warning","Map information cleanup failed: "..tostring(infoResult),true)
     elseif infoResult==nil then self:mapperStatus("warning","Map information cleanup failed: "..tostring(infoErr),true) end
   end
-  if type(self.map.clearOwnedRoomNames)=="function" then
-    local cleanupOk,cleanupResult,cleanupErr=pcall(self.map.clearOwnedRoomNames,self.map)
+  if type(self.map.migrateLegacyRoomNames)=="function" then
+    local cleanupOk,cleanupResult,cleanupErr=pcall(self.map.migrateLegacyRoomNames,self.map)
     if not cleanupOk then self:mapperStatus("warning","Map label cleanup failed: "..tostring(cleanupResult),true)
     elseif cleanupResult==nil then self:mapperStatus("warning","Map label cleanup failed: "..tostring(cleanupErr),true) end
   end

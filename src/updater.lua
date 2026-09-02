@@ -2,8 +2,20 @@ local SHA256=require("sha256"); local Release=require("release")
 local Updater={}; Updater.__index=Updater
 local function errorMessage(value) local text=tostring(value or "unknown error"); return text:match(":%d+:%s*(.*)$") or text end
 function Updater.new(adapter,settings) return setmetatable({adapter=adapter,settings=settings or {},lock=nil,expected_path=nil},Updater) end
+local function updateNow(self)
+  if self.adapter.updateClock then return self.adapter:updateClock() end
+  return os.time()
+end
+function Updater:beginTiming()
+  self.update_started_at=updateNow(self)
+end
+function Updater:stage(name)
+  if not self.update_started_at then self:beginTiming() end
+  local elapsed=math.max(0,updateNow(self)-self.update_started_at)
+  if self.adapter.reportUpdateStage then self.adapter:reportUpdateStage(name,elapsed) end
+end
 function Updater:acquire(operation) if self.lock then return nil,self.lock.." already in progress" end; self.lock=operation; return true end
-function Updater:release() self.lock=nil; self.expected_path=nil; self.refresh_after_install=nil end
+function Updater:release() self.lock=nil; self.expected_path=nil; self.refresh_after_install=nil; self.update_started_at=nil end
 function Updater:acceptDownload(path) return type(path)=="string" and path==self.expected_path end
 function Updater:installVerified(payload,expected)
   if type(payload)~="string" or SHA256.hex(payload)~=tostring(expected):lower() then return nil,"package checksum mismatch" end
@@ -51,28 +63,30 @@ function Updater:check()
   if not self.adapter.fetchManifest then self:release(); return nil,"manifest adapter unavailable" end
   local success,result=pcall(self.adapter.fetchManifest,self.adapter,self.settings); self:release(); if not success then return nil,result end; return result
 end
-function Updater:update(done)
+function Updater:update(done,validatedManifest,manifestRaw)
   local ok,err=self:acquire("update"); if not ok then return nil,err end
   if not self.adapter.startUpdate then self:release(); return nil,"update adapter unavailable" end
+  if not self.update_started_at then self:beginTiming() end
   self.refresh_after_install=self.adapter.isCharacterActive and self.adapter:isCharacterActive() or false
   local completed=false
   local function finish(updated,message)
     if completed then return end; completed=true
     self:release(); if done then done(updated,message) end
   end
-  local success,result,message=pcall(self.adapter.startUpdate,self.adapter,self,finish); if not success then self:release(); return nil,result end
+  local success,result,message=pcall(self.adapter.startUpdate,self.adapter,self,finish,validatedManifest,manifestRaw); if not success then self:release(); return nil,result end
   if result==nil then self:release(); return nil,message end; return true
 end
 function Updater:checkAtCharacterEntry(done)
   done=done or function() end
   local ok,err=self:acquire("startup check"); if not ok then return nil,err end
+  self:beginTiming(); self:stage("Checking")
   if not self.adapter.checkLatestAsync then self:release(); done(false,"manifest adapter unavailable"); return nil,"manifest adapter unavailable" end
   local completed=false
   local function finish(updated,message)
     if completed then return end; completed=true
     self:release(); done(updated==true,message)
   end
-  local function checked(manifest,message)
+  local function checked(manifest,message,manifestRaw)
     if completed then return end
     if not manifest then
       if self.adapter.reportUpdateCheckFailure then self.adapter:reportUpdateCheckFailure(message or "version check failed") end
@@ -92,7 +106,7 @@ function Updater:checkAtCharacterEntry(done)
     end
     if comparison<=0 then finish(false); return end
     self.lock=nil
-    local started,startErr=self:update(function(updated,updateErr) finish(updated,updateErr) end)
+    local started,startErr=self:update(function(updated,updateErr) finish(updated,updateErr) end,manifest,manifestRaw)
     if not started then finish(false,startErr) end
   end
   local callOk,started,startErr=pcall(self.adapter.checkLatestAsync,self.adapter,self,checked)

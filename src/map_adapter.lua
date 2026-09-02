@@ -4,6 +4,8 @@ local MapperModel=require("mapper_model")
 local unpackValues=table.unpack or unpack
 
 local reverse={n="s",ne="sw",e="w",se="nw",s="n",sw="ne",w="e",nw="se",up="down",down="up",["in"]="out",out="in"}
+local LEGACY_ROOM_NAME_MIGRATION_KEY="dghud.legacy_room_names_schema"
+local LEGACY_ROOM_NAME_MIGRATION_SCHEMA="1"
 
 local function areaName(key)
   local destination=tostring(key):match("^special:(%d+)$")
@@ -109,6 +111,20 @@ function MapAdapter:clearOwnedRoomNames()
     end
   end
   return changed
+end
+
+function MapAdapter:migrateLegacyRoomNames()
+  local ready,readyErr=requireCapabilities(self.api,{"getAllMapUserData","setMapUserData"})
+  if not ready then return nil,readyErr end
+  local metadata,metadataErr=read(self.api,"getAllMapUserData")
+  if metadata==nil then return nil,metadataErr end
+  if type(metadata)~="table" then return nil,"Mudlet mapper API getAllMapUserData returned invalid data" end
+  if tostring(metadata[LEGACY_ROOM_NAME_MIGRATION_KEY] or "")==LEGACY_ROOM_NAME_MIGRATION_SCHEMA then return 0,false end
+  local changed,cleanupErr=self:clearOwnedRoomNames()
+  if changed==nil then return nil,cleanupErr end
+  local marked,markErr=invoke(self.api,"setMapUserData",LEGACY_ROOM_NAME_MIGRATION_KEY,LEGACY_ROOM_NAME_MIGRATION_SCHEMA)
+  if marked==nil then return nil,markErr end
+  return changed,true
 end
 
 function MapAdapter:ensureArea(areaKey)
@@ -646,7 +662,7 @@ end
 function MapAdapter.mudletApi(globals)
   globals=globals or _G
   local api={}
-  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","getAreaRooms1","getMapLabels","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","getRoomExits","addSpecialExit","getSpecialExits","getRoomCoordinates","getRooms","getRoomsByPosition","getMapZoom","setMapZoom","setRoomIDbyHash","centerview","updateMap","tempTimer"}
+  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","getAreaRooms1","getMapLabels","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","getRoomExits","addSpecialExit","getSpecialExits","getRoomCoordinates","getRooms","getRoomsByPosition","getAllMapUserData","setMapUserData","getMapZoom","setMapZoom","setRoomIDbyHash","centerview","updateMap","tempTimer"}
   local function wrapper(name)
     return function(...)
       local fn=globals[name]
@@ -657,7 +673,7 @@ function MapAdapter.mudletApi(globals)
       return a,b,c
     end
   end
-  local mutations={addRoom=true,deleteRoom=true,addAreaName=true,deleteArea=true,setAreaUserData=true,setRoomArea=true,setRoomName=true,setRoomCoordinates=true,setRoomUserData=true,setExitStub=true,setExit=true,addSpecialExit=true,setMapZoom=true,setRoomIDbyHash=true,centerview=true,updateMap=true,tempTimer=true}
+  local mutations={addRoom=true,deleteRoom=true,addAreaName=true,deleteArea=true,setAreaUserData=true,setRoomArea=true,setRoomName=true,setRoomCoordinates=true,setRoomUserData=true,setExitStub=true,setExit=true,addSpecialExit=true,setMapUserData=true,setMapZoom=true,setRoomIDbyHash=true,centerview=true,updateMap=true,tempTimer=true}
   for _,name in ipairs(names) do
     if mutations[name] then
       api[name]=wrapper(name)

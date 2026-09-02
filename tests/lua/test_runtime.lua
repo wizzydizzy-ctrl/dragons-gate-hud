@@ -31,6 +31,7 @@ local function fake()
   function f:killAlias(id) self.killed[id]=true; self.aliases[id]=nil end
   function f:getGMCP() return self.gmcp or {Char={Vitals={hp=1,hp_max=1}}} end
   function f:isCharacterActive() return self.character_active==true end
+  function f:consumeUpdateReinstall() local pending=self.update_reinstall==true; self.update_reinstall=false; return pending end
   function f:addLineTrigger(fn)
     self.lineTriggerCalls=(self.lineTriggerCalls or 0)+1
     if self.failChatTrigger and self.lineTriggerCalls==2 then error("chat trigger registration failed") end
@@ -88,7 +89,7 @@ local function fake()
   function f:createMapAdapter()
     local map={rooms={},areas={},areaNames={},stubs={},links={},special={},current=nil,shutdowns=0,api={}}
     function map.api.getAreaTable() local result={}; for name,id in pairs(map.areaNames) do result[name]=id end; return result end
-    function map:clearOwnedRoomNames() f.mapLabelCleanups=(f.mapLabelCleanups or 0)+1; return 0 end
+    function map:migrateLegacyRoomNames() f.mapLabelMigrations=(f.mapLabelMigrations or 0)+1; return 0,false end
     function map:ensureRoom(room,coordinates,partition)
       local record=self.rooms[room.id]
       if record then record.room=room else self.rooms[room.id]={room=room,coordinates=coordinates,partition=partition or room.area_key,game_area=room.area_key,owned=true} end
@@ -162,8 +163,8 @@ test("runtime synchronizes game time ticks header clock and removes its owned ti
   hud:shutdown(); eq(f.clockTimers[timer],nil); eq(f.clockTimerStopped,timer)
 end)
 
-test("startup performs the owned-room label migration once",function()
-  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); eq(f.mapLabelCleanups,1)
+test("startup consults the bounded owned-room label migration gate",function()
+  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); eq(f.mapLabelMigrations,1)
 end)
 test("startup suppresses only Mudlet's duplicate default map information",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); eq(f.mapInfoSuppressions,1)
@@ -468,6 +469,13 @@ test("startup checks for updates before refreshing command data at an in-game pr
   hud.updater={checkAtCharacterEntry=function(_,done) order[#order+1]="check"; eq(#(f.sentCommands or {}),0); done(false); return true end}
   assert(hud:start()); order[#order+1]=f.sent
   eq(table.concat(order,","),"check,inventory")
+end)
+test("replacement package skips a redundant update check and refreshes immediately",function()
+  local f=fake(); f.character_active=true; f.update_reinstall=true; local checks=0
+  local hud=Main.new(f,{layout={}})
+  hud.updater={checkAtCharacterEntry=function() checks=checks+1; return true end}
+  assert(hud:start())
+  eq(checks,0); eq(f.sent,"inventory"); eq(f.update_reinstall,false)
 end)
 test("welcome character entry checks only once and never refreshes before completion",function()
   local f=fake(); local pending; local checks=0

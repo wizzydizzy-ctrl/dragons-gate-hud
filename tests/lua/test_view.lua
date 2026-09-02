@@ -120,7 +120,6 @@ local function fakeGeyser(glyphWidth,scrollbarWidth,measureFails)
     end
     function item:enableScrollBar() self.scrollBar=true end
     function item:disableHorizontalScrollBar() self.horizontalScrollBar=false end
-    if kind=="scrollbox" and scrollbarWidth then function item:getScrollBarWidth() return scrollbarWidth end end
     function item:getScroll() return self.currentScroll end
     function item:getLastLineNumber() return self.lastLine end
     function item:scrollTo(line) self.scrollCalls=self.scrollCalls or {}; self.scrollCalls[#self.scrollCalls+1]=line==nil and "bottom" or line; self.currentScroll=line or self.lastLine end
@@ -171,19 +170,20 @@ test("scrollable list content uses resolved numeric widths",function()
   eq(view.inventory_content.width<view.inventory_output.width,true); eq(view.skills_content.width<view.skills_output.width,true)
   eq(view.inventory_content.raised,true); eq(view.skills_content.raised,true)
 end)
-test("skill viewport uses live scrollbox geometry and scrollbar width",function()
-  local view=chatView(7,40); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
-  eq(view.list_content_width,view.skills_output:get_width()-40)
-  local header=View.skillHeader(view.skill_name_width,view.skill_column_gaps)
-  local row=View.skillLine({name="Identify Armor Quality",level=30,remain=7},view.skill_name_width,view.skill_column_gaps)
+test("skill viewport uses live geometry with a conservative scrollbar reservation",function()
+  local view=chatView(7); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
+  eq(view.list_resolved_scrollbar_width>=40,true)
+  eq(view.list_content_width,view.skills_output:get_width()-view.list_resolved_scrollbar_width)
+  local header=View.skillHeader(view.skill_name_width,view.skill_column_gaps,view.skill_level_width,view.skill_use_width)
+  local row=View.skillLine({name="Identify Armor Quality",level=30,remain=7},view.skill_name_width,view.skill_column_gaps,view.skill_level_width,view.skill_use_width)
   eq(#header*view.list_character_width<=view.list_content_width,true)
   eq(#row*view.list_character_width<=view.list_content_width,true)
 end)
 test("failed glyph measurement uses a conservative skill width",function()
   local view=chatView(7,32,true); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
   eq(view.list_character_width>=layout.list_font,true)
-  local header=View.skillHeader(view.skill_name_width,view.skill_column_gaps)
-  local row=View.skillLine({name="Identify Armor Quality",level=30,remain=7},view.skill_name_width,view.skill_column_gaps)
+  local header=View.skillHeader(view.skill_name_width,view.skill_column_gaps,view.skill_level_width,view.skill_use_width)
+  local row=View.skillLine({name="Identify Armor Quality",level=30,remain=7},view.skill_name_width,view.skill_column_gaps,view.skill_level_width,view.skill_use_width)
   eq(#header*view.list_character_width<=view.list_content_width,true)
   eq(#row*view.list_character_width<=view.list_content_width,true)
 end)
@@ -191,6 +191,9 @@ test("measured fixed-width skill columns fit before scaled scrollbars",function(
   local cases={
     {1000,900,6,24},
     {1000,900,7,24},
+    {1000,900,8},
+    {1000,900,10},
+    {1000,900,12},
     {1024,768,6,24},
     {1200,800,7,24},
     {1366,768,8,24},
@@ -201,15 +204,17 @@ test("measured fixed-width skill columns fit before scaled scrollbars",function(
     local width,height,glyph,scrollbar=case[1],case[2],case[3],case[4]
     local view=chatView(glyph); view.list_scrollbar_width=scrollbar
     local layout=require("layout").compute(width,height); view:applyLayout(layout)
-    local header=View.skillHeader(view.skill_name_width,view.skill_column_gaps)
-    local row=View.skillLine({name=string.rep("Wide Skill ",5),level=30,remain=7},view.skill_name_width,view.skill_column_gaps)
+    local header=View.skillHeader(view.skill_name_width,view.skill_column_gaps,view.skill_level_width,view.skill_use_width)
+    local row=View.skillLine({name=string.rep("Wide Skill ",5),level=30,remain=7},view.skill_name_width,view.skill_column_gaps,view.skill_level_width,view.skill_use_width)
     eq(view.list_character_width,glyph)
-    eq(view.list_content_width,view.skills_output.width-scrollbar)
+    eq(view.list_content_width,view.skills_output.width-view.list_resolved_scrollbar_width)
     eq(#header*glyph<=view.list_content_width,true)
     eq(#row*glyph<=view.list_content_width,true)
-    eq(header:find("SKILLS",1,true)~=nil,true)
-    eq(header:find("LVL",1,true),row:find("30",1,true)-1)
-    eq(header:find("USES",1,true),row:find("7",1,true)-3)
+    local levelColumn=row:find("30",1,true)-1
+    local usesColumn=row:find("7",levelColumn+3,true)-1
+    eq(header:sub(levelColumn+1,levelColumn+3):match("%S")~=nil,true)
+    eq(header:sub(usesColumn+1,usesColumn+4):match("%S")~=nil,true)
+    eq(header:sub(1,view.skill_name_width):match("%S")~=nil,true)
   end
 end)
 

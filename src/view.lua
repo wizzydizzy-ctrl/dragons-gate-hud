@@ -229,6 +229,10 @@ function View.new(settings)
   self.inventory_output=Geyser.ScrollBox:new({name="DGHUD.Inventory.Output",x=0,y=0,width=100,height=100},self.root)
   self.inventory_content=label("DGHUD.Inventory.Content",self.inventory_output,"background:#101713;color:"..t.text..";")
   self.inventory_footer=label("DGHUD.Inventory.Footer",self.root,"background:transparent;color:"..t.text..";")
+  self.runes=label("DGHUD.Runes",self.root,"background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";")
+  self.runes_title=label("DGHUD.Runes.Title",self.root,"background:transparent;color:"..t.accent..";")
+  self.runes_output=Geyser.ScrollBox:new({name="DGHUD.Runes.Output",x=0,y=0,width=100,height=100},self.root)
+  self.runes_content=label("DGHUD.Runes.Content",self.runes_output,"background:#101713;color:"..t.text..";")
   self.skills=label("DGHUD.Skills",self.root,"background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";")
   self.skills_title=label("DGHUD.Skills.Title",self.root,"background:transparent;color:"..t.accent..";")
   self.skills_output=Geyser.ScrollBox:new({name="DGHUD.Skills.Output",x=0,y=0,width=100,height=100},self.root)
@@ -357,14 +361,14 @@ function View:applyLayout(layout)
   self.identity:setStyleSheet("background:"..t.panel..";border-right:1px solid "..t.border..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.details:setStyleSheet("background:"..t.panel..";border:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.left:setStyleSheet("background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
-  for _,card in ipairs({self.equipment,self.inventory,self.skills}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
-  for _,title in ipairs({self.inventory_title,self.skills_title}) do title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.list_title_font.."px;font-weight:700;") end
+  for _,card in ipairs({self.equipment,self.inventory,self.runes,self.skills}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
+  for _,title in ipairs({self.inventory_title,self.runes_title,self.skills_title}) do title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.list_title_font.."px;font-weight:700;") end
   self.inventory_footer:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..(layout.list_font+2).."px;")
-  for _,widget in ipairs({self.inventory_content,self.skills_content,self.list_measure}) do
+  for _,widget in ipairs({self.inventory_content,self.runes_content,self.skills_content,self.list_measure}) do
     if widget.setFont then widget:setFont(self.list_font_family) end
     if widget.setFontSize then widget:setFontSize(layout.list_font) end
   end
-  for _,title in ipairs({self.inventory_title,self.skills_title}) do
+  for _,title in ipairs({self.inventory_title,self.runes_title,self.skills_title}) do
     if title.setFont then title:setFont(self.list_font_family) end
     if title.setFontSize then title:setFontSize(layout.list_title_font) end
   end
@@ -383,7 +387,7 @@ function View:applyLayout(layout)
   layout.list_viewport_height=measured and measured>0 and math.ceil(measured) or fallback
   layout.list_row_height=layout.list_viewport_height/5
   self.list_row_height=layout.list_row_height
-  for _,content in ipairs({self.inventory_content,self.skills_content}) do content:setStyleSheet("background:#101713;color:"..t.text..";font-family:'"..self.list_font_family.."';font-size:"..layout.list_font.."px;") end
+  for _,content in ipairs({self.inventory_content,self.runes_content,self.skills_content}) do content:setStyleSheet("background:#101713;color:"..t.text..";font-family:'"..self.list_font_family.."';font-size:"..layout.list_font.."px;") end
   self.right_title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.lower_body_font.."px;font-weight:700;padding:"..lp.."px;")
   self.room:setStyleSheet("background:#101a16;border:1px solid #385044;border-radius:7px;color:"..t.text..";padding:"..lp.."px;font-size:"..layout.lower_body_font.."px;")
   self.bottom:setStyleSheet("background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px "..p.."px;font-size:"..layout.small_font.."px;")
@@ -417,9 +421,10 @@ function View:applyLayout(layout)
     self.list_outer_width=card_w-p*2
     self.list_viewport_width,self.list_resolved_scrollbar_width=listViewportWidth(self.skills_output,self.list_outer_width,self.list_scrollbar_width)
     self.skills_content_width=math.max(self.list_viewport_width,29*self.list_character_width)
+    self.runes_content_width=math.max(self.list_viewport_width,28*self.list_character_width)
     self.inventory_content_width=math.max(self.list_viewport_width,36*self.list_character_width)
     self.list_content_width=self.skills_content_width
-    self.list_horizontal_overflow=self.skills_content_width>self.list_outer_width or self.inventory_content_width>self.list_outer_width
+    self.list_horizontal_overflow=self.skills_content_width>self.list_outer_width or self.runes_content_width>self.list_outer_width or self.inventory_content_width>self.list_outer_width
     self.skill_character_capacity=math.max(1,math.floor(self.skills_content_width/self.list_character_width))
     self.skill_level_width=self.skill_character_capacity>=8 and 3 or 2
     self.skill_use_width=self.skill_character_capacity>=8 and 4 or 3
@@ -427,8 +432,10 @@ function View:applyLayout(layout)
     self.skill_column_gaps=math.min(2,math.max(0,self.skill_character_capacity-fixedColumns-1))
     self.skill_name_width=math.min(20,math.max(1,self.skill_character_capacity-fixedColumns-self.skill_column_gaps))
     local inventory_rows=self.last_state and self.last_state.inventory and #(self.last_state.inventory.items or {}) or 0
+    local rune_rows=self.last_state and self.last_state.runes and #(self.last_state.runes.items or {}) or 0
     local skill_rows=self.last_state and self.last_state.skills and #(self.last_state.skills.items or {}) or 0
     self.inventory_content:resize(self.inventory_content_width,math.max(layout.list_row_height*5,inventory_rows*layout.list_row_height))
+    self.runes_content:resize(self.runes_content_width,math.max(layout.list_row_height*5,rune_rows*layout.list_row_height))
     self.skills_content:resize(self.skills_content_width,math.max(layout.list_row_height*5,skill_rows*layout.list_row_height))
     local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18
     local show_psi,show_web=psi_visible,web_visible
@@ -453,35 +460,41 @@ function View:applyLayout(layout)
     local rows=layout.list_visible_rows or 5; local list_h=layout.list_viewport_height or layout.list_row_height*rows
     if self.list_horizontal_overflow then list_h=list_h+(layout.list_horizontal_scrollbar_height or 18) end
     local title_h=layout.list_row_height+4; local footer_h=layout.list_row_height+4
-    local inventory_h=p*2+title_h+list_h+footer_h+8; local skills_h=p*2+title_h+list_h+4
+    local inventory_h=p*2+title_h+list_h+footer_h+8; local runes_h=p*2+title_h+list_h+4; local skills_h=p*2+title_h+list_h+4
     local right_details_h=layout.details_line_height*Layout.detailsCardRows(layout.details_columns)+p*2+18
-    local required=inventory_h+12+skills_h
+    local required=inventory_h+12+runes_h+12+skills_h
     if rail_bottom-inventory_y>=required then
       place(self.inventory,card_x,inventory_y,card_w,inventory_h)
       place(self.inventory_title,"100%-"..(layout.right-p*2),inventory_y+p,card_w-p*2,title_h)
       place(self.inventory_output,"100%-"..(layout.right-p*2),inventory_y+p+title_h,card_w-p*2,list_h)
       place(self.inventory_footer,"100%-"..(layout.right-p*2),inventory_y+p+title_h+list_h+4,card_w-p*2,footer_h)
       local skills_y=rail_bottom-skills_h
-      if skills_y-(inventory_y+inventory_h)>=right_details_h+24 then place(self.details,card_x,inventory_y+inventory_h+12,card_w,right_details_h) else self.details:hide() end
+      local runes_y=skills_y-12-runes_h
+      if runes_y-(inventory_y+inventory_h)>=right_details_h+24 then place(self.details,card_x,inventory_y+inventory_h+12,card_w,right_details_h) else self.details:hide() end
+      place(self.runes,card_x,runes_y,card_w,runes_h); place(self.runes_title,"100%-"..(layout.right-p*2),runes_y+p,card_w-p*2,title_h); place(self.runes_output,"100%-"..(layout.right-p*2),runes_y+p+title_h,card_w-p*2,list_h)
       place(self.skills,card_x,skills_y,card_w,skills_h); place(self.skills_title,"100%-"..(layout.right-p*2),skills_y+p,card_w-p*2,title_h); place(self.skills_output,"100%-"..(layout.right-p*2),skills_y+p+title_h,card_w-p*2,list_h)
     else
       self.details:hide()
       local fallback_h=math.max(0,rail_bottom-inventory_y); local gap=8
       local minimum_inventory=p*2+title_h+layout.list_row_height+footer_h+4
+      local minimum_runes=p*2+title_h+layout.list_row_height+4
       local minimum_skills=p*2+title_h+layout.list_row_height+4
-      if fallback_h>=minimum_inventory+gap+minimum_skills then
-        local inventory_h=math.floor((fallback_h-gap)/2); local skills_h=fallback_h-gap-inventory_h; local skills_y=inventory_y+inventory_h+gap
+      if fallback_h>=minimum_inventory+gap+minimum_runes+gap+minimum_skills then
+        local usable=fallback_h-gap*2; local inventory_h=math.floor(usable/3); local runes_h=math.floor((usable-inventory_h)/2); local skills_h=usable-inventory_h-runes_h
+        local runes_y=inventory_y+inventory_h+gap; local skills_y=runes_y+runes_h+gap
         place(self.inventory,card_x,inventory_y,card_w,inventory_h); place(self.inventory_title,"100%-"..(layout.right-p*2),inventory_y+p,card_w-p*2,title_h); place(self.inventory_output,"100%-"..(layout.right-p*2),inventory_y+p+title_h,card_w-p*2,math.max(layout.list_row_height,inventory_h-p*2-title_h-footer_h-4)); place(self.inventory_footer,"100%-"..(layout.right-p*2),inventory_y+inventory_h-p-footer_h,card_w-p*2,footer_h)
+        place(self.runes,card_x,runes_y,card_w,runes_h); place(self.runes_title,"100%-"..(layout.right-p*2),runes_y+p,card_w-p*2,title_h); place(self.runes_output,"100%-"..(layout.right-p*2),runes_y+p+title_h,card_w-p*2,math.max(layout.list_row_height,runes_h-p*2-title_h-4))
         place(self.skills,card_x,skills_y,card_w,skills_h); place(self.skills_title,"100%-"..(layout.right-p*2),skills_y+p,card_w-p*2,title_h); place(self.skills_output,"100%-"..(layout.right-p*2),skills_y+p+title_h,card_w-p*2,math.max(layout.list_row_height,skills_h-p*2-title_h-4))
       else
-        self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide()
+        self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.runes:hide(); self.runes_title:hide(); self.runes_output:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide()
       end
     end
     if self.inventory_output.visible then self.inventory_content:show() end
+    if self.runes_output.visible then self.runes_content:show() end
     if self.skills_output.visible then self.skills_content:show() end
-    View.raiseCards({self.equipment,self.inventory,self.details,self.skills,self.inventory_title,self.inventory_output,self.inventory_content,self.inventory_footer,self.skills_title,self.skills_output,self.skills_content})
+    View.raiseCards({self.equipment,self.inventory,self.details,self.runes,self.skills,self.inventory_title,self.inventory_output,self.inventory_content,self.inventory_footer,self.runes_title,self.runes_output,self.runes_content,self.skills_title,self.skills_output,self.skills_content})
   else
-    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide(); self.vitals_right:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.map_clear_all:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
+    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.runes:hide(); self.runes_title:hide(); self.runes_output:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide(); self.vitals_right:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.map_clear_all:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
   end
   if layout.mode~="compact" then
     place(self.right_bg,0,0,"100%","100%"); self.right_title:hide()
@@ -636,6 +649,18 @@ function View:renderInventory(s)
   self.inventory_content:echo("<div style='white-space:nowrap'>"..table.concat(lines,"<br>").."</div>"); self.inventory_content:move(0,0); self.inventory_content:resize(self.inventory_content_width or self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.inventory_content:show()
   self.inventory_footer:echo("<span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(v.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(v.silver or 0).."sp</b></span>")
 end
+function View:renderRunes(s)
+  local layout=self.layout; if not layout or layout.mode=="compact" then return end
+  local runes=s.runes or {}; local items=runes.items or {}; local signature={}
+  for _,rune in ipairs(items) do signature[#signature+1]=tostring(rune.name or rune.rune or rune.label or "").."\31"..tostring(rune.remaining or rune.remain or rune.weaves or rune.count or "") end
+  signature=table.concat(signature,"\30"); if signature==self.runes_signature then return end; self.runes_signature=signature
+  self.runes_title:echo("<b>RUNES</b>")
+  local lines={}; for _,rune in ipairs(items) do
+    local name=esc(rune.name or rune.rune or rune.label or "—"); local amount=rune.remaining or rune.remain or rune.weaves or rune.count
+    lines[#lines+1]=name..(amount~=nil and " <span style='color:"..self.settings.theme.muted.."'>- "..esc(amount).." weaves remain</span>" or "")
+  end
+  self.runes_content:echo("<div style='white-space:nowrap'>"..table.concat(lines,"<br>").."</div>"); self.runes_content:move(0,0); self.runes_content:resize(self.runes_content_width or self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.runes_content:show()
+end
 function View:renderSkills(s)
   local layout=self.layout; if not layout or layout.mode=="compact" then return end
   local nameWidth=self.skill_name_width or 22; local signature={tostring(nameWidth)}; local items=(s.skills or {}).items or {}
@@ -724,7 +749,7 @@ function View:update(s)
   self.room:echo(View.withFont("<span style='color:"..t.accent..";font-size:"..layout.lower_heading_font.."px'><b>"..esc(s.room.name).."</b></span><br><span style='color:"..t.muted.."'>Room "..esc(s.room.num or "—").." · Area "..esc(s.room.area or "—").."</span><br><br>"..esc(s.room.environment).."<br>Players &nbsp; <b>"..#s.room.players.."</b><br>Flags &nbsp; "..esc(table.concat(s.room.flags,", ")),layout.lower_body_font))
   self.compact:echo(View.withFont("<b>HP "..v.hp.current.."/"..v.hp.maximum.."</b> &nbsp; FAT "..v.fatigue.current.."/"..v.fatigue.maximum.." &nbsp; CARRY "..v.carry.current.."/"..v.carry.maximum.." &nbsp; WPN "..(v.weapon_readied and "✓" or "×").." &nbsp; SHD "..(v.shield_readied and "✓" or "×").."<br><span style='color:"..t.accent.."'>"..esc(s.room.name).."</span> &nbsp; EXITS "..esc(table.concat(s.room.exits,", ")),layout.body_font))
   self.bottom:echo(View.withFont("EXITS &nbsp; <b>"..esc(table.concat(s.room.exits,", ")).."</b> &nbsp;&nbsp; | &nbsp;&nbsp; CARRY &nbsp; <b>"..v.carry.current.." / "..v.carry.maximum.."</b> &nbsp;&nbsp; | &nbsp;&nbsp; ROUND &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b>",layout.small_font))
-  if self.layout then self:applyLayout(self.layout); self.details:echo(View.detailsContent(s.combat,s.attributes,t,self.layout,v)); self:renderInventory(s); self:renderSkills(s); self:renderNavigation(s.room.exits) end
+  if self.layout then self:applyLayout(self.layout); self.details:echo(View.detailsContent(s.combat,s.attributes,t,self.layout,v)); self:renderInventory(s); self:renderRunes(s); self:renderSkills(s); self:renderNavigation(s.room.exits) end
 end
 function View:updateClock(clock)
   local layout=self.layout or {mode="wide",body_font=16,heading_font=20}; local t=self.settings.theme

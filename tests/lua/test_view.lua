@@ -247,18 +247,26 @@ test("help overlay preserves open state and content across resize",function()
   eq(view.help_content.message:find("Custom description.",1,true)~=nil,true)
 end)
 
-test("inventory and skills own five-row scrollable consoles",function()
+test("inventory runes and skills own five-row scrollable consoles",function()
   local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
-  eq(view.inventory_output.kind,"scrollbox"); eq(view.skills_output.kind,"scrollbox")
-  eq(view.inventory_content.parent,view.inventory_output); eq(view.skills_content.parent,view.skills_output)
-  eq(view.inventory_output.height,layout.list_row_height*5); eq(view.skills_output.height,layout.list_row_height*5)
-  eq(view.inventory_content.fontSize,layout.list_font); eq(view.skills_content.fontSize,layout.list_font)
-  eq(view.inventory_content.font,view.list_font_family); eq(view.skills_content.font,view.list_font_family)
-  eq(view.inventory_title.fontSize,layout.list_title_font); eq(view.skills_title.fontSize,layout.list_title_font)
+  for _,pair in ipairs({{view.inventory_output,view.inventory_content,view.inventory_title},{view.runes_output,view.runes_content,view.runes_title},{view.skills_output,view.skills_content,view.skills_title}}) do
+    eq(pair[1].kind,"scrollbox"); eq(pair[2].parent,pair[1]); eq(pair[1].height,layout.list_row_height*5)
+    eq(pair[2].fontSize,layout.list_font); eq(pair[2].font,view.list_font_family); eq(pair[3].fontSize,layout.list_title_font)
+  end
   eq(view.inventory_footer.fontSize,layout.list_font+2)
-  eq(view.skills_title.font,view.skills_content.font)
-  eq(view.inventory_output.height,view.list_row_height*5); eq(view.skills_output.height,view.list_row_height*5)
-  eq(view.inventory_output.height,layout.list_viewport_height); eq(view.skills_output.height,layout.list_viewport_height)
+  eq(view.runes_title.font,view.runes_content.font); eq(view.skills_title.font,view.skills_content.font)
+  eq(view.inventory_output.height,layout.list_viewport_height); eq(view.runes_output.height,layout.list_viewport_height); eq(view.skills_output.height,layout.list_viewport_height)
+end)
+
+test("runes retain supplied order and scroll beyond five visible rows",function()
+  local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
+  local runes={}; for i=1,12 do runes[i]={name="Rune "..i,remaining=200-i} end
+  local state={character={full_name="Test",physical={}},attributes={},combat={},equipment={items={}},inventory={items={}},runes={items=runes},skills={items={}},vitals={hp={current=1,maximum=1},fatigue={current=1,maximum=1},carry={current=1,maximum=1},psi={visible=false},web={visible=false},gold=0,silver=0,roundtime=0,position=0},room={name="R",players={},flags={},exits={}}}
+  view:update(state)
+  eq(view.runes_content.message:find("Rune 1",1,true)<view.runes_content.message:find("Rune 12",1,true),true)
+  eq(view.runes_content.message:find("199 weaves remain",1,true)~=nil,true)
+  eq(view.runes_content.height,view.list_row_height*12); eq(view.runes_content.height>view.runes_output.height,true)
+  eq(view.runes_output.height<=view.list_row_height*5+(layout.list_horizontal_scrollbar_height or 0),true)
 end)
 test("scrollable list content uses resolved numeric widths",function()
   local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
@@ -356,11 +364,13 @@ test("unchanged HUD refreshes preserve inventory and skill scroll positions",fun
   state.skills.items={{name="Clawing",level=5,remain=2}}; view:update(state); eq(view.skills_content.message:find("Clawing",1,true)~=nil,true)
 end)
 
-test("right rail orders inventory combat skills and vitals without overlap",function()
+test("right rail orders inventory combat runes skills and vitals without overlap",function()
   for _,size in ipairs({{1920,1080},{1200,800},{1200,650}}) do
     local layout=require("layout").compute(size[1],size[2]); local view=chatView(); view.last_state={vitals={psi={visible=false},web={visible=false}},equipment={items={}}}; view:applyLayout(layout)
     if view.inventory.visible and view.skills.visible then
-      if view.details.visible then eq(view.inventory.y+view.inventory.height<=view.details.y,true); eq(view.details.y+view.details.height<=view.skills.y,true) else eq(view.inventory.y+view.inventory.height<=view.skills.y,true) end
+      eq(view.runes.visible,true); eq(view.runes_output.visible,true)
+      if view.details.visible then eq(view.inventory.y+view.inventory.height<=view.details.y,true); eq(view.details.y+view.details.height<=view.runes.y,true) else eq(view.inventory.y+view.inventory.height<=view.runes.y,true) end
+      eq(view.runes.y+view.runes.height<=view.skills.y,true)
       eq(view.skills.y+view.skills.height<=layout.window_height-view.vitals_right.height,true)
     else
       eq(view.skills.visible,false)
@@ -455,11 +465,13 @@ end)
 test("short desktop windows retain both inventory and skills as scrollable cards",function()
   for _,size in ipairs({{1000,600},{1200,600},{1400,600}}) do
     local layout=require("layout").compute(size[1],size[2]); local view=chatView(7)
-    view.last_state={vitals={psi={visible=false},web={visible=false}},equipment={items={}},inventory={items={}},skills={items={}}}
+    view.last_state={vitals={psi={visible=false},web={visible=false}},equipment={items={}},inventory={items={}},runes={items={}},skills={items={}}}
     view:applyLayout(layout)
     eq(view.inventory.visible,true); eq(view.inventory_output.visible,true)
+    eq(view.runes.visible,true); eq(view.runes_output.visible,true)
     eq(view.skills.visible,true); eq(view.skills_output.visible,true)
-    eq(view.inventory.y+view.inventory.height<=view.skills.y,true)
+    eq(view.inventory.y+view.inventory.height<=view.runes.y,true); eq(view.runes.y+view.runes.height<=view.skills.y,true)
+    eq(view.runes_output.height<=layout.list_row_height*5+(layout.list_horizontal_scrollbar_height or 0),true)
     eq(view.skills.y+view.skills.height<=layout.window_height-view.vitals_right.height-12,true)
   end
 end)
@@ -470,7 +482,7 @@ test("crossing responsive breakpoints repeatedly restores every desktop card",fu
   for _,size in ipairs({{1400,800},{1399,800},{1000,800},{999,800},{760,800},{999,800},{1400,800}}) do
     local layout=Layout.compute(size[1],size[2]); view:applyLayout(layout)
     if layout.mode=="compact" then eq(view.compact.visible,true) else
-      for _,widget in ipairs({view.identity,view.equipment,view.inventory,view.inventory_title,view.inventory_output,view.inventory_content,view.skills,view.skills_title,view.skills_output,view.skills_content,view.right}) do eq(widget.visible,true) end
+      for _,widget in ipairs({view.identity,view.equipment,view.inventory,view.inventory_title,view.inventory_output,view.inventory_content,view.runes,view.runes_title,view.runes_output,view.runes_content,view.skills,view.skills_title,view.skills_output,view.skills_content,view.right}) do eq(widget.visible,true) end
     end
   end
 end)

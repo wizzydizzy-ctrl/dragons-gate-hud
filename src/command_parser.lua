@@ -62,6 +62,29 @@ function Parser.parseReligion(lines)
   return result
 end
 
+function Parser.parseRunes(lines)
+  local result={items={}}; local header=false; local complete=false
+  for _,raw in ipairs(lines or {}) do
+    local line=clean(raw)
+    if line:match("^You have the following elemental runes available to you%.%.%.$") then header=true
+    elseif header and line:match("^>%s*$") then complete=true
+    elseif header then
+      local cursor=1
+      while true do
+        local first,last,name,remaining=line:find("([%a][%a%s]-)%s*%-%s*(%d+)%s+weaves?%s+remain",cursor)
+        if not first then break end
+        name=name:match("^%s*(.-)%s*$")
+        if name~="" then result.items[#result.items+1]={name=name:gsub("^%l",string.upper),remaining=tonumber(remaining)} end
+        cursor=last+1
+      end
+    end
+  end
+  if not complete then return nil,"incomplete rune response" end
+  if not header then return nil,"unrecognized rune response" end
+  table.sort(result.items,function(a,b) if a.remaining~=b.remaining then return a.remaining<b.remaining end; return a.name:lower()<b.name:lower() end)
+  return result
+end
+
 function Parser.parseSkills(lines)
   local result={items={}}; local header=false; local complete=false
   for _,raw in ipairs(lines or {}) do
@@ -96,7 +119,7 @@ function Parser.parseTime(lines)
 end
 
 function Parser.isComplete(command,lines)
-  local fn={inventory=Parser.parseInventory,stat=Parser.parseStat,info=Parser.parseInfo,["info religion"]=Parser.parseReligion,skill=Parser.parseSkills,time=Parser.parseTime}
+  local fn={inventory=Parser.parseInventory,stat=Parser.parseStat,info=Parser.parseInfo,["info religion"]=Parser.parseReligion,["info mag"]=Parser.parseRunes,skill=Parser.parseSkills,time=Parser.parseTime}
   return fn[command] and hasPrompt(lines) and fn[command](lines)~=nil or false
 end
 return Parser

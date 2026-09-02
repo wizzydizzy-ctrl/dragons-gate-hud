@@ -17,6 +17,8 @@ The setting is stored as `DGHUD.user_settings.colorization.enabled`. Integration
 
 Run `dghud help` to open the scrollable, color-coded command guide. Everyday commands are green, descriptions are neutral, and potentially destructive package/map cleanup commands are red. The guide closes with its `× CLOSE` button and remains open and properly bounded during window resizing.
 
+The HUD runs `info mag` during character startup and whenever the command is entered manually. All elemental runes are retained, sorted by lowest remaining weaves first, and shown in a five-row scrollable Runes card above Skills. Trigger scripts can read `DGHUD.runes.items`, `DGHUD.runes.by_name["force"].remaining`, `DGHUD.runes.remaining.force`, `DGHUD.runes.get("force")`, or `DGHUD.runes.getRemaining("force")`.
+
 ## Local build and install
 
 ```bash

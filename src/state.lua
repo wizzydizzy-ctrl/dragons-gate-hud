@@ -15,7 +15,7 @@ end
 function State.normalize(source,command_snapshot)
   source=tableAt(source); local char=tableAt(source.Char); local status=tableAt(char.Status); local vitals=tableAt(char.Vitals)
   local roomRoot=tableAt(source.Room); local room=tableAt(roomRoot.Info)
-  local parsed=tableAt(command_snapshot); local info=tableAt(parsed.info); local religion=tableAt(parsed.religion); local parsedCharacter=tableAt(info.character); local stat=tableAt(parsed.stat); local inventory=tableAt(parsed.inventory); local skills=tableAt(parsed.skills)
+  local parsed=tableAt(command_snapshot); local info=tableAt(parsed.info); local religion=tableAt(parsed.religion); local runes=tableAt(parsed.runes); local parsedCharacter=tableAt(info.character); local stat=tableAt(parsed.stat); local inventory=tableAt(parsed.inventory); local skills=tableAt(parsed.skills)
   local name=tostring(status.name or parsedCharacter.name or ""); local surname=tostring(status.surname or parsedCharacter.surname or "")
   local full=(name.." "..surname):match("^%s*(.-)%s*$"); if full=="" then full=parsedCharacter.full_name or "Unknown" end
   return {
@@ -25,6 +25,7 @@ function State.normalize(source,command_snapshot)
     equipment={items=tableAt(stat.equipment)},
     inventory={items=tableAt(inventory.items),total_weight=inventory.total_weight},
     skills={items=tableAt(skills.items)},
+    runes={items=tableAt(runes.items)},
     vitals={hp=resource(vitals,"hp"),fatigue=resource(vitals,"fatigue"),psi=resource(vitals,"psi"),web=resource(vitals,"web"),carry=resource(vitals,"carry"),gold=number(vitals.gold),silver=number(vitals.silver),position=number(vitals.position),roundtime=number(vitals.roundtime),weapon_readied=vitals.weapon_readied==true,shield_readied=vitals.shield_readied==true},
     room={name=room.name or "Unknown room",num=room.num,area=room.area,environment=room.environment or "Unknown",exits=tableAt(room.exits),flags=tableAt(room.flags),players=tableAt(roomRoot.Players),wrong_direction=roomRoot.WrongDir}
   }

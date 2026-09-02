@@ -667,6 +667,13 @@ test("help alias opens the owned responsive guide",function()
   local f=fake(); local shown=0; local view=f:createView(); function view:showHelp() shown=shown+1; return true end; function f:createView() return view end
   local hud=Main.new(f,{layout={}}); assert(hud:start()); assert(aliasCallback(f,"^dghud help$")()); eq(shown,1); hud:shutdown()
 end)
+test("rune API exposes sorted trigger-safe variables and copies",function()
+  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); DGHUD={controller=hud}; Main.installChatApi(DGHUD)
+  hud.collector.snapshot.runes={items={{name="Healing",remaining=14},{name="Force",remaining=100}}}; hud:refresh()
+  eq(DGHUD.runes.items[1].name,"Healing"); eq(DGHUD.runes.by_name.healing.remaining,14); eq(DGHUD.runes.remaining.force,100); eq(DGHUD.runes.getRemaining("FORCE"),100)
+  local copy=DGHUD.runes.get("healing"); copy.remaining=999; eq(DGHUD.runes.by_name.healing.remaining,14); local all=DGHUD.runes.all(); eq(#all,2); eq(all[2].name,"Force")
+  hud:shutdown(); DGHUD=nil
+end)
 test("chat trigger registration failure rolls back partial HUD runtime",function()
   local f=fake(); f.failChatTrigger=true; local hud=Main.new(f,{layout={}}); local started,err=hud:start()
   eq(started,nil); eq(tostring(err):find("chat trigger registration failed",1,true)~=nil,true); eq(hud.started,false); eq(hud.chat,nil); eq(hud:healthCheck(),nil)

@@ -26,7 +26,21 @@ function Main.installChatApi(namespace)
       return controller:chatStatus()
     end
   Main.installColorizerApi(namespace)
+  Main.installRunesApi(namespace)
   return chat
+end
+local function runeCopy(item) return item and {name=item.name,remaining=item.remaining} or nil end
+function Main.installRunesApi(namespace)
+  local api=type(namespace.runes)=="table" and namespace.runes or {}; namespace.runes=api; api.items=api.items or {}; api.by_name=api.by_name or {}; api.remaining=api.remaining or {}
+  api.get=function(name) local item=api.by_name[tostring(name or ""):lower()]; return runeCopy(item) end
+  api.getRemaining=function(name) return api.remaining[tostring(name or ""):lower()] end
+  api.all=function() local result={}; for i,item in ipairs(api.items) do result[i]=runeCopy(item) end; return result end
+  return api
+end
+function Main.syncRunesApi(state)
+  local root=rawget(_G,"DGHUD"); if not root then return end
+  local api=Main.installRunesApi(root); api.items={}; api.by_name={}; api.remaining={}
+  for i,item in ipairs(state and state.runes and state.runes.items or {}) do local copy=runeCopy(item); api.items[i]=copy; api.by_name[copy.name:lower()]=copy; api.remaining[copy.name:lower()]=copy.remaining end
 end
 function Main.installColorizerApi(namespace)
   local api=type(namespace.colors)=="table" and namespace.colors or {}; namespace.colors=api
@@ -67,7 +81,7 @@ function Main:refreshClock()
   if self.view and type(self.view.updateClock)=="function" then self.view:updateClock(clock) end
   return clock
 end
-function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {}); if self.roundtime_display~=nil then normalized.vitals.roundtime=self.roundtime_display end; normalized.clock=self:clockDisplay(); self.view:update(normalized); self.last_state=normalized; if self.chat then self.chat:syncCharacter() end; return true end
+function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {}); if self.roundtime_display~=nil then normalized.vitals.roundtime=self.roundtime_display end; normalized.clock=self:clockDisplay(); self.view:update(normalized); self.last_state=normalized; Main.syncRunesApi(normalized); if self.chat then self.chat:syncCharacter() end; return true end
 function Main:onClockSync(value) local ok,err=self.clock:sync(value,self.adapter:epoch()); if not ok then return nil,err end; self:refreshClock(); return true end
 function Main:scheduleClockTick()
   if self.clock_timer then return true end

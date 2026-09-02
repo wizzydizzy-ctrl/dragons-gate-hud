@@ -4,6 +4,7 @@ local inventory={"Items carried:","  A wooden torch [1.0 lb].","  A wooden torch
 local stat={"Body Armor: 4%.","OR:  18  DR: 70  Move Rate: 6/6 UDs  Dam Bonus: Good/None  Stance: Aggressive","You are in the center of the area!","You are still protected by the 80 hour novice protection.","  ::: Equipment Readied :::","  A simple spear.","  A wooden shield.",">"}
 local info={"You are Test Tester, a light boned and stocky bodied 28 year old Entropic Male young Monitanian.  You are 6'10\" and weigh 309 lbs.","HP: 201 of 201  Ftg:  69 of  69  Carry: 15.9 of 380.0 lbs."," Str   Int   Wis   Dex   Agi   Con   Cha   Wil   Voi   Per   App","Good  Low   Fair  Fair  Fair  Good  Good  Good  Aver  Fair  Fair",">"}
 local religion={"You are a Novitiate follower of Unknown.","You are Balanced within your Entropic alignment.",">"}
+local runes={"You have the following elemental runes available to you...","  force       - 100 weaves remain   healing     -  14 weaves remain","  holy        -  99 weaves remain   vigor       - 100 weaves remain","  light       - 100 weaves remain",">"}
 local skills={"Skill                     Remain Level","Biting                    105    4","Clawing                   276    2","Pole Weapons               42    4","Identify Armor Quality    100    1",">"}
 local time={"Current time is: Wed Sep  2 00:40:30 2026 EST.","It is now 3:22 am on the 4th day of the 8th month in the year 362.","You have been adventuring for 14 secs this session.",">"}
 
@@ -29,6 +30,10 @@ end)
 test("detects completed command responses",function() eq(Parser.isComplete("inventory",inventory),true); eq(Parser.isComplete("inventory",{"Items carried:","Your inventory totals 0 lbs."}),false); eq(Parser.isComplete("stat",stat),true); eq(Parser.isComplete("info",info),true); eq(Parser.isComplete("info",{"You are Test"}),false) end)
 test("parses info religion rank deity balance and alignment",function()
   local r=assert(Parser.parseReligion(religion)); eq(r.rank,"Novitiate"); eq(r.deity,"Unknown"); eq(r.balance,"Balanced"); eq(r.alignment,"Entropic"); eq(Parser.isComplete("info religion",religion),true)
+end)
+test("parses both rune columns and sorts lowest remaining first",function()
+  local r=assert(Parser.parseRunes(runes)); eq(#r.items,5); eq(r.items[1].name,"Healing"); eq(r.items[1].remaining,14); eq(r.items[2].name,"Holy"); eq(r.items[5].name,"Vigor"); eq(Parser.isComplete("info mag",runes),true)
+  eq(Parser.parseRunes({runes[1],runes[2]}),nil); eq(Parser.parseRunes({runes[2],">"}),nil)
 end)
 test("parses every skill and ranks by level then lowest remaining uses",function()
   local r=assert(Parser.parseSkills(skills)); eq(#r.items,4)

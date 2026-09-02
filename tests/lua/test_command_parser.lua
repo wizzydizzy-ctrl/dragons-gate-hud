@@ -17,9 +17,9 @@ end)
 test("parses info physical data and all attributes",function()
   local r=assert(Parser.parseInfo(info)); eq(r.physical.age,28); eq(r.physical.sex,"Male"); eq(r.physical.height,"6'10\""); eq(r.physical.weight,309); eq(r.attributes.STR,"Good"); eq(r.attributes.APP,"Fair")
 end)
-test("info completes from its data rows without relying on a trailing prompt",function()
+test("info parses from its data rows but collector completion waits for a prompt",function()
   local without_prompt={}; for i=1,#info-1 do without_prompt[i]=info[i] end
-  local r=assert(Parser.parseInfo(without_prompt)); eq(r.attributes.STR,"Good"); eq(Parser.isComplete("info",without_prompt),true)
+  local r=assert(Parser.parseInfo(without_prompt)); eq(r.attributes.STR,"Good"); eq(Parser.isComplete("info",without_prompt),false); eq(Parser.isComplete("info",info),true)
 end)
 test("info tolerates condition text appended to the physical sentence",function()
   local with_conditions={}; for i,line in ipairs(info) do with_conditions[i]=line end

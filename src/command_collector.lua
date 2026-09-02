@@ -1,6 +1,6 @@
 local Collector={}; Collector.__index=Collector
 local SPECS={inventory={parser="parseInventory",snapshot="inventory"},stat={parser="parseStat",snapshot="stat"},info={parser="parseInfo",snapshot="info"},["info religion"]={parser="parseReligion",snapshot="religion"},skill={parser="parseSkills",snapshot="skills"},time={parser="parseTime",snapshot="time"}}
-local PROMPT_NUDGE={inventory=true,stat=true,["info religion"]=true,skill=true,time=true}
+local PROMPT_NUDGE={inventory=true,stat=true,info=true,["info religion"]=true,skill=true,time=true}
 function Collector.new(adapter,parser,onChange,onRoundtime,onCharacterEntry)
   return setmetatable({adapter=adapter,parser=parser,onChange=onChange,onRoundtime=onRoundtime,onCharacterEntry=onCharacterEntry,snapshot={},sequence={"inventory","stat","info","info religion","skill","time"},runtime={triggers={},events={}},started=false,refreshed=false,prompt_nudge_delay=.15,response_timeout=8},Collector)
 end
@@ -64,7 +64,7 @@ function Collector:onLine(value)
   if not self.active then return end
   if #self.active.lines==1 and self.active.lines[1]:match("^>%s*$") and not value:match("^>%s*$") then self.active.lines={} end
   self.active.lines[#self.active.lines+1]=value
-  if self.parser.isComplete(self.active.command,self.active.lines) or (value:match("^>%s*$") and #self.active.lines>1) then self:finish(self.active.lines) end
+  if self.parser.isComplete(self.active.command,self.active.lines) then self:finish(self.active.lines) end
 end
 function Collector:onOutgoing(command)
   command=tostring(command or ""):match("^%s*(.-)%s*$"):lower()

@@ -36,6 +36,12 @@ test("accepts case spacing and abbreviated directions",function()
   for index=2,#parts do eq(parts[index].kind,"direction") end
 end)
 
+test("colors exact gold silver gp and sp words",function()
+  local line="Gold 12gp, Silver 4sp; golden and spill stay plain."
+  local parts=assert(Colorizer.parse(line)); eq(#parts,4)
+  eq(parts[1].kind,"gold"); eq(parts[2].kind,"gold"); eq(parts[3].kind,"silver"); eq(parts[4].kind,"silver")
+end)
+
 test("optional controller owns one trigger and cleans it up",function()
   local f=fake(); local c=Colorizer.new(f,false); assert(c:start()); eq(c:onLine("[Old Cemetery.]"),false); eq(#f.applied,0)
   eq(c:toggle(),true); eq(c:onLine("[Old Cemetery.]"),true); eq(#f.applied,1); eq(c:status().enabled,true)
@@ -45,6 +51,13 @@ end)
 test("controller contains adapter coloring failures",function()
   local f=fake(); function f:applyLineColors() return nil,"selection failed" end
   local c=Colorizer.new(f,true); assert(c:start()); local ok,err=c:onLine("Obvious paths: east west."); eq(ok,nil); eq(err,"selection failed"); c:shutdown()
+end)
+
+test("feature toggles independently filter owned color ranges",function()
+  local f=fake(); local c=Colorizer.new(f,true,{room_enabled=false,exits_enabled=true,currency_enabled=false}); assert(c:start())
+  eq(c:onLine("[Old Cemetery.]"),false); eq(c:onLine("Gold 2gp"),false); eq(c:onLine("Obvious exits: north west."),true)
+  assert(c:setFeature("currency",true)); eq(c:onLine("Gold 2gp"),true); local result,err=c:setFeature("unknown",true); eq(result,nil); eq(err,"unknown color feature")
+  c:shutdown()
 end)
 
 test("Mudlet adapter changes only selected foreground ranges",function()

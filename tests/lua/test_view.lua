@@ -168,23 +168,83 @@ test("view has no standalone wealth widget",function()
   local view=chatView(); eq(view.wealth,nil)
 end)
 
-test("header owns a responsive colorization toggle",function()
-  local view=chatView(); local calls={}
-  view:setColorToggleCallback(function() calls[#calls+1]="toggle" end)
+test("header owns a responsive top-right color options button",function()
+  local view=chatView()
   for _,size in ipairs({{760,700},{800,700},{1200,800},{1920,1080}}) do
     local layout=require("layout").compute(size[1],size[2]); view:applyLayout(layout)
     eq(view.color_toggle.visible,true); eq(view.color_toggle.x>=0,true)
     eq(view.color_toggle.x+view.color_toggle.width<=size[1],true)
     eq(view.color_toggle.y+view.color_toggle.height<=layout.header_height,true)
+    local clock_x=layout.mode=="compact" and math.floor(size[1]*.5) or size[1]-layout.right
+    eq(view.color_toggle.x+view.color_toggle.width<clock_x,true)
   end
-  eq(view.color_toggle.tooltip,"Toggle DGHUD room and exit color coding")
-  view.color_toggle.click(); eq(#calls,1)
+  eq(view.color_toggle.tooltip,"Open DGHUD color options")
 end)
 
-test("colorization toggle renders enabled and disabled states",function()
+test("color options button renders overall enabled and disabled states",function()
   local view=chatView(); view:applyLayout(require("layout").compute(1000,700))
-  view:setColorEnabled(true); eq(view.color_enabled,true); eq(view.color_toggle.message:find("COLORS ON",1,true)~=nil,true); eq(view.color_toggle.style:find("#79b386",1,true)~=nil,true)
-  view:setColorEnabled(false); eq(view.color_enabled,false); eq(view.color_toggle.message:find("COLORS OFF",1,true)~=nil,true); eq(view.color_toggle.style:find("#75857c",1,true)~=nil,true)
+  view:setColorEnabled(true); eq(view.color_enabled,true); eq(view.color_toggle.message:find("COLORS",1,true)~=nil,true); eq(view.color_toggle.style:find("#79b386",1,true)~=nil,true)
+  view:setColorEnabled(false); eq(view.color_enabled,false); eq(view.color_toggle.message:find("COLORS",1,true)~=nil,true); eq(view.color_toggle.style:find("#75857c",1,true)~=nil,true)
+end)
+
+test("color options menu exposes current and future feature toggles",function()
+  local view=chatView(); local calls={}
+  view:setColorToggleCallback(function() calls[#calls+1]={key="enabled"}; return false end)
+  view:setColorOptionsCallback(function(key,value) calls[#calls+1]={key=key,value=value}; return value end)
+  view:setColorOptions({enabled=true,room=true,exits=false,currency=true})
+  view:applyLayout(require("layout").compute(1200,800)); view.color_toggle.click()
+  eq(view.color_menu_visible,true); eq(view.color_menu.visible,true); eq(view.color_menu_scrim.visible,true)
+  for _,key in ipairs({"enabled","room","exits","currency"}) do eq(view.color_option_buttons[key].visible,true) end
+  eq(view.color_option_buttons.room.message:find("ROOM TITLES",1,true)~=nil,true)
+  eq(view.color_option_buttons.exits.message:find("OFF",1,true)~=nil,true)
+  view.color_option_buttons.exits.click(); eq(calls[#calls].key,"exits"); eq(calls[#calls].value,true); eq(view.color_menu_visible,false)
+  view.color_toggle.click(); view.color_option_buttons.enabled.click(); eq(calls[#calls].key,"enabled"); eq(view.color_enabled,false)
+end)
+
+test("color options menu closes by button outside click and resize remains bounded",function()
+  local view=chatView()
+  for _,size in ipairs({{420,500},{760,700},{800,650},{1200,800},{1920,1080}}) do
+    local layout=require("layout").compute(size[1],size[2]); view:applyLayout(layout); view.color_toggle.click()
+    eq(view.color_menu.x>=0,true); eq(view.color_menu.x+view.color_menu.width<=size[1],true)
+    eq(view.color_menu.y+view.color_menu.height<=size[2],true)
+    view.color_menu_scrim.click(); eq(view.color_menu_visible,false); eq(view.color_menu.visible,false)
+    view.color_toggle.click(); view.color_toggle.click(); eq(view.color_menu_visible,false)
+  end
+end)
+
+test("help overlay distinguishes commands descriptions and warnings",function()
+  local view=chatView(); local layout=require("layout").compute(1200,800); view:applyLayout(layout)
+  view:showHelp()
+  eq(view.help_visible,true); eq(view.help_overlay.visible,true); eq(view.help_panel.visible,true); eq(view.help_output.visible,true)
+  eq(view.help_content.message:find("dghud update",1,true)~=nil,true)
+  eq(view.help_content.message:find(view.settings.theme.jade,1,true)~=nil,true)
+  eq(view.help_content.message:find(view.settings.theme.text,1,true)~=nil,true)
+  eq(view.help_content.message:find(view.settings.theme.hp,1,true)~=nil,true)
+end)
+
+test("help overlay remains bounded and readable at every layout mode",function()
+  local view=chatView(); view:showHelp()
+  for _,size in ipairs({{420,500},{760,700},{800,650},{1200,800},{1920,1080}}) do
+    local layout=require("layout").compute(size[1],size[2]); view:applyLayout(layout)
+    eq(view.help_panel.visible,true); eq(view.help_panel.x>=0,true); eq(view.help_panel.y>=0,true)
+    eq(view.help_panel.x+view.help_panel.width<=size[1],true); eq(view.help_panel.y+view.help_panel.height<=size[2],true)
+    eq(view.help_font>=11,true); eq(view.help_close.x+view.help_close.width<=view.help_panel.width,true)
+  end
+end)
+
+test("help close control dismisses panel and invokes integration callback",function()
+  local view=chatView(); local calls=0; view:setHelpCloseCallback(function() calls=calls+1 end)
+  view:applyLayout(require("layout").compute(1000,700)); view:showHelp(); view.help_close.click()
+  eq(calls,1); eq(view.help_visible,false); eq(view.help_overlay.visible,false); eq(view.help_panel.visible,false)
+  view:setHelpVisible(true); eq(view.help_visible,true); view:hideHelp(); eq(view.help_visible,false)
+end)
+
+test("help overlay preserves open state and content across resize",function()
+  local view=chatView(); view:applyLayout(require("layout").compute(1920,1080))
+  view:showHelp({{command="custom command",description="Custom description."}})
+  view:applyLayout(require("layout").compute(760,700))
+  eq(view.help_visible,true); eq(view.help_content.message:find("custom command",1,true)~=nil,true)
+  eq(view.help_content.message:find("Custom description.",1,true)~=nil,true)
 end)
 
 test("inventory and skills own five-row scrollable consoles",function()
@@ -479,7 +539,7 @@ end)
 test("attribute strip spans the center header above the chatbox",function()
   local layout=require("layout").compute(1920,1080); local view=chatView(); view:applyLayout(layout)
   eq(view.attribute_strip.x,layout.console_left); eq(view.attribute_strip.y,0)
-  eq(view.attribute_strip.width,layout.console_width); eq(view.attribute_strip.height,layout.header_height)
+  eq(view.attribute_strip.width<layout.console_width,true); eq(view.attribute_strip.x+view.attribute_strip.width<view.color_toggle.x,true); eq(view.attribute_strip.height,layout.header_height)
   eq(layout.attribute_strip_font>=10,true); eq(layout.attribute_strip_font<=14,true)
 end)
 

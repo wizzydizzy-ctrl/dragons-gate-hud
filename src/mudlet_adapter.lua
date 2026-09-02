@@ -50,7 +50,7 @@ function Adapter:addAlias(pattern,fn) return tempAlias(pattern,fn) end
 function Adapter:killAlias(id) return killAlias(id) end
 function Adapter:addLineTrigger(fn) return tempRegexTrigger("^.*$",function() fn(line or "") end) end
 function Adapter:addColorizerTrigger(fn)
-  return tempRegexTrigger([=[(?i)^\s*(?:\[[^\r\n\[\]]+\]|Obvious\s+(?:exits|paths)\s*:[^\r\n]*)\s*$]=],function()
+  return tempRegexTrigger([=[(?i)^(?:\s*(?:\[[^\r\n\[\]]+\]|Obvious\s+(?:exits|paths)\s*:[^\r\n]*)\s*|.*\b(?:gold|silver|gp|sp)\b.*)$]=],function()
     fn(line or (type(getCurrentLine)=="function" and getCurrentLine() or ""))
   end)
 end
@@ -107,8 +107,10 @@ function Adapter:reportChatStatus(status)
   cecho("\n<gold>[DGHUD Chat]<reset> filter="..tostring(status.active_filter or "OFF").." visible="..tostring(status.visible_count or 0).." storage="..tostring(storage).." last storage error="..tostring(error).."\n")
   return status
 end
-function Adapter:reportColorizerStatus(enabled)
-  cecho("\n<gold>[DGHUD Colors]<reset> "..(enabled and "ON" or "OFF").."\n")
+function Adapter:reportColorizerStatus(status)
+  if type(status)~="table" then status={enabled=status==true} end
+  local function word(value) return value and "ON" or "OFF" end
+  cecho("\n<gold>[DGHUD Colors]<reset> All "..word(status.enabled).."  Room "..word(status.room).."  Exits "..word(status.exits).."  Currency "..word(status.currency).."\n")
   return true
 end
 function Adapter:schedule(seconds,fn) return tempTimer(seconds,fn) end

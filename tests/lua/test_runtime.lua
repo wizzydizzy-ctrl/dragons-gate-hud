@@ -15,6 +15,8 @@ local function fake()
     renderChat=function(self,entries,categories,filter) f.chatRenders=(f.chatRenders or 0)+1; f.renderedChat={entries=entries,categories=categories,filter=filter} end,
     setChatFilterCallback=function(self,callback) f.chatFilterCallback=callback end,
     setColorToggleCallback=function(self,callback) f.colorToggleCallback=callback end,
+    setColorOptionsCallback=function(self,callback) f.colorOptionsCallback=callback end,
+    setColorOptions=function(self,options) f.viewColorOptions=options; f.viewColorEnabled=options.enabled end,
     setColorEnabled=function(self,enabled) f.viewColorEnabled=enabled end,
     setMapCenterCallback=function(self,callback) f.mapCenterCallback=callback end,
     setMapZoomCallback=function(self,callback) f.mapZoomCallback=callback; f.mapZoomCallbackSets=(f.mapZoomCallbackSets or 0)+1 end,
@@ -349,7 +351,7 @@ test("cleanup reconciliation requires a valid fresh current room after mutation"
 end)
 
 test("cleanup shutdown removes all six owned map aliases",function()
-  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); local before=f:count(f.aliases); eq(before,#Events.aliases+8)
+  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); local before=f:count(f.aliases); eq(before,#Events.aliases+9)
   local owned={}; for id,alias in pairs(f.aliases) do if alias.pattern:match("%^dghud map ") then owned[id]=true end end; eq(f:count(owned),6)
   assert(hud:shutdown()); for id in pairs(owned) do eq(f.killed[id],true) end; eq(f:count(f.aliases),0)
 end)
@@ -653,13 +655,17 @@ end)
 test("optional output colors toggle through one owned alias and public API",function()
   local f=fake(); local personal=f:addLineTrigger(function() end); local hud=Main.new(f,{layout={}}); assert(hud:start())
   DGHUD={controller=hud}; Main.installChatApi(DGHUD)
-  eq(DGHUD.colors.status().enabled,true); eq(aliasCallback(f,"^dghud colors(?: (on|off|toggle|status))?$")({"","off"}),false); eq(f.reportedColorizer,false)
-  eq(aliasCallback(f,"^dghud colors(?: (on|off|toggle|status))?$")({"","on"}),true)
+  local colors=assert(aliasCallback(f,"^dghud colors(?: (.*))?$")); eq(DGHUD.colors.status().enabled,true); eq(colors({"","off"}),false); eq(f.reportedColorizer.enabled,false)
+  eq(colors({"","on"}),true); eq(colors({"","exits off"}),false); eq(DGHUD.colors.status().exits,false); eq(colors({"","exits on"}),true)
   local trigger=assert(f.triggers[f.colorizerTrigger]); trigger("Obvious paths: north east west."); eq(#f.coloredSegments,4)
   eq(DGHUD.colors.toggle(),false); eq(DGHUD.user_settings.colorization.enabled,false); eq(DGHUD.colors.setEnabled(true),true); eq(DGHUD.colors.status().started,true); eq(hud.colorizer_enabled,true); eq(f.viewColorEnabled,true)
   eq(f.colorToggleCallback(),false); eq(DGHUD.user_settings.colorization.enabled,false); eq(f.colorToggleCallback(),true)
   local owned=f.colorizerTrigger; hud:reload(); eq(f.triggers[owned],nil); eq(hud.colorizer:status().enabled,true); eq(f.triggers[personal]~=nil,true)
   hud:shutdown(); eq(f:count(f.triggers),1); DGHUD=nil
+end)
+test("help alias opens the owned responsive guide",function()
+  local f=fake(); local shown=0; local view=f:createView(); function view:showHelp() shown=shown+1; return true end; function f:createView() return view end
+  local hud=Main.new(f,{layout={}}); assert(hud:start()); assert(aliasCallback(f,"^dghud help$")()); eq(shown,1); hud:shutdown()
 end)
 test("chat trigger registration failure rolls back partial HUD runtime",function()
   local f=fake(); f.failChatTrigger=true; local hud=Main.new(f,{layout={}}); local started,err=hud:start()

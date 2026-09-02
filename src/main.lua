@@ -45,6 +45,15 @@ function Main:setColorizerEnabled(enabled)
   if self.view and self.view.setColorEnabled then self.view:setColorEnabled(enabled) end
   return enabled
 end
+function Main:setColorFeature(name,enabled)
+  if not self.colorizer then return nil,"colorizer is not running" end
+  local result,err=self.colorizer:setFeature(name,enabled); if result==nil then return nil,err end
+  local key=name.."_enabled"; self.settings.colorization=type(self.settings.colorization)=="table" and self.settings.colorization or {}; self.settings.colorization[key]=result
+  local root=rawget(_G,"DGHUD")
+  if root then root.user_settings=type(root.user_settings)=="table" and root.user_settings or {}; root.user_settings.colorization=type(root.user_settings.colorization)=="table" and root.user_settings.colorization or {}; root.user_settings.colorization[key]=result end
+  if self.view and self.view.setColorOptions then local status=self.colorizer:status(); self.view:setColorOptions({enabled=status.enabled,room_titles=status.room,exits=status.exits,currency=status.currency}) end
+  return result
+end
 function Main:clockDisplay()
   local real
   if type(self.adapter.localTime)=="function" then local ok,value=pcall(self.adapter.localTime,self.adapter); if ok then real=value end end
@@ -411,8 +420,11 @@ function Main:start()
   self:installMapClickHook()
   local startupOk,startupErr=pcall(function()
   self.view=self.adapter:createView(self.settings)
-  if self.view.setColorToggleCallback then self.view:setColorToggleCallback(function() local enabled=self:setColorizerEnabled(not self.colorizer_enabled); if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(enabled) end; return enabled end) end
-  if self.view.setColorEnabled then self.view:setColorEnabled(self.colorizer_enabled) end
+  if self.view.setColorToggleCallback then self.view:setColorToggleCallback(function(wanted) local enabled=self:setColorizerEnabled(type(wanted)=="boolean" and wanted or not self.colorizer_enabled); if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(self.colorizer:status()) end; return enabled end) end
+  if self.view.setColorOptionsCallback then self.view:setColorOptionsCallback(function(name,wanted) local feature=name=="room_titles" and "room" or name; local enabled,err=self:setColorFeature(feature,wanted); if enabled==nil then return nil,err end; if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(self.colorizer:status()) end; return enabled end) end
+  local colorSettings=type(self.settings.colorization)=="table" and self.settings.colorization or {}
+  if self.view.setColorOptions then self.view:setColorOptions({enabled=self.colorizer_enabled,room_titles=colorSettings.room_enabled~=false,exits=colorSettings.exits_enabled~=false,currency=colorSettings.currency_enabled~=false}) elseif self.view.setColorEnabled then self.view:setColorEnabled(self.colorizer_enabled) end
+  if self.view.setHelpCloseCallback then self.view:setHelpCloseCallback(function() return true end) end
   if self.view.setMapZoomCallback then self.view:setMapZoomCallback(function(action) return self:mapToolbarAction(action) end) end
   if self.view.setMapClearAllCallback then self.view:setMapClearAllCallback(function() return self:clearAllMapsAction() end) end
   self:applyResponsiveLayout()
@@ -460,10 +472,25 @@ function Main:start()
     {"^dghud map cancel$",function() local ok,err=self.cleanup:cancel(); self.clear_all_armed_at=nil; if self.view and self.view.setMapClearPending then self.view:setMapClearPending(false) end; if not ok then self:reportCleanup(err,true); return nil,err end; self:reportCleanup("Cleanup preview cancelled.",false); return true end},
   }
   for _,entry in ipairs(cleanupAliases) do self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias(entry[1],entry[2]) end
-  self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias("^dghud colors(?: (on|off|toggle|status))?$",function(value)
-    local action=tostring(aliasArgument(value) or "toggle"):lower(); local enabled
-    if action=="on" then enabled=self:setColorizerEnabled(true) elseif action=="off" then enabled=self:setColorizerEnabled(false) elseif action=="toggle" or action=="" then enabled=self:setColorizerEnabled(not self.colorizer_enabled) elseif action=="status" then enabled=self.colorizer:status().enabled else return nil,"unknown colorizer action" end
-    if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(enabled) end; return enabled
+  self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias("^dghud colors(?: (.*))?$",function(value)
+    local action=tostring(aliasArgument(value) or "toggle"):lower():match("^%s*(.-)%s*$"); local enabled,err
+    local feature,featureAction=action:match("^(%a+)%s+(%a+)$")
+    local validFeature=feature=="room" or feature=="exits" or feature=="currency"
+    local validFeatureAction=featureAction=="on" or featureAction=="off" or featureAction=="toggle" or featureAction=="status"
+    if validFeature and validFeatureAction then
+      local current=self.colorizer:status()[feature]
+      if featureAction=="status" then enabled=current else enabled,err=self:setColorFeature(feature,featureAction=="on" or (featureAction=="toggle" and not current)) end
+    elseif action=="on" then enabled=self:setColorizerEnabled(true)
+    elseif action=="off" then enabled=self:setColorizerEnabled(false)
+    elseif action=="toggle" or action=="" then enabled=self:setColorizerEnabled(not self.colorizer_enabled)
+    elseif action=="status" then enabled=self.colorizer:status().enabled
+    else return nil,"usage: dghud colors [on|off|toggle|status|room|exits|currency]" end
+    if enabled==nil then return nil,err end
+    if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(self.colorizer:status()) end; return enabled
+  end)
+  self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias("^dghud help$",function()
+    if not self.view or not self.view.showHelp then return nil,"help panel is unavailable" end
+    return self.view:showHelp()
   end)
   self.started=true; local data=self.adapter:getGMCP(); if self:mapperEnabled() and data and data.Room and data.Room.Info then local mapped=self.automapper:onRoom(data.Room.Info); if mapped and tonumber(data.Room.Info.num) then self.managed_rooms[tonumber(data.Room.Info.num)]=true end end; self:refresh(); self:scheduleRoundtimeTick(); self:scheduleClockTick()
   local chatStarted,chatErr=self:startChat(); if not chatStarted then error(chatErr,0) end

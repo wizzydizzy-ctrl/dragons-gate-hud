@@ -123,6 +123,7 @@ function Layout.compute(width,height,chatSettings,mapperSettings)
   elseif width>=800 then result=metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="right"},chatSettings,mapperSettings)
   else result=metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=0,show_character_rail=false,show_room_compass=false,vitals_side="compact"},chatSettings,mapperSettings) end
   result.window_width=width
+  result.window_height=height
   return result
 end
 return Layout

@@ -41,8 +41,8 @@ test("resolves migrated chat settings without discarding user keys",function()
 end)
 
 test("colorization defaults enabled and preserves unrelated overrides",function()
-  local resolved,migrated=Settings.resolve(defaults,{personal="untouched",colorization={personal_option="keep"}})
-  eq(resolved.colorization.enabled,true); eq(resolved.colorization.personal_option,"keep")
+  local resolved,migrated=Settings.resolve(defaults,{personal="untouched",colorization={exits_enabled=false,personal_option="keep"}})
+  eq(resolved.colorization.enabled,true); eq(resolved.colorization.room_enabled,true); eq(resolved.colorization.exits_enabled,false); eq(resolved.colorization.currency_enabled,true); eq(resolved.colorization.personal_option,"keep")
   eq(migrated.personal,"untouched"); eq(migrated.colorization.personal_option,"keep")
 end)
 

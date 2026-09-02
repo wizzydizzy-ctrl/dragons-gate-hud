@@ -147,6 +147,38 @@ local function gauge(name,parent,color,theme)
   return g
 end
 local function place(item,x,y,w,h) item:move(x,y); item:resize(w,h); item:show() end
+local help_entries={
+  {command="dghud help",description="Open this command guide."},
+  {command="dghud colors [on|off|toggle|status]",description="Control all optional DGHUD output colors."},
+  {command="dghud colors room|exits|currency on|off|toggle|status",description="Control one color category independently."},
+  {command="dghud check",description="Check GitHub for a newer HUD release."},
+  {command="dghud update",description="Install the newest verified HUD release, then refresh character data."},
+  {command="dghud reload",description="Reload the HUD using your saved preferences."},
+  {command="dghud config",description="Open the DGHUD settings location."},
+  {command="dghud purge",description="Remove DGHUD-owned installed data.",warning=true},
+  {command="dghud chatstatus",description="Show chat capture, filter, and storage status."},
+  {command="dghud mapstatus",description="Show mapper, walking, and latest-error status."},
+  {command="walkto <room number>",description="Walk to a known mapped room."},
+  {command="walkstop",description="Stop the current automatic walk."},
+  {command="mapcenter",description="Center the embedded map on your current room."},
+  {command="dghud map delete room <number>",description="Preview deletion of one DGHUD-owned room.",warning=true},
+  {command="dghud map clear submap <number>",description="Preview deletion of one DGHUD-owned submap.",warning=true},
+  {command="dghud map clear area <name>",description="Preview deletion of one DGHUD-owned area.",warning=true},
+  {command="dghud map clear all",description="Preview a reset of every DGHUD-owned map and submap.",warning=true},
+  {command="dghud map cancel",description="Cancel a pending map cleanup preview."},
+  {command="dghud map confirm <token>",description="Confirm the exact pending cleanup preview.",warning=true},
+}
+function View.defaultHelpEntries()
+  local result={}; for i,entry in ipairs(help_entries) do result[i]={command=entry.command,description=entry.description,warning=entry.warning} end; return result
+end
+function View.helpContent(entries,t,layout)
+  local font=math.max(11,tonumber(layout and layout.help_font) or 13); local lines={}
+  for _,entry in ipairs(entries or View.defaultHelpEntries()) do
+    local commandColor=entry.warning and t.hp or t.jade
+    lines[#lines+1]="<span style='color:"..commandColor..";font-size:"..font.."px'><b>"..safeText(entry.command).."</b></span><br><span style='color:"..t.text..";font-size:"..font.."px'>"..safeText(entry.description).."</span>"
+  end
+  return table.concat(lines,"<br><br>")
+end
 local function listViewportWidth(output,plannedWidth,override)
   local outer=tonumber(plannedWidth) or 1
   if output and type(output.get_width)=="function" then
@@ -164,8 +196,20 @@ function View.new(settings)
   self.root=Geyser.Container:new({name="DGHUD.Root",x=0,y=0,width="100%",height="100%"})
   self.header=label("DGHUD.Header",self.root,"background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px 18px;")
   self.color_toggle=label("DGHUD.Header.ColorToggle",self.root,"background:#17231c;border:1px solid "..t.jade..";border-radius:4px;color:"..t.jade..";font-weight:700;")
-  if self.color_toggle.setToolTip then pcall(self.color_toggle.setToolTip,self.color_toggle,"Toggle DGHUD room and exit color coding") end
-  self.color_toggle:setClickCallback(function() if self.color_toggle_callback then return self.color_toggle_callback() end end)
+  if self.color_toggle.setToolTip then pcall(self.color_toggle.setToolTip,self.color_toggle,"Open DGHUD color options") end
+  self.color_menu_scrim=label("DGHUD.Header.ColorMenuScrim",self.root,"background:transparent;")
+  self.color_menu=Geyser.Container:new({name="DGHUD.Header.ColorMenu",x=0,y=0,width=220,height=132},self.root)
+  self.color_menu_bg=label("DGHUD.Header.ColorMenu.Background",self.color_menu,"background:"..t.panel..";border:1px solid "..t.border..";border-radius:6px;")
+  self.color_option_buttons={}
+  for _,option in ipairs({{"enabled","OUTPUT COLORS"},{"room","ROOM TITLES"},{"exits","EXITS / DIRECTIONS"},{"currency","CURRENCY"}}) do
+    local key,text=option[1],option[2]; local button=label("DGHUD.Header.ColorMenu."..key,self.color_menu)
+    button:setClickCallback(function() return self:selectColorOption(key) end); button.option_text=text; self.color_option_buttons[key]=button
+  end
+  self.color_options={enabled=true,room=true,exits=true,currency=true}; self.color_menu_visible=false
+  self.color_toggle:setClickCallback(function() return self:setColorMenuVisible(not self.color_menu_visible) end)
+  self.color_menu_scrim:setClickCallback(function() return self:setColorMenuVisible(false) end)
+  for _,widget in ipairs({self.color_menu_scrim,self.color_menu,self.color_menu_bg}) do widget:hide() end
+  for _,button in pairs(self.color_option_buttons) do button:hide() end
   self.clock_header=label("DGHUD.Header.Clock",self.root,"background:transparent;color:"..t.text..";padding:8px 18px;")
   self.attribute_strip=label("DGHUD.AttributeStrip",self.root,"background:transparent;color:"..t.text..";padding:10px 12px;")
   self.chat_container=Geyser.Container:new({name="DGHUD.Chat",x=0,y=0,width=100,height=240},self.root)
@@ -223,6 +267,17 @@ function View.new(settings)
   for i,utility in ipairs(Navigation.utilities) do local b=label("DGHUD.Utility."..i,self.utility_area); b:setClickCallback(function() send(utility.command) end); self.utility_buttons[i]={label=b,utility=utility} end
   self.bottom=label("DGHUD.Bottom",self.root,"background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px 15px;")
   self.compact=label("DGHUD.Compact",self.root,"background:"..t.panel..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:8px 12px;")
+  self.help_overlay=label("DGHUD.Help.Overlay",self.root,"background:rgba(0,0,0,0.72);")
+  self.help_panel=Geyser.Container:new({name="DGHUD.Help.Panel",x=0,y=0,width=600,height=500},self.root)
+  self.help_bg=label("DGHUD.Help.Background",self.help_panel,"background:"..t.panel..";border:2px solid "..t.accent..";border-radius:8px;")
+  self.help_title=label("DGHUD.Help.Title",self.help_panel,"background:transparent;color:"..t.accent..";font-weight:700;")
+  self.help_close=label("DGHUD.Help.Close",self.help_panel,"background:#17231c;border:1px solid "..t.border..";border-radius:4px;color:"..t.text..";font-weight:700;")
+  self.help_output=Geyser.ScrollBox:new({name="DGHUD.Help.Output",x=12,y=54,width=576,height=434},self.help_panel)
+  self.help_content=label("DGHUD.Help.Content",self.help_output,"background:transparent;color:"..t.text..";")
+  self.help_close:setClickCallback(function() self:hideHelp(); if self.help_close_callback then return self.help_close_callback() end end)
+  if self.help_close.setToolTip then pcall(self.help_close.setToolTip,self.help_close,"Close DGHUD command guide") end
+  self.help_visible=false
+  for _,widget in ipairs({self.help_overlay,self.help_panel,self.help_bg,self.help_title,self.help_close,self.help_output,self.help_content}) do widget:hide() end
   return self
 end
 local default_chat_filters={"ALL","ROOM","PRIVATE","ESP","DRAGON","CONTACT","STAFF"}
@@ -334,11 +389,11 @@ function View:applyLayout(layout)
   self.bottom:setStyleSheet("background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px "..p.."px;font-size:"..layout.small_font.."px;")
   self.compact:setStyleSheet("background:"..t.panel..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
   for _,g in ipairs({self.hp,self.fatigue,self.carry,self.psi,self.web}) do g.text:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.lower_small_font.."px;font-weight:700;"); if g.text.setFontSize then g.text:setFontSize(layout.lower_small_font) end end
-  place(self.header,0,0,"100%",top); place(self.attribute_strip,layout.console_left or layout.left,0,layout.console_width,top); self.attribute_strip:raise()
-  local toggle_x=layout.panel_padding
-  local toggle_y=math.max(34,top-layout.color_toggle_height-layout.panel_padding)
-  local toggle_available=layout.mode=="compact" and math.floor((layout.window_width or 760)*.45)-toggle_x*2 or layout.left-toggle_x*2
-  local toggle_width=math.max(76,math.min(126,toggle_available))
+  place(self.header,0,0,"100%",top)
+  local windowWidth=tonumber(layout.window_width) or 1200; local clock_x=layout.mode=="compact" and math.floor(windowWidth*.5) or windowWidth-layout.right
+  local toggle_width=math.max(72,math.min(92,math.floor(windowWidth*.10))); local toggle_x=math.max(4,clock_x-toggle_width-6); local toggle_y=math.max(5,math.floor((top-layout.color_toggle_height)/2))
+  local attributeWidth=math.max(1,toggle_x-(layout.console_left or layout.left)-6)
+  place(self.attribute_strip,layout.console_left or layout.left,0,attributeWidth,top); self.attribute_strip:raise()
   place(self.color_toggle,toggle_x,toggle_y,toggle_width,layout.color_toggle_height); self:setColorEnabled(self.color_enabled~=false); self.color_toggle:raise()
   if layout.mode=="compact" then place(self.clock_header,"50%",0,"50%",top) else place(self.clock_header,"100%-"..layout.right,0,layout.right,top) end
   self.clock_header:raise(); self.bottom:hide()
@@ -459,15 +514,97 @@ function View:applyLayout(layout)
     for i,entry in ipairs(self.utility_buttons) do local col=(i-1)%2; local row=math.floor((i-1)/2); place(entry.label,(col*50).."%",row*(layout.lower_utility_height+2),"49%",layout.lower_utility_height) end
   end
   self:applyChatWrap(layout)
+  self:layoutColorMenu(layout)
+  self:layoutHelp(layout)
 end
+function View:layoutColorMenu(layout)
+  if not self.color_menu_visible then
+    self.color_menu_scrim:hide(); self.color_menu:hide(); self.color_menu_bg:hide(); for _,button in pairs(self.color_option_buttons) do button:hide() end; return true
+  end
+  local width=math.max(1,tonumber(layout.window_width) or 1200); local height=math.max(1,tonumber(layout.window_height) or 800)
+  local menuWidth=math.min(230,math.max(170,width-16)); local rowHeight=math.max(25,(layout.color_toggle_font or 11)+14); local menuHeight=rowHeight*4+8
+  local x=math.max(4,math.min(width-menuWidth-4,(tonumber(self.color_toggle.x) or 0)+(tonumber(self.color_toggle.width) or 0)-menuWidth))
+  local y=math.min(math.max(0,height-menuHeight-4),(tonumber(self.color_toggle.y) or 0)+(tonumber(self.color_toggle.height) or 0)+4)
+  place(self.color_menu_scrim,0,0,"100%","100%"); place(self.color_menu,x,y,menuWidth,menuHeight); place(self.color_menu_bg,0,0,"100%","100%")
+  for index,key in ipairs({"enabled","room","exits","currency"}) do place(self.color_option_buttons[key],4,4+(index-1)*rowHeight,menuWidth-8,rowHeight) end
+  self:renderColorOptions()
+  View.raiseCards({self.color_menu_scrim,self.color_toggle,self.color_menu,self.color_menu_bg,self.color_option_buttons.enabled,self.color_option_buttons.room,self.color_option_buttons.exits,self.color_option_buttons.currency})
+  return true
+end
+function View:layoutHelp(layout)
+  if not self.help_visible then
+    for _,widget in ipairs({self.help_overlay,self.help_panel,self.help_bg,self.help_title,self.help_close,self.help_output,self.help_content}) do widget:hide() end
+    return true
+  end
+  local width=math.max(1,tonumber(layout.window_width) or 1200); local height=math.max(1,tonumber(layout.window_height) or 800)
+  local margin=layout.mode=="compact" and 12 or math.max(18,layout.panel_padding or 12)
+  local panelWidth
+  if layout.mode=="compact" then panelWidth=math.max(1,width-margin*2)
+  else panelWidth=math.min(780,math.max(360,math.floor((layout.console_width or width)*.72))) end
+  panelWidth=math.min(panelWidth,math.max(1,width-margin*2))
+  local panelHeight=math.min(layout.mode=="compact" and math.floor(height*.84) or 620,math.max(180,math.floor(height*.72)))
+  panelHeight=math.min(panelHeight,math.max(1,height-margin*2))
+  local x=math.max(0,math.floor((width-panelWidth)/2)); local y=math.max(0,math.floor((height-panelHeight)/2))
+  self.help_font=math.max(11,math.min(15,tonumber(layout.body_font or 16)-3)); layout.help_font=self.help_font
+  place(self.help_overlay,0,0,"100%","100%"); place(self.help_panel,x,y,panelWidth,panelHeight); place(self.help_bg,0,0,"100%","100%")
+  local closeWidth=math.max(64,math.min(94,math.floor(panelWidth*.22))); local headerHeight=math.max(40,self.help_font+24)
+  place(self.help_title,16,10,panelWidth-closeWidth-40,headerHeight-14); self.help_title:echo(View.withFont("<b>DGHUD COMMAND GUIDE</b>",self.help_font+2))
+  place(self.help_close,panelWidth-closeWidth-12,8,closeWidth,headerHeight-14); self.help_close:echo(View.withFont("<center><b>× CLOSE</b></center>",self.help_font))
+  local outputHeight=math.max(1,panelHeight-headerHeight-14); place(self.help_output,12,headerHeight,panelWidth-24,outputHeight)
+  local contentWidth=math.max(1,panelWidth-52); local entries=self.help_entries or View.defaultHelpEntries()
+  local contentHeight=math.max(outputHeight,#entries*math.ceil(self.help_font*3.8)+20)
+  place(self.help_content,8,6,contentWidth,contentHeight); self.help_content:echo(View.helpContent(entries,self.settings.theme,layout))
+  View.raiseCards({self.help_overlay,self.help_panel,self.help_bg,self.help_title,self.help_close,self.help_output,self.help_content})
+  return true
+end
+function View:setHelpCloseCallback(callback) self.help_close_callback=type(callback)=="function" and callback or nil; return true end
+function View:setHelpVisible(visible,entries)
+  self.help_visible=visible==true
+  if self.help_visible then self:setColorMenuVisible(false) end
+  if entries~=nil then self.help_entries=type(entries)=="table" and entries or View.defaultHelpEntries() end
+  if self.layout then return self:layoutHelp(self.layout) end
+  return true
+end
+function View:showHelp(entries) return self:setHelpVisible(true,entries) end
+function View:hideHelp() return self:setHelpVisible(false) end
 function View:setMapCenterCallback(callback) self.map_center_callback=type(callback)=="function" and callback or nil; return true end
 function View:setColorToggleCallback(callback) self.color_toggle_callback=type(callback)=="function" and callback or nil; return true end
+function View:setColorOptionsCallback(callback) self.color_options_callback=type(callback)=="function" and callback or nil; return true end
+function View:setColorMenuVisible(visible)
+  self.color_menu_visible=visible==true
+  if self.layout then return self:layoutColorMenu(self.layout) end
+  return true
+end
+function View:renderColorOptions()
+  local t=self.settings.theme; local font=self.layout and self.layout.color_toggle_font or 11
+  for key,button in pairs(self.color_option_buttons or {}) do
+    local enabled=self.color_options[key]~=false; local color=enabled and t.jade or t.muted
+    button:setStyleSheet("background:"..(enabled and "#17231c" or "#111512")..";border:1px solid "..(enabled and "#385044" or t.border)..";border-radius:4px;color:"..color..";font-weight:700;")
+    button:echo(View.withFont("<center>"..button.option_text.." &nbsp; <b>"..(enabled and "ON" or "OFF").."</b></center>",font))
+  end
+  return true
+end
+function View:setColorOptions(options)
+  options=type(options)=="table" and options or {}
+  for _,key in ipairs({"enabled","room","exits","currency"}) do if options[key]~=nil then self.color_options[key]=options[key]~=false end end
+  self.color_enabled=self.color_options.enabled~=false; self:setColorEnabled(self.color_enabled); self:renderColorOptions(); return true
+end
+function View:selectColorOption(key)
+  if not self.color_option_buttons[key] then return nil,"unknown color option" end
+  local wanted=not (self.color_options[key]~=false); local result
+  if key=="enabled" and self.color_toggle_callback then result=self.color_toggle_callback(wanted)
+  elseif self.color_options_callback then result=self.color_options_callback(key,wanted) end
+  if type(result)=="boolean" then wanted=result end
+  self.color_options[key]=wanted; if key=="enabled" then self:setColorEnabled(wanted) else self:renderColorOptions() end
+  self:setColorMenuVisible(false); return wanted
+end
 function View:setColorEnabled(enabled)
   self.color_enabled=enabled~=false
+  self.color_options.enabled=self.color_enabled
   local t=self.settings.theme; local color=self.color_enabled and t.jade or t.muted
   self.color_toggle:setStyleSheet("background:"..(self.color_enabled and "#17231c" or "#111512")..";border:1px solid "..color..";border-radius:4px;color:"..color..";font-weight:700;")
   local font=self.layout and self.layout.color_toggle_font or 11
-  self.color_toggle:echo(View.withFont("<center><b>COLORS "..(self.color_enabled and "ON" or "OFF").."</b></center>",font))
+  self.color_toggle:echo(View.withFont("<center><b>COLORS ▾</b></center>",font)); self:renderColorOptions()
   return true
 end
 function View:setMapZoomCallback(callback) self.map_zoom_callback=type(callback)=="function" and callback or nil; return true end

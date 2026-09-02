@@ -52,7 +52,6 @@ local rules={
   {category="STAFF",pattern='^'..name..' %(ELDER%): "(.*)"$',speaker=1,message=2},
   {category="STAFF",pattern='^%[GUIDE%] '..name..': (.+)$',speaker=1,message=2},
   {category="STAFF",pattern='^%[GM%] '..name..': (.+)$',speaker=1,message=2},
-  {category="STAFF",pattern='^You hear the voice of '..name..' say, "(.*)"$',speaker=1,message=2},
   {category="DRAGON",pattern="^You pick up "..name.."'s mental link, \"(.*)\"$",speaker=1,message=2},
   {category="DRAGON",pattern="^"..name.." picks up "..name.."'s mental link, \"(.*)\"$",speaker=2,message=3},
   {category="DRAGON",pattern="^You pick up "..name.."'s Dragon link, \"(.*)\" %[%s*r%-(%d+)%s*%]$",speaker=1,message=2},
@@ -61,6 +60,15 @@ local rules={
 
 local function builtIn(category,message,metadata,character,now,line)
   return entry(category,message,metadata,character,now,"builtin",line)
+end
+
+local function parseStaffVoice(line,character,now)
+  for _,verb in ipairs({"say","ask","exclaim","shout","yell"}) do
+    local speaker,target,message=line:match('^You hear the voice of '..name..' '..verb..' '..name..', "(.*)"$')
+    if speaker then return builtIn("STAFF",message,{speaker=speaker,target=target},character,now,line) end
+    speaker,message=line:match('^You hear the voice of '..name..' '..verb..', "(.*)"$')
+    if speaker then return builtIn("STAFF",message,{speaker=speaker},character,now,line) end
+  end
 end
 
 local function roomCategory(speaker,character)
@@ -106,6 +114,8 @@ end
 function Parser.parse(line,character,now)
   line=plain(line)
   if not line then return nil end
+  local staffVoice=parseStaffVoice(line,character,now)
+  if staffVoice then return staffVoice end
   for _,rule in ipairs(rules) do
     local captures={line:match(rule.pattern)}
     if #captures>0 then

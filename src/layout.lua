@@ -69,7 +69,7 @@ local function chatMetrics(width,height,layout,settings)
   return layout
 end
 local function metrics(width,height,layout,chatSettings,mapperSettings)
-  layout.console_gutter=layout.mode=="compact" and 0 or math.floor(width*.005+.5)
+  layout.console_gutter=layout.mode=="compact" and 0 or math.min(12,math.floor(width*.005+.5))
   layout.console_left=layout.left+layout.console_gutter
   layout.console_right=layout.right+layout.console_gutter
   layout.console_width=width-layout.console_left-layout.console_right

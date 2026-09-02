@@ -72,8 +72,22 @@ end)
 test("duplicate bottom information row reserves no console space",function()
   for _,size in ipairs({{760,700},{1200,800},{2560,1400}}) do eq(Layout.compute(size[1],size[2]).bottom,0) end
 end)
-test("layout leaves sixty-five percent plus two half-percent gutters between rails",function()
-  for _,w in ipairs({1000,1024,1366,1400,1600,1920,2056,2560,3840}) do local r=Layout.compute(w,900); eq(r.console_width>=math.floor(w*.65),true); eq(r.console_gutter,math.floor(w*.005+.5)) end
+test("console gutter approximates half a percent but caps on wide displays",function()
+  for _,case in ipairs({{1920,10},{2560,12},{3840,12},{7680,12}}) do
+    local width,expected=case[1],case[2]
+    local r=Layout.compute(width,1080)
+    eq(r.console_gutter,expected)
+    eq(r.console_left,r.left+expected)
+    eq(r.console_right,r.right+expected)
+    eq(r.console_width,width-r.console_left-r.console_right)
+  end
+end)
+test("layout keeps a usable center console with capped gutters",function()
+  for _,w in ipairs({1000,1024,1366,1400,1600,1920,2056,2560,3840,7680}) do
+    local r=Layout.compute(w,900)
+    eq(r.console_width>=math.floor(w*.65),true)
+    eq(r.console_gutter<=12,true)
+  end
 end)
 test("responsive typography remains readable at every breakpoint",function()
   local compact=Layout.compute(760,700); local medium=Layout.compute(1200,800); local wide=Layout.compute(2056,1177); local ultra=Layout.compute(3840,2160)

@@ -314,6 +314,14 @@ test("zoom buttons invoke visual actions",function()
   view.map_zoom_in.click(); view.map_zoom_out.click(); view.map_center.click()
   eq(table.concat(calls,","),"larger,smaller,center")
 end)
+test("mapper owns a top-right guarded clear-all button",function()
+  local layout=require("layout").compute(1920,1080); local view=chatView(); local calls=0
+  view:setMapClearAllCallback(function() calls=calls+1 end); view:applyLayout(layout)
+  eq(view.map_clear_all.visible,true); eq(view.map_clear_all.x+view.map_clear_all.width<=layout.left-2*layout.lower_panel_padding,true)
+  eq(view.map_clear_all.tooltip,"WARNING: Clear all DGHUD maps and submaps")
+  view.map_clear_all.click(); eq(calls,1)
+  view:setMapClearPending(true); eq(view.map_clear_all.message:find("CONFIRM",1,true)~=nil,true)
+end)
 
 test("repeated mapper resize reuses controls and callbacks while hidden layouts hide them",function()
   local Layout=require("layout"); local view=chatView(); local calls=0

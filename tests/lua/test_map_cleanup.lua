@@ -122,6 +122,21 @@ test("submap preview requires exact persisted partition on every room",function(
   local result,err=cleanup:previewSubmap(900); eq(result,nil); eq(err,"room 901 is outside partition special:900")
 end)
 
+test("clear-all preview selects every owned area and permits the current owned room",function()
+  local cleanup,map,runtime=fixture(); runtime.snapshot.current_room=200
+  local preview=assert(cleanup:previewAll())
+  eq(preview.operation,"clear_all"); listEq(preview.area_ids,{8,42}); listEq(preview.room_ids,{200,201,900,901})
+  eq(preview.allow_current,true); eq(map.rooms[50].owned,false)
+end)
+
+test("clear-all confirmation deletes every owned area but preserves personal map data",function()
+  local cleanup,map,runtime=fixture(); runtime.snapshot.current_room=200
+  local result=assert(cleanup:confirm(assert(cleanup:previewAll()).token))
+  listEq(result.deleted,{200,201,900,901}); listEq(result.deleted_areas,{8,42})
+  eq(map.rooms[50]~=nil,true); eq(map.rooms[100]~=nil,true); eq(map.areas[7].owned,false)
+  eq(map.areas[8],nil); eq(map.areas[42],nil); eq(runtime.afterCalls,1)
+end)
+
 test("preview rejects unowned rooms and areas",function()
   local cleanup=fixture(); local result,err=cleanup:previewRoom(50); eq(result,nil); eq(err,"room 50 is not owned by DragonsGateHUD")
   result,err=cleanup:previewArea("Personal"); eq(result,nil); eq(err,"mapper area 7 is not owned by DragonsGateHUD")

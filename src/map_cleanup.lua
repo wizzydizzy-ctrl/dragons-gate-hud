@@ -84,9 +84,9 @@ local function roomEvidence(map,ids,areaID,partition)
   return evidence
 end
 
-local function safetyError(snapshot,roomIDs)
+local function safetyError(snapshot,roomIDs,allowCurrent)
   if type(snapshot)~="table" then return "cleanup safety state is unavailable" end
-  if contains(roomIDs,snapshot.current_room) then return "cleanup includes the current room" end
+  if not allowCurrent and contains(roomIDs,snapshot.current_room) then return "cleanup includes the current room" end
   if snapshot.walking then return "map walking is active" end
   if type(snapshot.route_rooms)~="table" then return "cleanup safety state is unavailable" end
   for _,roomID in ipairs(snapshot.route_rooms) do if contains(roomIDs,roomID) then return "cleanup intersects the active route" end end
@@ -119,7 +119,7 @@ function Cleanup:_finishPlan(plan,issueToken)
   end
   local snapshot,snapshotErr=self.runtime:safetySnapshot(copy(plan.room_ids))
   if snapshot==nil then return nil,snapshotErr or "cleanup safety state is unavailable" end
-  local blocker=safetyError(snapshot,plan.room_ids)
+  local blocker=safetyError(snapshot,plan.room_ids,plan.allow_current)
   if blocker then return nil,blocker end
   plan.safety=copy(snapshot)
   plan.blockers={}
@@ -164,6 +164,33 @@ function Cleanup:_submapPlan(rootRoomID,issueToken)
   return self:_finishPlan({operation="clear_submap",target=tostring(root),area_id=area,partition=partition,room_ids=copy(rooms)},issueToken)
 end
 
+function Cleanup:_allPlan(issueToken)
+  local areas,areasErr=guardedAreaTable(self.map)
+  if not areas then return nil,areasErr end
+  local candidates={}
+  for key,value in pairs(areas) do
+    local keyID=positiveInteger(key); local valueID=positiveInteger(value)
+    if keyID then candidates[keyID]=true end
+    if valueID then candidates[valueID]=true end
+  end
+  local areaIDs={}
+  for areaID in pairs(candidates) do
+    local record,recordErr=self.map:areaRecord(areaID)
+    if record==nil then return nil,recordErr end
+    if record.exists and record.owned then areaIDs[#areaIDs+1]=areaID end
+  end
+  table.sort(areaIDs)
+  if #areaIDs==0 then return nil,"no DragonsGateHUD map areas exist" end
+  local roomSet={}
+  for _,areaID in ipairs(areaIDs) do
+    local rooms,roomsErr=self.map:roomsInArea(areaID)
+    if rooms==nil then return nil,roomsErr end
+    for _,roomID in ipairs(rooms) do roomSet[roomID]=true end
+  end
+  local roomIDs={}; for roomID in pairs(roomSet) do roomIDs[#roomIDs+1]=roomID end; table.sort(roomIDs)
+  return self:_finishPlan({operation="clear_all",target="all",area_id=nil,area_ids=areaIDs,partition=nil,room_ids=roomIDs,allow_current=true},issueToken)
+end
+
 function Cleanup:_preview(builder,...)
   if self.busy then return nil,"cleanup is already running" end
   self.plan=nil
@@ -176,6 +203,14 @@ end
 function Cleanup:previewRoom(roomID) return self:_preview(self._roomPlan,roomID) end
 function Cleanup:previewArea(target) return self:_preview(self._areaPlan,target) end
 function Cleanup:previewSubmap(rootRoomID) return self:_preview(self._submapPlan,rootRoomID) end
+function Cleanup:previewAll()
+  if self.busy then return nil,"cleanup is already running" end
+  self.plan=nil
+  local plan,err=self:_allPlan(true)
+  if not plan then return nil,err end
+  self.plan=copy(plan)
+  return copy(plan)
+end
 
 function Cleanup:pending()
   return self.plan and copy(self.plan) or nil
@@ -191,12 +226,13 @@ function Cleanup:_rebuild(plan)
   if plan.operation=="delete_room" then return self:_roomPlan(plan.target,false) end
   if plan.operation=="clear_area" then return self:_areaPlan(plan.target,false) end
   if plan.operation=="clear_submap" then return self:_submapPlan(plan.target,false) end
+  if plan.operation=="clear_all" then return self:_allPlan(false) end
   return nil,"unknown cleanup operation"
 end
 
 local function comparable(plan)
   return {
-    operation=plan.operation,target=plan.target,area_id=plan.area_id,partition=plan.partition,
+    operation=plan.operation,target=plan.target,area_id=plan.area_id,area_ids=plan.area_ids,partition=plan.partition,allow_current=plan.allow_current,
     room_ids=plan.room_ids,ownership=plan.ownership,inbound_sources=plan.inbound_sources,safety=plan.safety,blockers=plan.blockers,
   }
 end
@@ -223,7 +259,7 @@ function Cleanup:confirm(token)
   if not plan or tostring(token)~=plan.token then return nil,"cleanup confirmation token is invalid" end
   self.plan=nil
   self.busy=true
-  local result={deleted={},failed=nil,untouched={},area_deleted=false}
+  local result={deleted={},deleted_areas={},failed=nil,untouched={},area_deleted=false}
   local executionStarted=false
   local failureError
   local activeRoomIndex
@@ -257,18 +293,32 @@ function Cleanup:confirm(token)
       activeRoomIndex=nil
     end
     if not result.failed and plan.operation~="delete_room" then
-      local callOK,areaDeleted,areaError=protectedCall(function() return self.map:deleteEmptyOwnedArea(plan.area_id) end)
-      if not callOK then areaDeleted=nil end
-      if areaDeleted then
-        result.area_deleted=true
-      else
-        result.area_error=areaError or "area deletion failed"
-        result.error=result.area_error
+      local areaIDs=plan.operation=="clear_all" and plan.area_ids or {plan.area_id}
+      for _,areaID in ipairs(areaIDs) do
+        local callOK,areaDeleted,areaError=protectedCall(function() return self.map:deleteEmptyOwnedArea(areaID) end)
+        if not callOK then areaDeleted=nil end
+        if areaDeleted then
+          result.deleted_areas[#result.deleted_areas+1]=areaID
+        else
+          result.area_error=areaError or "area deletion failed"
+          result.error=result.area_error
+          break
+        end
       end
+      result.area_deleted=#result.deleted_areas==#areaIDs
     end
 
     local invalidatedArea=result.area_deleted and plan.area_id or nil
-    local invalidateOK,invalidated,invalidateError=protectedCall(function() return self.map:invalidateDeleted(copy(result.deleted),invalidatedArea) end)
+    local invalidateOK,invalidated,invalidateError=protectedCall(function()
+      local ok,err=self.map:invalidateDeleted(copy(result.deleted),invalidatedArea)
+      if not ok then return ok,err end
+      if plan.operation=="clear_all" then
+        for _,areaID in ipairs(result.deleted_areas) do
+          ok,err=self.map:invalidateDeleted({},areaID); if not ok then return ok,err end
+        end
+      end
+      return true
+    end)
     if not invalidateOK then invalidated=nil end
     if invalidated==nil or invalidated==false then
       result.invalidation_error=invalidateError or "map cache invalidation failed"

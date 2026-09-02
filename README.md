@@ -124,9 +124,9 @@ dghud mapstatus
 
 Walking sends exactly one command at a time and waits for the expected GMCP room number. Standard directions are normalized; a non-direction route step is sent only when its exact origin, destination, and command match a confirmed HUD-owned special exit. This allows `walkto` and owned native-map clicks to cross safe mixed directional/special routes without trusting an unobserved portal, door, gate, arch, or other command. After arrival, nonzero GMCP roundtime pauses the route until a later Vitals update reports zero. The per-step movement timeout is canceled while paused because no command is in flight; a fresh timeout starts only when the next command is sent. Wrong directions, unexpected rooms, manual movement, disconnection, timeout, and shutdown stop the route.
 
-The mapper toolbar owns three controls: `−` zooms out, the center control recenters on the current canonical room, and `+` zooms in. Zoom uses Mudlet's native area-specific value, so each normal area and special sub-map retains its own level across room changes, HUD reloads, updates, and profile restarts. Configured steps and bounds are enforced independently for the current saved area.
+The mapper toolbar owns four controls: `−` zooms out, the center control recenters on the current canonical room, `+` zooms in, and the red `⚠ CLEAR ALL` button starts a guarded reset of every DGHUD-owned map and submap. Zoom uses Mudlet's native area-specific value, so each normal area and special sub-map retains its own level across room changes, HUD reloads, updates, and profile restarts. Configured steps and bounds are enforced independently for the current saved area.
 
-The HUD tags only its own rooms and areas with `dghud.owner=DragonsGateHUD`. It refuses to rewrite an existing unowned room or area and never deletes personal map data. The only internal deletion is transactional rollback of the exact brand-new room or area whose creation cannot receive its first ownership tag; preexisting and successfully owned map data is never eligible. Discovered canonical rooms, partitions, observed exits, coordinates, and native per-area zoom remain when the HUD reloads, updates, or is uninstalled. `dghud mapstatus` reports only whether mapping is enabled, the current room, the number of rooms managed during the HUD session, an active walking destination, the latest mapper status, and the latest actual mapper error. Routine stops such as `walkstop`, manual movement, route replacement, and shutdown update the status but do not overwrite the last error. It does not dump room names, routes, personal map records, or unrelated data.
+The HUD tags only its own rooms and areas with `dghud.owner=DragonsGateHUD`. It refuses to rewrite an existing unowned room or area and never deletes personal map data. Successfully owned map data is eligible for deletion only through the explicit, confirmed cleanup controls described below; failed creations may also be rolled back transactionally. Discovered canonical rooms, partitions, observed exits, coordinates, and native per-area zoom otherwise remain when the HUD reloads, updates, or is uninstalled. `dghud mapstatus` reports only whether mapping is enabled, the current room, the number of rooms managed during the HUD session, an active walking destination, the latest mapper status, and the latest actual mapper error. Routine stops such as `walkstop`, manual movement, route replacement, and shutdown update the status but do not overwrite the last error. It does not dump room names, routes, personal map records, or unrelated data.
 
 ### Safe map cleanup
 
@@ -138,7 +138,10 @@ To repair incorrectly generated HUD map content, first move out of the affected 
 dghud map delete room 176
 dghud map clear submap 900
 dghud map clear area Dragons Gate - Training Grounds
+dghud map clear all
 ```
+
+The red mapper button performs the same `clear all` operation. Its first click previews every DGHUD-owned area and room and changes the button to `CONFIRM CLEAR`; click it again within 30 seconds to delete that exact revalidated set. The current room is then recreated immediately from live GMCP so mapping starts fresh. Unowned and personal Mudlet map content is never included.
 
 Inspect the resolved area and every exact room ID in the preview. If anything is unexpected, run `dghud map cancel`. Otherwise, confirm with the printed one-use command within 30 seconds:
 

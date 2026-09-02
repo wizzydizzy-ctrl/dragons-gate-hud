@@ -233,7 +233,7 @@ function Main:afterCleanupDelete(result)
   local info=gmcpOK and type(data)=="table" and type(data.Room)=="table" and type(data.Room.Info)=="table" and data.Room.Info or nil
   local current=info and positiveRoom(info.num) or nil
   if not current then return nil,"cleanup current room state is unavailable" end
-  if not deleted[current] and self:mapperEnabled() then
+  if self:mapperEnabled() then
     local mapped,mapErr=self:callAutomapper("onRoom",info); if not mapped then return nil,mapErr or "current room remap failed" end
     self.managed_rooms[current]=true
   end
@@ -249,16 +249,30 @@ function Main:previewCleanup(method,target)
   if not callOK then err=preview; preview=nil end
   if not preview then self:reportCleanup(err,true); return nil,err end
   local ids={}; for index,roomID in ipairs(preview.room_ids) do ids[index]=tostring(roomID) end
-  local message="Operation: "..preview.operation.."\nArea: "..tostring(preview.area_id or "none").."\nCount: "..tostring(#preview.room_ids).."\nRoom IDs: "..table.concat(ids,",").."\n[DGHUD Map] Preview "..preview.token.." expires in 30 seconds.\n[DGHUD Map] Confirm with: dghud map confirm "..preview.token
+  local areas={}; for index,areaID in ipairs(preview.area_ids or {}) do areas[index]=tostring(areaID) end
+  local message="Operation: "..preview.operation.."\nArea: "..tostring(preview.area_id or "none")
+  if #areas>0 then message=message.."\nAreas: "..table.concat(areas,",") end
+  message=message.."\nCount: "..tostring(#preview.room_ids).."\nRoom IDs: "..table.concat(ids,",").."\n[DGHUD Map] Preview "..preview.token.." expires in 30 seconds.\n[DGHUD Map] Confirm with: dghud map confirm "..preview.token
   self:reportCleanup(message,false); return preview
 end
 function Main:confirmCleanup(token)
   local result,err=self.cleanup:confirm(token)
+  if self.view and self.view.setMapClearPending then self.view:setMapClearPending(false) end
   if not result then self:reportCleanup(err,true); return nil,err end
   local function ids(values) local out={}; for i,value in ipairs(values or {}) do out[i]=tostring(value) end; return #out>0 and table.concat(out,",") or "none" end
   local message="Deleted IDs: "..ids(result.deleted).."\nFailed ID: "..tostring(result.failed or "none").."\nUntouched IDs: "..ids(result.untouched).."\nArea deleted: "..tostring(result.area_deleted==true)
+  if #(result.deleted_areas or {})>0 then message=message.."\nDeleted areas: "..ids(result.deleted_areas) end
   if result.error then message=message.."\nError: "..tostring(result.error) end
   self:reportCleanup(message,result.error~=nil); return result
+end
+function Main:clearAllMapsAction()
+  local pending=self.cleanup and self.cleanup:pending()
+  if pending and pending.operation=="clear_all" then
+    return self:confirmCleanup(pending.token)
+  end
+  local preview,err=self:previewCleanup("previewAll")
+  if self.view and self.view.setMapClearPending then self.view:setMapClearPending(preview~=nil) end
+  return preview,err
 end
 function Main:routeShape(fromID,toID,route)
   if type(route)~="table" then return nil,"invalid map route" end
@@ -353,6 +367,7 @@ function Main:start()
   local startupOk,startupErr=pcall(function()
   self.view=self.adapter:createView(self.settings)
   if self.view.setMapZoomCallback then self.view:setMapZoomCallback(function(action) return self:mapToolbarAction(action) end) end
+  if self.view.setMapClearAllCallback then self.view:setMapClearAllCallback(function() return self:clearAllMapsAction() end) end
   self:applyResponsiveLayout()
   self.collector=Collector.new(self.adapter,Parser,function(snapshot,key) if key=="time" then self:onClockSync(snapshot.time) else self:refresh() end end,function(value) self:onRoundtime(value) end,function(name) self:onCharacterEntry(name) end); local collectorOk,collectorErr=self.collector:start(); if not collectorOk then error(collectorErr,0) end
   if self.adapter.isCharacterActive and self.adapter:isCharacterActive() then self:onCharacterEntry() end
@@ -392,8 +407,9 @@ function Main:start()
     {"^dghud map delete room (\\d+)$",function(value) return self:previewCleanup("previewRoom",aliasArgument(value)) end},
     {"^dghud map clear submap (\\d+)$",function(value) return self:previewCleanup("previewSubmap",aliasArgument(value)) end},
     {"^dghud map clear area (.+)$",function(value) return self:previewCleanup("previewArea",aliasArgument(value)) end},
+    {"^dghud map clear all$",function() return self:clearAllMapsAction() end},
     {"^dghud map confirm (\\S+)$",function(value) return self:confirmCleanup(aliasArgument(value)) end},
-    {"^dghud map cancel$",function() local ok,err=self.cleanup:cancel(); if not ok then self:reportCleanup(err,true); return nil,err end; self:reportCleanup("Cleanup preview cancelled.",false); return true end},
+    {"^dghud map cancel$",function() local ok,err=self.cleanup:cancel(); if self.view and self.view.setMapClearPending then self.view:setMapClearPending(false) end; if not ok then self:reportCleanup(err,true); return nil,err end; self:reportCleanup("Cleanup preview cancelled.",false); return true end},
   }
   for _,entry in ipairs(cleanupAliases) do self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias(entry[1],entry[2]) end
   self.started=true; local data=self.adapter:getGMCP(); if self:mapperEnabled() and data and data.Room and data.Room.Info then local mapped=self.automapper:onRoom(data.Room.Info); if mapped and tonumber(data.Room.Info.num) then self.managed_rooms[tonumber(data.Room.Info.num)]=true end end; self:refresh(); self:scheduleClockTick()

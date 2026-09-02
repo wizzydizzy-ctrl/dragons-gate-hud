@@ -15,6 +15,8 @@ local function fake()
     setChatFilterCallback=function(self,callback) f.chatFilterCallback=callback end,
     setMapCenterCallback=function(self,callback) f.mapCenterCallback=callback end,
     setMapZoomCallback=function(self,callback) f.mapZoomCallback=callback; f.mapZoomCallbackSets=(f.mapZoomCallbackSets or 0)+1 end,
+    setMapClearAllCallback=function(self,callback) f.mapClearAllCallback=callback end,
+    setMapClearPending=function(self,pending) f.mapClearPending=pending end,
     centerMap=function(self,roomID) f.centeredRooms=f.centeredRooms or {}; f.centeredRooms[#f.centeredRooms+1]=roomID; return true end,
     delete=function() f.deleted=f.deleted+1 end,
   } end
@@ -180,9 +182,28 @@ test("cleanup aliases expose only exact approved command shapes and reject malfo
   eq(type(aliasCallback(f,"^dghud map clear area (.+)$")),"function")
   eq(type(aliasCallback(f,"^dghud map confirm (\\S+)$")),"function")
   eq(type(aliasCallback(f,"^dghud map cancel$")),"function")
+  eq(type(aliasCallback(f,"^dghud map clear all$")),"function")
   eq(aliasCallback(f,"^dghud map delete room (.+)$"),nil); eq(aliasCallback(f,"^dghud map clear area (.*)$"),nil)
   local ok,err=aliasCallback(f,"^dghud map delete room (\\d+)$")({"","0"}); eq(ok,nil); eq(err,"room ID must be a positive integer")
   eq(f.cleanupReports[#f.cleanupReports].error,true)
+end)
+
+test("map clear button previews then confirms a complete owned-map reset",function()
+  local f=fake(); f.gmcp=gmcpRoom(200); local hud=Main.new(f,{layout={}}); assert(hud:start())
+  addCleanupRoom(f,200,8,"zone"); addCleanupRoom(f,201,8,"zone"); f.map.areaNames.Alpha=8
+  assert(f.mapClearAllCallback()); eq(f.mapClearPending,true); eq(f.map.rooms[200]~=nil,true)
+  assert(f.mapClearAllCallback()); eq(f.mapClearPending,false)
+  eq(f.map.areas[8],nil); eq(f.map.rooms[201],nil); eq(f.map.rooms[200]~=nil,true)
+  eq(f.map.rooms[200].owned,true); eq(f.cleanupReports[#f.cleanupReports].error,false)
+end)
+
+test("typed clear-all confirmation resets the mapper warning button",function()
+  local f=fake(); f.gmcp=gmcpRoom(200); local hud=Main.new(f,{layout={}}); assert(hud:start())
+  addCleanupRoom(f,200,8,"zone"); f.map.areaNames.Alpha=8
+  assert(f.mapClearAllCallback()); eq(f.mapClearPending,true)
+  local token=hud.cleanup:pending().token
+  assert(aliasCallback(f,"^dghud map confirm (\\S+)$")({"",token}))
+  eq(f.mapClearPending,false)
 end)
 
 test("cleanup preview cancellation invalidates the pending token",function()
@@ -296,9 +317,9 @@ test("cleanup reconciliation requires a valid fresh current room after mutation"
   end
 end)
 
-test("cleanup shutdown removes all five owned aliases",function()
-  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); local before=f:count(f.aliases); eq(before,#Events.aliases+6)
-  local owned={}; for id,alias in pairs(f.aliases) do if alias.pattern:match("%^dghud map ") then owned[id]=true end end; eq(f:count(owned),5)
+test("cleanup shutdown removes all six owned aliases",function()
+  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); local before=f:count(f.aliases); eq(before,#Events.aliases+7)
+  local owned={}; for id,alias in pairs(f.aliases) do if alias.pattern:match("%^dghud map ") then owned[id]=true end end; eq(f:count(owned),6)
   assert(hud:shutdown()); for id in pairs(owned) do eq(f.killed[id],true) end; eq(f:count(f.aliases),0)
 end)
 

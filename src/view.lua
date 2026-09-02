@@ -200,6 +200,9 @@ function View.new(settings)
   self.map_zoom_out=label("DGHUD.Mapper.ZoomOut",self.mapper_frame,mapButtonStyle)
   self.map_center=label("DGHUD.Mapper.Center",self.mapper_frame,mapButtonStyle)
   self.map_zoom_in=label("DGHUD.Mapper.ZoomIn",self.mapper_frame,mapButtonStyle)
+  self.map_clear_all=label("DGHUD.Mapper.ClearAll",self.mapper_frame,"background:#3a1715;border:1px solid #a94d46;border-radius:4px;color:#ffb0a8;font-weight:700;")
+  if self.map_clear_all.setToolTip then pcall(self.map_clear_all.setToolTip,self.map_clear_all,"WARNING: Clear all DGHUD maps and submaps") end
+  self.map_clear_all:setClickCallback(function() if self.map_clear_all_callback then return self.map_clear_all_callback() end end)
   for _,control in ipairs({
     {self.map_zoom_out,"−","Show more rooms","smaller"},
     {self.map_center,"◎","Center current room","center"},
@@ -404,7 +407,7 @@ function View:applyLayout(layout)
     end
     View.raiseCards({self.equipment,self.inventory,self.details,self.skills,self.inventory_title,self.inventory_output,self.inventory_content,self.inventory_footer,self.skills_title,self.skills_output,self.skills_content})
   else
-    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide(); self.vitals_right:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
+    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide(); self.vitals_right:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.map_clear_all:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
   end
   if layout.mode~="compact" then
     place(self.right_bg,0,0,"100%","100%"); self.right_title:hide()
@@ -421,11 +424,14 @@ function View:applyLayout(layout)
     if layout.mapper_visible and mapper_h>0 then
       place(self.mapper_frame,inset,mapper_y,"100%-"..(inset*2),mapper_h)
       local toolbar=layout.lower_mapper_toolbar_height or 0; local button_h=math.max(16,toolbar-6)
-      place(self.map_zoom_out,4,3,28,button_h); place(self.map_center,36,3,28,button_h); place(self.map_zoom_in,68,3,28,button_h)
+      local frame_w=math.max(1,layout.left-inset*2); local clear_w=math.max(54,math.min(110,frame_w-84))
+      place(self.map_zoom_out,4,3,24,button_h); place(self.map_center,30,3,24,button_h); place(self.map_zoom_in,56,3,24,button_h)
+      place(self.map_clear_all,frame_w-clear_w-4,3,clear_w,button_h)
       self.map_zoom_out:echo(View.withFont("<center><b>−</b></center>",layout.lower_utility_font)); self.map_center:echo(View.withFont("<center><b>◎</b></center>",layout.lower_utility_font)); self.map_zoom_in:echo(View.withFont("<center><b>+</b></center>",layout.lower_utility_font))
+      self:setMapClearPending(self.map_clear_pending)
       place(self.mapper,4,toolbar,"100%-8","100%-"..toolbar); self.mapper:raise()
-      self.map_zoom_out:raise(); self.map_center:raise(); self.map_zoom_in:raise()
-    else self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide() end
+      self.map_zoom_out:raise(); self.map_center:raise(); self.map_zoom_in:raise(); self.map_clear_all:raise()
+    else self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.map_clear_all:hide() end
     place(self.compass_area,inset,compass_y,"100%-"..(inset*2),compass_h); self.compass_area:raise()
     local cell_width=33.333; for _,entry in ipairs(self.direction_buttons) do local d=entry.direction; place(entry.label,(d.col-1)*cell_width.."%",(d.row-1)*layout.lower_compass_cell,cell_width.."%",layout.lower_compass_cell) end
     place(self.compass_center,cell_width.."%",layout.lower_compass_cell,cell_width.."%",layout.lower_compass_cell)
@@ -436,6 +442,14 @@ function View:applyLayout(layout)
 end
 function View:setMapCenterCallback(callback) self.map_center_callback=type(callback)=="function" and callback or nil; return true end
 function View:setMapZoomCallback(callback) self.map_zoom_callback=type(callback)=="function" and callback or nil; return true end
+function View:setMapClearAllCallback(callback) self.map_clear_all_callback=type(callback)=="function" and callback or nil; return true end
+function View:setMapClearPending(pending)
+  self.map_clear_pending=pending==true
+  local font=self.layout and self.layout.lower_utility_font or 12
+  local text=self.map_clear_pending and "CONFIRM CLEAR" or "⚠ CLEAR ALL"
+  self.map_clear_all:echo(View.withFont("<center><b>"..text.."</b></center>",font))
+  return true
+end
 function View:centerMap(roomID)
   if not self.map_center_callback then return nil,"map center callback is unavailable" end
   return self.map_center_callback(roomID)

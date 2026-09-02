@@ -24,9 +24,9 @@ function Updater:installVerified(payload,expected)
   if self.adapter.healthCheck then local healthy,healthErr=self.adapter:healthCheck(); if not healthy then if self.adapter.rollback then self.adapter:rollback("DragonsGateHUD") end; return nil,healthErr or "post-install health check failed" end end
   return true
 end
-function Updater:installVerifiedAsync(payload,expected,done)
+function Updater:installVerifiedAsync(payload,expected,done,preverified)
   done=done or function() end
-  if type(payload)~="string" or SHA256.hex(payload)~=tostring(expected):lower() then done(nil,"package checksum mismatch"); return nil,"package checksum mismatch" end
+  if type(payload)~="string" or (preverified~=true and SHA256.hex(payload)~=tostring(expected):lower()) then done(nil,"package checksum mismatch"); return nil,"package checksum mismatch" end
   if not self.adapter.replacePackageAsync then done(nil,"package adapter unavailable"); return nil,"package adapter unavailable" end
   self.adapter:replacePackageAsync(payload,"DragonsGateHUD",function(ok,err)
     if not ok then

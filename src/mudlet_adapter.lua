@@ -192,9 +192,9 @@ function Adapter:startUpdate(updater,done,validatedManifest,validatedManifestRaw
   end
   local function exactInstalled(manifest) return manifest and tostring(manifest.version)==tostring(settings.version) end
   local beginReplacement
-  local function stageRollback(payload)
-    if not Adapter.verifyArchive(payload,rollbackManifest.sha256) then return fail("rollback package checksum mismatch") end
-    writeFile(previousPath,payload); previousDigest=SHA256.hex(payload); beginReplacement()
+  local function stageRollback(payload,preverified)
+    if preverified~=true and not Adapter.verifyArchive(payload,rollbackManifest.sha256) then return fail("rollback package checksum mismatch") end
+    writeFile(previousPath,payload); previousDigest=tostring(rollbackManifest.sha256):lower(); beginReplacement()
   end
   local function bootstrapRollback()
     updater:stage("Preparing rollback")
@@ -203,7 +203,10 @@ function Adapter:startUpdate(updater,done,validatedManifest,validatedManifestRaw
       local ok,cachedManifest=pcall(yajl.to_value,cachedManifestRaw)
       if ok then
         local valid=updater:validateManifest(cachedManifest)
-        if valid and exactInstalled(cachedManifest) and #cached<=(policy.package_limit or 10485760) and Adapter.verifyArchive(cached,cachedManifest.sha256) then rollbackManifest=cachedManifest; return stageRollback(cached) end
+        -- This archive was checksum-verified before it became current.mpackage.
+        -- Defer re-verification until rollback is actually needed, where
+        -- rollbackAsync verifies it before installation.
+        if valid and exactInstalled(cachedManifest) and #cached<=(policy.package_limit or 10485760) then rollbackManifest=cachedManifest; return stageRollback(cached,true) end
       end
     end
     updateNonce=updateNonce+1
@@ -243,7 +246,7 @@ function Adapter:startUpdate(updater,done,validatedManifest,validatedManifestRaw
       if not installed then fail(message); return end
       writeFile(currentPath,readFile(packagePath)); writeFile(currentManifestPath,targetManifestRaw)
       if finished then return end; updater:stage("Completed"); local elapsed=updater.update_started_at and math.max(0,updater.adapter:updateClock()-updater.update_started_at) or 0; finished=true; cleanup(); cecho(string.format("\n<green>[DGHUD Update]<reset> Installed version %s (%.1fs)\n",tostring(targetManifest.version),elapsed)); if done then done(true) end
-    end)
+    end,true)
     if not started and not completed then fail(why) end
   end
   ids[#ids+1]=registerAnonymousEventHandler("sysDownloadError",function(_,message,url) if expectedUrl and url==expectedUrl then fail(message) end end)
@@ -263,12 +266,12 @@ function Adapter:startUpdate(updater,done,validatedManifest,validatedManifestRaw
       if not exactInstalled(manifest) then return fail("rollback bootstrap returned the wrong installed version") end
       rollbackManifest=manifest
       local cached=readFile(currentPath)
-      if cached and #cached<=(policy.package_limit or 10485760) and Adapter.verifyArchive(cached,manifest.sha256) then stageRollback(cached)
+      if cached and #cached<=(policy.package_limit or 10485760) then stageRollback(cached,true)
       else request(rollbackPackagePath,manifest.archive_url) end
     elseif path==rollbackPackagePath then
       local payload=readFile(path)
       if not payload or #payload>(policy.package_limit or 10485760) then return fail("rollback package is missing or too large") end
-      stageRollback(payload)
+      stageRollback(payload,false)
     end
   end)
   if validatedManifest then

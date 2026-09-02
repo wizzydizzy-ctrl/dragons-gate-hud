@@ -1,8 +1,44 @@
 local SHA256={}
 local MOD=4294967296
 local function norm(a) return a%MOD end
-local function band2(a,b) local r,p=0,1; a,b=norm(a),norm(b); for _=1,32 do local aa,bb=a%2,b%2; if aa==1 and bb==1 then r=r+p end; a=(a-aa)/2;b=(b-bb)/2;p=p*2 end; return r end
-local function bxor2(a,b) local r,p=0,1; a,b=norm(a),norm(b); for _=1,32 do local aa,bb=a%2,b%2; if aa~=bb then r=r+p end; a=(a-aa)/2;b=(b-bb)/2;p=p*2 end; return r end
+local BAND4,BXOR4={},{}
+for a=0,15 do
+  BAND4[a],BXOR4[a]={},{}
+  for b=0,15 do
+    local andValue,xorValue,p,left,right=0,0,1,a,b
+    for _=1,4 do
+      local aa,bb=left%2,right%2
+      if aa==1 and bb==1 then andValue=andValue+p end
+      if aa~=bb then xorValue=xorValue+p end
+      left=(left-aa)/2; right=(right-bb)/2; p=p*2
+    end
+    BAND4[a][b],BXOR4[a][b]=andValue,xorValue
+  end
+end
+local unpackValues=table.unpack or unpack
+local BAND8,BXOR8={},{}
+for a=0,255 do
+  local andBytes,xorBytes={},{}
+  local aLow,aHigh=a%16,math.floor(a/16)
+  for b=0,255 do
+    local bLow,bHigh=b%16,math.floor(b/16)
+    andBytes[b+1]=BAND4[aLow][bLow]+16*BAND4[aHigh][bHigh]
+    xorBytes[b+1]=BXOR4[aLow][bLow]+16*BXOR4[aHigh][bHigh]
+  end
+  BAND8[a]=string.char(unpackValues(andBytes))
+  BXOR8[a]=string.char(unpackValues(xorBytes))
+end
+local function bitwise2(a,b,lookup)
+  local r,p=0,1; a,b=norm(a),norm(b)
+  for _=1,4 do
+    local aa,bb=a%256,b%256
+    r=r+lookup[aa]:byte(bb+1)*p
+    a=(a-aa)/256; b=(b-bb)/256; p=p*256
+  end
+  return r
+end
+local function band2(a,b) return bitwise2(a,b,BAND8) end
+local function bxor2(a,b) return bitwise2(a,b,BXOR8) end
 local function bxor(...) local values={...}; local r=0; for i=1,#values do r=bxor2(r,values[i]) end; return r end
 local function bnot(a) return MOD-1-norm(a) end
 local function rshift(a,n) return math.floor(norm(a)/2^n) end

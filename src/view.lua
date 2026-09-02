@@ -339,8 +339,13 @@ function View:applyLayout(layout)
     layout.lower_geometry=lower
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
     local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=2
-    self.list_content_width,self.list_resolved_scrollbar_width=listViewportWidth(self.skills_output,card_w-p*2,self.list_scrollbar_width)
-    self.skill_character_capacity=math.max(1,math.floor(self.list_content_width/self.list_character_width))
+    self.list_outer_width=card_w-p*2
+    self.list_viewport_width,self.list_resolved_scrollbar_width=listViewportWidth(self.skills_output,self.list_outer_width,self.list_scrollbar_width)
+    self.skills_content_width=math.max(self.list_viewport_width,33*self.list_character_width)
+    self.inventory_content_width=math.max(self.list_viewport_width,36*self.list_character_width)
+    self.list_content_width=self.skills_content_width
+    self.list_horizontal_overflow=self.skills_content_width>self.list_outer_width or self.inventory_content_width>self.list_outer_width
+    self.skill_character_capacity=math.max(1,math.floor(self.skills_content_width/self.list_character_width))
     self.skill_level_width=self.skill_character_capacity>=8 and 3 or 2
     self.skill_use_width=self.skill_character_capacity>=8 and 4 or 3
     local fixedColumns=self.skill_level_width+self.skill_use_width
@@ -348,8 +353,8 @@ function View:applyLayout(layout)
     self.skill_name_width=math.min(24,math.max(1,self.skill_character_capacity-fixedColumns-self.skill_column_gaps))
     local inventory_rows=self.last_state and self.last_state.inventory and #(self.last_state.inventory.items or {}) or 0
     local skill_rows=self.last_state and self.last_state.skills and #(self.last_state.skills.items or {}) or 0
-    self.inventory_content:resize(self.list_content_width,math.max(layout.list_row_height*5,inventory_rows*layout.list_row_height))
-    self.skills_content:resize(self.list_content_width,math.max(layout.list_row_height*5,skill_rows*layout.list_row_height))
+    self.inventory_content:resize(self.inventory_content_width,math.max(layout.list_row_height*5,inventory_rows*layout.list_row_height))
+    self.skills_content:resize(self.skills_content_width,math.max(layout.list_row_height*5,skill_rows*layout.list_row_height))
     local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18
     local show_psi,show_web=psi_visible,web_visible
     local function vitalsHeight()
@@ -370,7 +375,9 @@ function View:applyLayout(layout)
     self.details:hide()
     place(self.equipment,card_x,top+p,card_w,equipment_h)
     local inventory_y=top+p+equipment_h+12; local rail_bottom=(layout.window_height or 800)-bottom-vitals_h-12
-    local rows=layout.list_visible_rows or 5; local list_h=layout.list_viewport_height or layout.list_row_height*rows; local title_h=layout.list_row_height+4; local footer_h=layout.list_row_height+4
+    local rows=layout.list_visible_rows or 5; local list_h=layout.list_viewport_height or layout.list_row_height*rows
+    if self.list_horizontal_overflow then list_h=list_h+(layout.list_horizontal_scrollbar_height or 18) end
+    local title_h=layout.list_row_height+4; local footer_h=layout.list_row_height+4
     local inventory_h=p*2+title_h+list_h+footer_h+8; local skills_h=p*2+title_h+list_h+4
     local right_details_h=layout.details_line_height*Layout.detailsCardRows(layout.details_columns)+p*2+18
     local required=inventory_h+12+skills_h
@@ -437,7 +444,7 @@ function View:renderInventory(s)
   signature=table.concat(signature,"\30"); if signature==self.inventory_signature then return end; self.inventory_signature=signature
   self.inventory_title:echo("<b>INVENTORY</b>")
   local lines={}; for _,item in ipairs(inventory.items or {}) do lines[#lines+1]=esc(item.name or "").."  <span style='color:"..t.muted.."'>"..esc(item.weight or "").." lb</span>" end
-  self.inventory_content:echo("<div style='white-space:nowrap'>"..table.concat(lines,"<br>").."</div>"); self.inventory_content:move(0,0); self.inventory_content:resize(self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.inventory_content:show()
+  self.inventory_content:echo("<div style='white-space:nowrap'>"..table.concat(lines,"<br>").."</div>"); self.inventory_content:move(0,0); self.inventory_content:resize(self.inventory_content_width or self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.inventory_content:show()
   self.inventory_footer:echo("<span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(v.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(v.silver or 0).."sp</b></span>")
 end
 function View:renderSkills(s)
@@ -448,7 +455,7 @@ function View:renderSkills(s)
   local function fixed(value) return (esc(value):gsub(" ","&nbsp;")) end
   self.skills_title:echo("<b>"..fixed(View.skillHeader(nameWidth,self.skill_column_gaps,self.skill_level_width,self.skill_use_width)).."</b>")
   local lines={}; for _,skill in ipairs(items) do lines[#lines+1]=fixed(View.skillLine(skill,nameWidth,self.skill_column_gaps,self.skill_level_width,self.skill_use_width)) end
-  self.skills_content:echo("<div style='white-space:nowrap'>"..table.concat(lines,"<br>").."</div>"); self.skills_content:move(0,0); self.skills_content:resize(self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.skills_content:show()
+  self.skills_content:echo("<div style='white-space:nowrap'>"..table.concat(lines,"<br>").."</div>"); self.skills_content:move(0,0); self.skills_content:resize(self.skills_content_width or self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.skills_content:show()
 end
 function View:renderChat(entries,categories,activeFilter,savedScroll)
   entries=type(entries)=="table" and entries or {}; categories=type(categories)=="table" and categories or {}

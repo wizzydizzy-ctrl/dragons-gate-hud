@@ -3,7 +3,7 @@ import argparse, hashlib, html, json, zipfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
-MODULES=['defaults','command_parser','command_collector','chat_parser','chat_history','chat_storage','chat_controller','navigation','mapper_model','map_adapter','map_cleanup','automapper','special_transition','map_walker','state','settings','sha256','release','events','layout','view','mudlet_adapter','main','updater']
+MODULES=['defaults','command_parser','command_collector','game_clock','chat_parser','chat_history','chat_storage','chat_controller','navigation','mapper_model','map_adapter','map_cleanup','automapper','special_transition','map_walker','state','settings','sha256','release','events','layout','view','mudlet_adapter','main','updater']
 def script_node(name,code):
     return f'''<Script isActive="yes" isFolder="no"><name>{html.escape(name)}</name><packageName>DragonsGateHUD</packageName><script>{html.escape(code)}</script><eventHandlerList/></Script>'''
 def build(output,owner,repository,version):

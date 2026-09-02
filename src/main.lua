@@ -1,6 +1,10 @@
-local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local SpecialTransition=require("special_transition"); local MapWalker=require("map_walker"); local Cleanup=require("map_cleanup")
+local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local Clock=require("game_clock"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local SpecialTransition=require("special_transition"); local MapWalker=require("map_walker"); local Cleanup=require("map_cleanup")
 local Main={}; Main.__index=Main
-function Main.new(adapter,settings) return setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=0,managed_rooms={}},Main) end
+function Main.new(adapter,settings)
+  local self=setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=0,managed_rooms={}},Main)
+  self.clock=Clock.new(settings and settings.time,function() return adapter:epoch() end)
+  return self
+end
 function Main.installChatApi(namespace)
   local chat=type(namespace.chat)=="table" and namespace.chat or {}
   namespace.chat=chat
@@ -21,7 +25,29 @@ function Main.installChatApi(namespace)
     end
   return chat
 end
-function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {}); normalized.vitals.roundtime=self.roundtime_display or normalized.vitals.roundtime; self.view:update(normalized); self.last_state=normalized; if self.chat then self.chat:syncCharacter() end; return true end
+function Main:clockDisplay()
+  local real
+  if type(self.adapter.localTime)=="function" then local ok,value=pcall(self.adapter.localTime,self.adapter); if ok then real=value end end
+  if not real then real=os.date("%I:%M:%S %p"):gsub("^0","") end
+  local game=self.clock and self.clock:current(self.adapter:epoch())
+  return {real_time=real,game_time=Clock.format(game),period=game and game.period or "—"}
+end
+function Main:refreshClock()
+  local clock=self:clockDisplay()
+  if self.last_state then self.last_state.clock=clock end
+  if self.view and type(self.view.updateClock)=="function" then self.view:updateClock(clock) end
+  return clock
+end
+function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {}); normalized.vitals.roundtime=self.roundtime_display or normalized.vitals.roundtime; normalized.clock=self:clockDisplay(); self.view:update(normalized); self.last_state=normalized; if self.chat then self.chat:syncCharacter() end; return true end
+function Main:onClockSync(value) local ok,err=self.clock:sync(value,self.adapter:epoch()); if not ok then return nil,err end; self:refreshClock(); return true end
+function Main:scheduleClockTick()
+  if self.clock_timer then return true end
+  local starter=self.adapter.startClockTimer
+  if type(starter)~="function" then return nil,"clock timer is unavailable" end
+  local id,err=starter(self.adapter,function() if self.started then self:refreshClock() end end)
+  if not id then return nil,err or "clock timer could not be created" end
+  self.clock_timer=id; return true
+end
 function Main:characterName() return self.last_state and self.last_state.character and self.last_state.character.full_name or nil end
 function Main:onCharacterEntry(name)
   name=tostring(name or ""):match("^%s*(.-)%s*$")
@@ -328,7 +354,7 @@ function Main:start()
   self.view=self.adapter:createView(self.settings)
   if self.view.setMapZoomCallback then self.view:setMapZoomCallback(function(action) return self:mapToolbarAction(action) end) end
   self:applyResponsiveLayout()
-  self.collector=Collector.new(self.adapter,Parser,function() self:refresh() end,function(value) self:onRoundtime(value) end,function(name) self:onCharacterEntry(name) end); local collectorOk,collectorErr=self.collector:start(); if not collectorOk then error(collectorErr,0) end
+  self.collector=Collector.new(self.adapter,Parser,function(snapshot,key) if key=="time" then self:onClockSync(snapshot.time) else self:refresh() end end,function(value) self:onRoundtime(value) end,function(name) self:onCharacterEntry(name) end); local collectorOk,collectorErr=self.collector:start(); if not collectorOk then error(collectorErr,0) end
   if self.adapter.isCharacterActive and self.adapter:isCharacterActive() then self:onCharacterEntry() end
   for _,name in ipairs(Events.gmcp) do local eventName=name; self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(eventName,function()
     if eventName=="gmcp.Char.Vitals" and self.walker then local data=self.adapter:getGMCP(); local vitals=data and data.Char and data.Char.Vitals; self.walker:onRoundtime(vitals and vitals.roundtime or 0) end
@@ -370,13 +396,17 @@ function Main:start()
     {"^dghud map cancel$",function() local ok,err=self.cleanup:cancel(); if not ok then self:reportCleanup(err,true); return nil,err end; self:reportCleanup("Cleanup preview cancelled.",false); return true end},
   }
   for _,entry in ipairs(cleanupAliases) do self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias(entry[1],entry[2]) end
-  self.started=true; local data=self.adapter:getGMCP(); if self:mapperEnabled() and data and data.Room and data.Room.Info then local mapped=self.automapper:onRoom(data.Room.Info); if mapped and tonumber(data.Room.Info.num) then self.managed_rooms[tonumber(data.Room.Info.num)]=true end end; self:refresh()
+  self.started=true; local data=self.adapter:getGMCP(); if self:mapperEnabled() and data and data.Room and data.Room.Info then local mapped=self.automapper:onRoom(data.Room.Info); if mapped and tonumber(data.Room.Info.num) then self.managed_rooms[tonumber(data.Room.Info.num)]=true end end; self:refresh(); self:scheduleClockTick()
   local chatStarted,chatErr=self:startChat(); if not chatStarted then error(chatErr,0) end
   end)
   if not startupOk then pcall(function() self:shutdown() end); return nil,startupErr end
   return true
 end
 function Main:shutdown()
+  if self.clock_timer then
+    if type(self.adapter.stopClockTimer)=="function" then self.adapter:stopClockTimer(self.clock_timer) else self.adapter:cancelTimer(self.clock_timer) end
+    self.clock_timer=nil
+  end
   if self.roundtime_timer then self.adapter:cancelTimer(self.roundtime_timer); self.roundtime_timer=nil end
   local chat=self.chat; self.chat=nil; if chat then chat:shutdown() end
   if self.collector then self.collector:shutdown(); self.collector=nil end

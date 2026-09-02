@@ -83,8 +83,20 @@ function Parser.parseSkills(lines)
   return result
 end
 
+function Parser.parseTime(lines)
+  if not hasPrompt(lines) then return nil,"incomplete time response" end
+  for _,raw in ipairs(lines or {}) do
+    local hour,minute,meridiem,day,month,year=clean(raw):match("^It is now (%d+):(%d+) ([ap]m) on the (%d+)%a* day of the (%d+)%a* month in the year (%d+)%.$")
+    if hour then
+      hour=tonumber(hour); if meridiem=="am" and hour==12 then hour=0 elseif meridiem=="pm" and hour<12 then hour=hour+12 end
+      return {hour=hour,minute=tonumber(minute),day=tonumber(day),month=tonumber(month),year=tonumber(year)}
+    end
+  end
+  return nil,"unrecognized time response"
+end
+
 function Parser.isComplete(command,lines)
-  local fn={inventory=Parser.parseInventory,stat=Parser.parseStat,info=Parser.parseInfo,["info religion"]=Parser.parseReligion,skill=Parser.parseSkills}
+  local fn={inventory=Parser.parseInventory,stat=Parser.parseStat,info=Parser.parseInfo,["info religion"]=Parser.parseReligion,skill=Parser.parseSkills,time=Parser.parseTime}
   return fn[command] and (command=="info" or hasPrompt(lines)) and fn[command](lines)~=nil or false
 end
 return Parser

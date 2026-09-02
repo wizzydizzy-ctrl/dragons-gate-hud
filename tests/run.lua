@@ -12,6 +12,7 @@ function eq(actual, expected)
 end
 
 dofile(root .. "/tests/lua/test_command_parser.lua")
+dofile(root .. "/tests/lua/test_game_clock.lua")
 dofile(root .. "/tests/lua/test_command_collector.lua")
 dofile(root .. "/tests/lua/test_navigation.lua")
 dofile(root .. "/tests/lua/test_mapper_model.lua")

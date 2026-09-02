@@ -5,6 +5,7 @@ local stat={"Body Armor: 4%.","OR: 18  DR: 70  Move Rate: 6/6 UDs  Dam Bonus: Go
 local info={"You are Test Tester, a stocky bodied 28 year old Entropic Male young Monitanian.  You are 6'10\" and weigh 309 lbs.","Str Int Wis Dex Agi Con Cha Wil Voi Per App","Good Low Fair Fair Fair Good Good Good Aver Fair Fair",">"}
 local religion={"You are a Novitiate follower of Unknown.","You are Balanced within your Entropic alignment.",">"}
 local skills={"Skill                     Remain Level","Biting                    105    4","Clawing                   276    2",">"}
+local time={"Current time is: Wed Sep  2 00:40:30 2026 EST.","It is now 3:22 am on the 4th day of the 8th month in the year 362.","You have been adventuring for 14 secs this session.",">"}
 local function fake()
   local f={next=0,triggers={},events={},timers={},timer_delays={},sent={}}
   local function id(self,prefix) self.next=self.next+1; return prefix..self.next end
@@ -42,8 +43,9 @@ test("collector runs one sequential refresh after character entry",function()
   f:lines(stat); eq(f.sent[3],"info")
   f:lines(info); eq(f.sent[4],"info religion")
   f:lines(religion); eq(f.sent[5],"skill")
-  f:lines(skills); eq(changes,5); eq(c.snapshot.religion.deity,"Unknown"); eq(#c.snapshot.skills.items,2)
-  f:line("Welcome to Dragon's Gate, Test!"); eq(#f.sent,5)
+  f:lines(skills); eq(f.sent[6],"time")
+  f:lines(time); eq(changes,6); eq(c.snapshot.religion.deity,"Unknown"); eq(#c.snapshot.skills.items,2); eq(c.snapshot.time.minute,22)
+  f:line("Welcome to Dragon's Gate, Test!"); eq(#f.sent,6)
 end)
 test("collector can refresh after an in-session package install",function()
   local f=fake(); local c=Collector.new(f,Parser,function() end); c:start()
@@ -53,8 +55,12 @@ end)
 test("collector force refresh bypasses the session guard without overlapping a sequence",function()
   local f=fake(); local c=Collector.new(f,Parser,function() end); c:start()
   eq(c:refresh(),true); eq(c:forceRefresh(),false); eq(#f.sent,1)
-  f:lines(inventory); f:lines(stat); f:lines(info); f:lines(religion); f:lines(skills)
-  eq(c:forceRefresh(),true); eq(f.sent[6],"inventory")
+  f:lines(inventory); f:lines(stat); f:lines(info); f:lines(religion); f:lines(skills); f:lines(time)
+  eq(c:forceRefresh(),true); eq(f.sent[7],"inventory")
+end)
+test("collector captures manual time commands",function()
+  local f=fake(); local changed; local c=Collector.new(f,Parser,function(_,key) changed=key end); c:start(); f:outgoing("time"); f:lines(time)
+  eq(changed,"time"); eq(c.snapshot.time.hour,3); eq(c.snapshot.time.minute,22)
 end)
 test("collector captures manual info religion commands",function()
   local f=fake(); local c=Collector.new(f,Parser,function() end); c:start(); f:outgoing("info religion"); f:lines(religion); eq(c.snapshot.religion.rank,"Novitiate")

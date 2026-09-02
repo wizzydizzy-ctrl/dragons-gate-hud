@@ -2,6 +2,8 @@
 
 An original bronze-and-jade Mudlet 5 HUD for Dragons Gate. It displays confirmed `Char.Status`, `Char.Vitals`, and `Room` GMCP values, including `weapon_readied` and `shield_readied`.
 
+The header shows the player's local computer time and a synchronized Dragons Gate clock. Game time advances at the configurable 2× default, labels 6:00 AM–5:59 PM as `Daytime` and 6:00 PM–5:59 AM as `Night`, and resynchronizes from startup or manually entered `time` output.
+
 ## Local build and install
 
 ```bash

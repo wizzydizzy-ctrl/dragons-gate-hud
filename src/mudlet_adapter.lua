@@ -47,6 +47,9 @@ function Adapter:killAlias(id) return killAlias(id) end
 function Adapter:addLineTrigger(fn) return tempRegexTrigger("^.*$",function() fn(line or "") end) end
 function Adapter:killTrigger(id) return killTrigger(id) end
 function Adapter:epoch() return os.time() end
+function Adapter:localTime() return os.date("%I:%M:%S %p"):gsub("^0","") end
+function Adapter:startClockTimer(fn) return tempTimer(1,fn,true) end
+function Adapter:stopClockTimer(id) return killTimer(id) end
 function Adapter:cleanupClock() return os.time() end
 function Adapter:cleanupToken(source)
   source=source or io

@@ -60,9 +60,11 @@ function View.identityContent(character,t,layout)
   end
   return View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>"..esc(character.full_name).."</b></span><br><span style='color:"..t.jade.."'><b>"..esc(character.race).." · "..esc(character.class).."</b></span><br><span style='color:"..t.muted.."'>"..esc(character.alignment).."</span>"..detail..faith,layout.body_font)
 end
-function View.headerContent(layout,t,fullName)
+function View.headerContent(layout,t,fullName,clock)
+  clock=type(clock)=="table" and clock or {}
   local detail=layout.mode=="compact" and " &nbsp; <span style='color:"..t.text.."'><b>"..esc(fullName).."</b></span>" or ""
-  return View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>DRAGONS GATE</b></span>"..detail.."<br><span style='color:"..t.jade.."'><b>● LIVE</b></span>",layout.body_font)
+  local clockFont=math.max(10,tonumber(layout.header_clock_font) or ((tonumber(layout.body_font) or 16)-4))
+  return View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>DRAGONS GATE</b></span>"..detail.."<br><span style='font-size:"..clockFont.."px;line-height:1.05'><span style='color:"..t.muted.."'>Real Time:</span> <b>"..esc(clock.real_time or "—").."</b><br><span style='color:"..t.muted.."'>Game Time:</span> <b>"..esc(clock.game_time or "—").."</b> <span style='color:"..t.jade.."'>· <b>"..esc(clock.period or "—").."</b></span></span>",layout.body_font)
 end
 function View.inventoryRows(items,capacity)
   items=items or {}; capacity=math.max(0,tonumber(capacity) or 0); local rows={}
@@ -511,7 +513,7 @@ function View:applyChatWrap(layout)
 end
 function View:update(s)
   self.last_state=s; local t=self.settings.theme; local v=s.vitals; local layout=self.layout or {mode="wide",heading_font=20}; local ready=function(x) return x and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:"..t.hp.."'><b>NOT READY</b></span>" end
-  self.header:echo(View.headerContent(layout,t,s.character.full_name)); self.attribute_strip:echo(View.attributeStripContent(s.attributes,t,layout))
+  self:updateClock(s.clock); self.attribute_strip:echo(View.attributeStripContent(s.attributes,t,layout))
   self.identity:echo(View.identityContent(s.character,t,layout))
   self.equipment:echo(View.equipmentContent(v,s.equipment.items,t,layout))
   self.hp:setValue(v.hp.current,math.max(v.hp.maximum,1),"Health  "..v.hp.current.." / "..v.hp.maximum); self.fatigue:setValue(v.fatigue.current,math.max(v.fatigue.maximum,1),"Fatigue  "..v.fatigue.current.." / "..v.fatigue.maximum); self.carry:setValue(v.carry.current,math.max(v.carry.maximum,1),"Carry  "..v.carry.current.." / "..v.carry.maximum)
@@ -520,6 +522,12 @@ function View:update(s)
   self.compact:echo(View.withFont("<b>HP "..v.hp.current.."/"..v.hp.maximum.."</b> &nbsp; FAT "..v.fatigue.current.."/"..v.fatigue.maximum.." &nbsp; WPN "..(v.weapon_readied and "✓" or "×").." &nbsp; SHD "..(v.shield_readied and "✓" or "×").." &nbsp; <span style='color:"..t.accent.."'>"..esc(s.room.name).."</span>",layout.body_font))
   self.bottom:echo(View.withFont("EXITS &nbsp; <b>"..esc(table.concat(s.room.exits,", ")).."</b> &nbsp;&nbsp; | &nbsp;&nbsp; CARRY &nbsp; <b>"..v.carry.current.." / "..v.carry.maximum.."</b> &nbsp;&nbsp; | &nbsp;&nbsp; ROUND &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b>",layout.small_font))
   if self.layout then self:applyLayout(self.layout); self.details:echo(View.detailsContent(s.combat,s.attributes,t,self.layout,v)); self:renderInventory(s); self:renderSkills(s); self:renderNavigation(s.room.exits) end
+end
+function View:updateClock(clock)
+  local layout=self.layout or {mode="wide",body_font=16,heading_font=20}; local t=self.settings.theme
+  local character=self.last_state and self.last_state.character or {}
+  self.header:echo(View.headerContent(layout,t,character.full_name,clock))
+  return true
 end
 function View:delete() if self.root then self.root:delete(); self.root=nil end end
 return View

@@ -74,6 +74,7 @@ local function metrics(width,height,layout,chatSettings,mapperSettings)
   layout.console_right=layout.right+layout.console_gutter
   layout.console_width=width-layout.console_left-layout.console_right
   layout.body_font=clamp(width/100,16,22); layout.small_font=clamp((layout.body_font-2)*2,28,40); layout.heading_font=clamp(layout.body_font+5,21,27)
+  layout.header_clock_font=layout.mode=="medium" and 10 or clamp(layout.body_font-5,11,17)
   layout.attribute_strip_font=clamp(layout.console_width/100,10,14)
   layout.panel_padding=clamp(width/120,12,22); layout.gauge_height=clamp(layout.small_font+10,38,50); layout.row_gap=clamp(layout.body_font*.7,11,15)
   layout.title_height=layout.heading_font+30

@@ -8,7 +8,8 @@ local function fake()
   function f:setBorders(a,b,c,d) self.set_borders={a,b,c,d} end
   function f:getWindowSize() return self.width or 1920,self.height or 1080 end
   function f:createView() return {
-    update=function(self,state) self.state=state end,
+    update=function(self,state) self.state=state; f.viewUpdates=(f.viewUpdates or 0)+1 end,
+    updateClock=function(self,clock) self.state.clock=clock; f.clockUpdates=(f.clockUpdates or 0)+1 end,
     applyLayout=function(self,layout) f.layouts[#f.layouts+1]=layout end,
     renderChat=function(self,entries,categories,filter) f.chatRenders=(f.chatRenders or 0)+1; f.renderedChat={entries=entries,categories=categories,filter=filter} end,
     setChatFilterCallback=function(self,callback) f.chatFilterCallback=callback end,
@@ -30,6 +31,9 @@ local function fake()
   end
   function f:killTrigger(id) self.killed[id]=true; self.triggers[id]=nil end
   function f:epoch() return self.epochValue or 100 end
+  function f:localTime() return self.localTimeValue or "12:41:06 AM" end
+  function f:startClockTimer(fn) self.next=self.next+1; local id="clock-"..self.next; self.clockTimers=self.clockTimers or {}; self.clockTimers[id]=fn; return id end
+  function f:stopClockTimer(id) self.clockTimerStopped=id; self.clockTimers[id]=nil; return true end
   function f:cleanupClock() return self.cleanupTime or 1000 end
   function f:cleanupToken() self.cleanupTokenCalls=(self.cleanupTokenCalls or 0)+1; return self.cleanupTokenValue or "ABC123" end
   function f:reportMapCleanup(message,isError)
@@ -123,6 +127,15 @@ local function fake()
   function f:reportMapperStatus(kind,message) self.mapperStatuses=self.mapperStatuses or {}; self.mapperStatuses[#self.mapperStatuses+1]={kind,message} end
   return f
 end
+
+test("runtime synchronizes game time ticks header clock and removes its owned timer",function()
+  local f=fake(); local hud=Main.new(f,{layout={},chat={enabled=false},mapper={enabled=false},time={speed=2,sunrise_hour=6,sunset_hour=18},theme={background="#000",panel="#111",border="#222",text="#fff",muted="#888",accent="#da5",jade="#7b8",hp="#b54",fatigue="#8a4",gold="#db4",silver="#ccc"}})
+  assert(hud:start()); hud.collector.snapshot.time={hour=17,minute=59,day=4,month=8,year=362}; hud:onClockSync(hud.collector.snapshot.time)
+  eq(f.createView and hud.last_state.clock.real_time,"12:41:06 AM"); eq(hud.last_state.clock.game_time,"5:59 PM"); eq(hud.last_state.clock.period,"Daytime")
+  local fullUpdates=f.viewUpdates; f.epochValue=130; local timer=hud.clock_timer; assert(timer and f.clockTimers[timer]); f.clockTimers[timer](); eq(hud.last_state.clock.game_time,"6:00 PM"); eq(hud.last_state.clock.period,"Night")
+  eq(f.clockUpdates,2); eq(f.viewUpdates,fullUpdates)
+  hud:shutdown(); eq(f.clockTimers[timer],nil); eq(f.clockTimerStopped,timer)
+end)
 
 test("startup performs the owned-room label migration once",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); eq(f.mapLabelCleanups,1)

@@ -95,6 +95,12 @@ test("responsive typography remains readable at every breakpoint",function()
   eq(wide.heading_font>wide.body_font,true); eq(wide.gauge_height>=26,true); eq(wide.panel_padding>=16,true)
   eq(wide.small_font>=(wide.body_font-2)*2,true); eq(wide.gauge_height>=wide.small_font+10,true)
 end)
+test("header clock font fits the narrow medium identity rail",function()
+  local medium=Layout.compute(1000,900); local wide=Layout.compute(1920,1080)
+  eq(medium.header_clock_font,10); eq(wide.header_clock_font>=11,true)
+  local estimatedLine=23*medium.header_clock_font*.6
+  eq(estimatedLine<=medium.left-medium.panel_padding*2,true)
+end)
 test("component metrics grow without overflowing narrow layouts",function()
   for _,size in ipairs({{760,700},{900,650},{1200,800},{2056,1177},{3840,2160}}) do
     local r=Layout.compute(size[1],size[2]); eq(r.body_font<=22,true); eq(r.heading_font<=28,true); eq(r.panel_padding<=24,true); eq(r.gauge_height<=56,true)

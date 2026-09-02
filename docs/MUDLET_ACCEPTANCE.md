@@ -2,6 +2,8 @@
 
 Use only the disposable `Dragons Gate HUD` profile. Do not send representational game messages solely to create test traffic: use already-observed output or synthetic local lines in the disposable profile.
 
+Clock acceptance: after character entry, confirm the startup sequence ends with `time`. The header's Real Time must match the computer timezone and tick every second. Game Time must advance one minute per 30 real seconds, show `Daytime` from 6:00 AM through 5:59 PM and `Night` otherwise, and resynchronize after manually entering `time`. Resize through wide, medium, and compact modes and confirm both lines remain inside the header.
+
 1. Build the unreleased package locally and install it only into the disposable profile. Record the profile's existing personal triggers, aliases, scripts, packages, map data, and settings before installation.
 2. Confirm Identity and Character/Combat are left, Vitals/Location are lower-left, and Equipment/Wealth/Inventory are right. Enter a character and confirm exactly one sequential `inventory`, `stat`, `info` refresh.
 3. Compare inventory, weapon/shield readiness, attributes, physical details, armor, OR/DR, movement, damage bonus, stance, and novice protection with command output. Run each command manually and confirm its HUD section refreshes.

@@ -2,7 +2,7 @@ local Updater=require("updater"); local SHA=require("sha256"); local Adapter=req
 local function releaseManifest(version)
   return {package="DragonsGateHUD",version=version,minimum_mudlet="5.0.0",archive_url="https://github.com/wizzydizzy-ctrl/dragons-gate-hud/releases/download/v"..version.."/DragonsGateHUD.mpackage",sha256=string.rep("a",64),archive_size=100}
 end
-local updateSettings={version="0.2.68",github={owner="wizzydizzy-ctrl",repository="dragons-gate-hud"},update={package_limit=1000}}
+local updateSettings={version="0.2.69",github={owner="wizzydizzy-ctrl",repository="dragons-gate-hud"},update={package_limit=1000}}
 test("update staging lives outside the installed package directory",function()
   local base=Adapter.updateBase("/profile")
   eq(base,"/profile/DGHUDUpdater")
@@ -48,7 +48,7 @@ test("successful in-session update refreshes command-backed character data",func
 end)
 test("startup check skips installation when current and continues startup",function()
   local order={}; local completed
-  local adapter={checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.68")) end}
+  local adapter={checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.69")) end}
   local u=Updater.new(adapter,updateSettings)
   eq(u:checkAtCharacterEntry(function(updated,err) completed={updated,err}; order[#order+1]="commands" end),true)
   eq(table.concat(order,","),"check,commands"); eq(completed[1],false); eq(completed[2],nil); eq(u.lock,nil)
@@ -56,7 +56,7 @@ end)
 test("startup check updates before allowing startup commands",function()
   local order={}; local completed
   local adapter={
-    checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.69")) end,
+    checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.70")) end,
     startUpdate=function(_,updater,done) order[#order+1]="update"; done(true); return true end,
     isCharacterActive=function() return true end,
   }
@@ -90,7 +90,7 @@ test("startup check rejects overlap and completes only once",function()
   local u=Updater.new(adapter,updateSettings)
   eq(u:checkAtCharacterEntry(function() completions=completions+1 end),true)
   local ok,err=u:checkAtCharacterEntry(function() completions=completions+1 end); eq(ok,nil); eq(err,"startup check already in progress")
-  manifestDone(releaseManifest("0.2.68")); manifestDone(releaseManifest("0.2.68")); eq(completions,1)
+  manifestDone(releaseManifest("0.2.69")); manifestDone(releaseManifest("0.2.69")); eq(completions,1)
 end)
 test("async checksum mismatch never starts replacement",function()
   local called=false

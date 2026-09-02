@@ -5,6 +5,7 @@ local stat={"Body Armor: 4%.","OR:  18  DR: 70  Move Rate: 6/6 UDs  Dam Bonus: G
 local info={"You are Test Tester, a light boned and stocky bodied 28 year old Entropic Male young Monitanian.  You are 6'10\" and weigh 309 lbs.","HP: 201 of 201  Ftg:  69 of  69  Carry: 15.9 of 380.0 lbs."," Str   Int   Wis   Dex   Agi   Con   Cha   Wil   Voi   Per   App","Good  Low   Fair  Fair  Fair  Good  Good  Good  Aver  Fair  Fair",">"}
 local religion={"You are a Novitiate follower of Unknown.","You are Balanced within your Entropic alignment.",">"}
 local skills={"Skill                     Remain Level","Biting                    105    4","Clawing                   276    2","Pole Weapons               42    4","Identify Armor Quality    100    1",">"}
+local time={"Current time is: Wed Sep  2 00:40:30 2026 EST.","It is now 3:22 am on the 4th day of the 8th month in the year 362.","You have been adventuring for 14 secs this session.",">"}
 
 test("parses inventory items without merging duplicates",function()
   local r=assert(Parser.parseInventory(inventory)); eq(#r.items,3); eq(r.items[1].name,"A wooden torch"); eq(r.items[2].weight,0.1); eq(r.total_weight,1.6)
@@ -44,5 +45,13 @@ test("skill parsing ignores a stale prompt before its header",function()
   eq(Parser.parseSkills(contaminated),nil); contaminated[#contaminated+1]=">"
   local r=assert(Parser.parseSkills(contaminated)); eq(#r.items,2)
 end)
+test("parses game time and completes only at the prompt",function()
+  local r=assert(Parser.parseTime(time)); eq(r.hour,3); eq(r.minute,22); eq(r.day,4); eq(r.month,8); eq(r.year,362)
+  eq(Parser.parseTime({time[1],time[2]}),nil); eq(Parser.isComplete("time",time),true)
+  local pm={time[1],"It is now 12:07 pm on the 4th day of the 8th month in the year 362.",time[3],">"}
+  eq(assert(Parser.parseTime(pm)).hour,12)
+  local midnight={time[1],"It is now 12:07 am on the 4th day of the 8th month in the year 362.",time[3],">"}
+  eq(assert(Parser.parseTime(midnight)).hour,0)
+end)
 
-return {inventory=inventory,stat=stat,info=info,religion=religion,skills=skills}
+return {inventory=inventory,stat=stat,info=info,religion=religion,skills=skills,time=time}

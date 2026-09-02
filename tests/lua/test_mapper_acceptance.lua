@@ -29,6 +29,9 @@ local function runtime(world)
   function f:addAlias(pattern,fn) self.next=self.next+1; local id="alias-"..self.next; self.aliases[id]={pattern=pattern,fn=fn}; return id end
   function f:killAlias(id) self.aliases[id]=nil end
   function f:addLineTrigger(fn) self.next=self.next+1; local id="trigger-"..self.next; self.triggers[id]=fn; return id end
+  function f:addColorizerTrigger(fn) self.next=self.next+1; local id="trigger-"..self.next; self.triggers[id]=fn; return id end
+  function f:applyLineColors() return true end
+  function f:reportColorizerStatus(enabled) self.reportedColorizer=enabled; return true end
   function f:killTrigger(id) self.triggers[id]=nil end
   function f:createChatStorage() return {loadRecent=function() return {} end,append=function() return true end,close=function() return true end,characterKey=function() return "test" end} end
   function f:epoch() return 1 end
@@ -200,8 +203,8 @@ local function observeCommand(f,command)
   fire(f,"sysDataSendRequest",command)
 end
 
-test("HUD release defaults are ready for version 0.2.75",function()
-  eq(Defaults.version,"0.2.75"); eq(Defaults.mapper.enabled,true); eq(Defaults.mapper.walk_timeout,12)
+test("HUD release defaults are ready for version 0.2.76",function()
+  eq(Defaults.version,"0.2.76"); eq(Defaults.mapper.enabled,true); eq(Defaults.mapper.walk_timeout,12)
   eq(Defaults.time.speed,2); eq(Defaults.time.sunrise_hour,6); eq(Defaults.time.sunset_hour,18)
   eq(Defaults.mapper.minimum_height,90); eq(Defaults.mapper.schema,1)
 end)

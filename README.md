@@ -4,6 +4,14 @@ An original bronze-and-jade Mudlet 5 HUD for Dragons Gate. It displays confirmed
 
 The header shows the player's local computer time and a synchronized Dragons Gate clock. Game time advances at the configurable 2× default, labels 6:00 AM–5:59 PM as `Daytime` and 6:00 PM–5:59 AM as `Night`, and resynchronizes from startup or manually entered `time` output.
 
+The compact `COLORS ON/OFF` control beneath the Dragons Gate title toggles only DGHUD-owned game-text colorization. Colorization is enabled by default and its preference survives HUD reloads and updates without changing personal Mudlet triggers or colors. The command-line fallback is:
+
+```text
+dghud colors
+```
+
+The setting is stored as `DGHUD.user_settings.colorization.enabled`. Integrations can read it with `Settings.colorEnabled(settings)` and update only that override with `Settings.setColorEnabled(DGHUD.user_settings, enabled)`.
+
 ## Local build and install
 
 ```bash

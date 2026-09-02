@@ -1,0 +1,59 @@
+local Colorizer=require("output_colorizer")
+local MudletAdapter=require("mudlet_adapter")
+
+local function fake()
+  local f={next=0,triggers={},killed={},applied={}}
+  function f:addColorizerTrigger(fn) self.next=self.next+1; self.triggers[self.next]=fn; return self.next end
+  function f:killTrigger(id) self.killed[id]=true; self.triggers[id]=nil; return true end
+  function f:applyLineColors(segments) self.applied[#self.applied+1]=segments; return true end
+  return f
+end
+
+test("parses an isolated bracketed room title",function()
+  local parts=assert(Colorizer.parse("[Old Cemetery.]")); eq(#parts,1); eq(parts[1].kind,"room"); eq(parts[1].start,1); eq(parts[1].length,15)
+  eq(Colorizer.parse("prefix [Old Cemetery.]"),nil); eq(Colorizer.parse("[broken] trailing"),nil)
+end)
+
+test("parses exits label and only known direction words",function()
+  local line="Obvious exits: north northeast east southeast south southwest west northwest up down out."
+  local parts=assert(Colorizer.parse(line)); eq(#parts,12); eq(parts[1].kind,"label"); eq(line:sub(parts[1].start,parts[1].start+parts[1].length-1),"Obvious exits:")
+  for index=2,#parts do eq(parts[index].kind,"direction") end
+  local paths=assert(Colorizer.parse("  Obvious paths: north east west.")); eq(#paths,4); eq(paths[1].start,3)
+  eq(Colorizer.parse("The obvious exits: north."),nil)
+end)
+
+test("preserves non-direction text after the owned label",function()
+  local line="Obvious exits: north through a gate and west."
+  local parts=assert(Colorizer.parse(line)); eq(#parts,3)
+  eq(line:sub(parts[2].start,parts[2].start+parts[2].length-1),"north")
+  eq(line:sub(parts[3].start,parts[3].start+parts[3].length-1),"west")
+end)
+
+test("accepts case spacing and abbreviated directions",function()
+  local line="  OBVIOUS paths : N ne in OUT.  "
+  local parts=assert(Colorizer.parse(line)); eq(#parts,5)
+  eq(line:sub(parts[1].start,parts[1].start+parts[1].length-1),"OBVIOUS paths :")
+  for index=2,#parts do eq(parts[index].kind,"direction") end
+end)
+
+test("optional controller owns one trigger and cleans it up",function()
+  local f=fake(); local c=Colorizer.new(f,false); assert(c:start()); eq(c:onLine("[Old Cemetery.]"),false); eq(#f.applied,0)
+  eq(c:toggle(),true); eq(c:onLine("[Old Cemetery.]"),true); eq(#f.applied,1); eq(c:status().enabled,true)
+  local id=c.trigger; assert(c:shutdown()); eq(f.killed[id],true); eq(c:status().started,false); eq(c:onLine("[Old Cemetery.]"),false)
+end)
+
+test("controller contains adapter coloring failures",function()
+  local f=fake(); function f:applyLineColors() return nil,"selection failed" end
+  local c=Colorizer.new(f,true); assert(c:start()); local ok,err=c:onLine("Obvious paths: east west."); eq(ok,nil); eq(err,"selection failed"); c:shutdown()
+end)
+
+test("Mudlet adapter changes only selected foreground ranges",function()
+  local selected,colors,deselected={},{},0
+  local api={
+    selectSection=function(start,length) selected[#selected+1]={start,length} end,
+    setFgColor=function(r,g,b) colors[#colors+1]={r,g,b} end,
+    deselect=function() deselected=deselected+1 end,
+  }
+  local segments=assert(Colorizer.parse("Obvious paths: north east west."))
+  assert(MudletAdapter.new():applyLineColors(segments,api)); eq(#selected,4); eq(selected[1][1],0); eq(selected[1][2],14); eq(selected[2][1],15); eq(selected[2][2],5); eq(#colors,4); eq(deselected,1)
+end)

@@ -39,3 +39,17 @@ test("resolves migrated chat settings without discarding user keys",function()
   eq(changed,true); eq(resolved.chat.timestamps,false); eq(resolved.chat.visible_limit,1000)
   eq(migrated.chat.personal_option,"keep"); eq(resolved.personal,"untouched")
 end)
+
+test("colorization defaults enabled and preserves unrelated overrides",function()
+  local resolved,migrated=Settings.resolve(defaults,{personal="untouched",colorization={personal_option="keep"}})
+  eq(resolved.colorization.enabled,true); eq(resolved.colorization.personal_option,"keep")
+  eq(migrated.personal,"untouched"); eq(migrated.colorization.personal_option,"keep")
+end)
+
+test("colorization persistence helper changes only its enabled override",function()
+  local user={personal="untouched",colorization={personal_option="keep"}}
+  local result=Settings.setColorEnabled(user,false)
+  eq(result,user); eq(user.colorization.enabled,false); eq(user.colorization.personal_option,"keep"); eq(user.personal,"untouched")
+  eq(Settings.colorEnabled(Settings.merge(defaults,user)),false)
+  Settings.setColorEnabled(user,true); eq(Settings.colorEnabled(Settings.merge(defaults,user)),true)
+end)

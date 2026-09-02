@@ -163,6 +163,9 @@ function View.new(settings)
   self.list_font_family=View.monospaceFont(available)
   self.root=Geyser.Container:new({name="DGHUD.Root",x=0,y=0,width="100%",height="100%"})
   self.header=label("DGHUD.Header",self.root,"background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px 18px;")
+  self.color_toggle=label("DGHUD.Header.ColorToggle",self.root,"background:#17231c;border:1px solid "..t.jade..";border-radius:4px;color:"..t.jade..";font-weight:700;")
+  if self.color_toggle.setToolTip then pcall(self.color_toggle.setToolTip,self.color_toggle,"Toggle DGHUD room and exit color coding") end
+  self.color_toggle:setClickCallback(function() if self.color_toggle_callback then return self.color_toggle_callback() end end)
   self.clock_header=label("DGHUD.Header.Clock",self.root,"background:transparent;color:"..t.text..";padding:8px 18px;")
   self.attribute_strip=label("DGHUD.AttributeStrip",self.root,"background:transparent;color:"..t.text..";padding:10px 12px;")
   self.chat_container=Geyser.Container:new({name="DGHUD.Chat",x=0,y=0,width=100,height=240},self.root)
@@ -332,6 +335,11 @@ function View:applyLayout(layout)
   self.compact:setStyleSheet("background:"..t.panel..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
   for _,g in ipairs({self.hp,self.fatigue,self.carry,self.psi,self.web}) do g.text:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.lower_small_font.."px;font-weight:700;"); if g.text.setFontSize then g.text:setFontSize(layout.lower_small_font) end end
   place(self.header,0,0,"100%",top); place(self.attribute_strip,layout.console_left or layout.left,0,layout.console_width,top); self.attribute_strip:raise()
+  local toggle_x=layout.panel_padding
+  local toggle_y=math.max(34,top-layout.color_toggle_height-layout.panel_padding)
+  local toggle_available=layout.mode=="compact" and math.floor((layout.window_width or 760)*.45)-toggle_x*2 or layout.left-toggle_x*2
+  local toggle_width=math.max(76,math.min(126,toggle_available))
+  place(self.color_toggle,toggle_x,toggle_y,toggle_width,layout.color_toggle_height); self:setColorEnabled(self.color_enabled~=false); self.color_toggle:raise()
   if layout.mode=="compact" then place(self.clock_header,"50%",0,"50%",top) else place(self.clock_header,"100%-"..layout.right,0,layout.right,top) end
   self.clock_header:raise(); self.bottom:hide()
   place(self.chat_container,layout.chat_x or layout.left,top,layout.chat_width or layout.console_width,layout.chat_height or 240)
@@ -453,6 +461,15 @@ function View:applyLayout(layout)
   self:applyChatWrap(layout)
 end
 function View:setMapCenterCallback(callback) self.map_center_callback=type(callback)=="function" and callback or nil; return true end
+function View:setColorToggleCallback(callback) self.color_toggle_callback=type(callback)=="function" and callback or nil; return true end
+function View:setColorEnabled(enabled)
+  self.color_enabled=enabled~=false
+  local t=self.settings.theme; local color=self.color_enabled and t.jade or t.muted
+  self.color_toggle:setStyleSheet("background:"..(self.color_enabled and "#17231c" or "#111512")..";border:1px solid "..color..";border-radius:4px;color:"..color..";font-weight:700;")
+  local font=self.layout and self.layout.color_toggle_font or 11
+  self.color_toggle:echo(View.withFont("<center><b>COLORS "..(self.color_enabled and "ON" or "OFF").."</b></center>",font))
+  return true
+end
 function View:setMapZoomCallback(callback) self.map_zoom_callback=type(callback)=="function" and callback or nil; return true end
 function View:setMapClearAllCallback(callback) self.map_clear_all_callback=type(callback)=="function" and callback or nil; return true end
 function View:setMapClearPending(pending)

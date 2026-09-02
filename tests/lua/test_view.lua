@@ -168,6 +168,25 @@ test("view has no standalone wealth widget",function()
   local view=chatView(); eq(view.wealth,nil)
 end)
 
+test("header owns a responsive colorization toggle",function()
+  local view=chatView(); local calls={}
+  view:setColorToggleCallback(function() calls[#calls+1]="toggle" end)
+  for _,size in ipairs({{760,700},{800,700},{1200,800},{1920,1080}}) do
+    local layout=require("layout").compute(size[1],size[2]); view:applyLayout(layout)
+    eq(view.color_toggle.visible,true); eq(view.color_toggle.x>=0,true)
+    eq(view.color_toggle.x+view.color_toggle.width<=size[1],true)
+    eq(view.color_toggle.y+view.color_toggle.height<=layout.header_height,true)
+  end
+  eq(view.color_toggle.tooltip,"Toggle DGHUD room and exit color coding")
+  view.color_toggle.click(); eq(#calls,1)
+end)
+
+test("colorization toggle renders enabled and disabled states",function()
+  local view=chatView(); view:applyLayout(require("layout").compute(1000,700))
+  view:setColorEnabled(true); eq(view.color_enabled,true); eq(view.color_toggle.message:find("COLORS ON",1,true)~=nil,true); eq(view.color_toggle.style:find("#79b386",1,true)~=nil,true)
+  view:setColorEnabled(false); eq(view.color_enabled,false); eq(view.color_toggle.message:find("COLORS OFF",1,true)~=nil,true); eq(view.color_toggle.style:find("#75857c",1,true)~=nil,true)
+end)
+
 test("inventory and skills own five-row scrollable consoles",function()
   local view=chatView(); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
   eq(view.inventory_output.kind,"scrollbox"); eq(view.skills_output.kind,"scrollbox")

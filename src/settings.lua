@@ -17,4 +17,14 @@ function Settings.resolve(defaults,input)
   local migrated,changed=Settings.migrate(input)
   return Settings.merge(defaults,migrated),migrated,changed
 end
+function Settings.colorEnabled(settings)
+  local colorization=type(settings)=="table" and settings.colorization or nil
+  return not (type(colorization)=="table" and colorization.enabled==false)
+end
+function Settings.setColorEnabled(userSettings,enabled)
+  userSettings=type(userSettings)=="table" and userSettings or {}
+  userSettings.colorization=type(userSettings.colorization)=="table" and userSettings.colorization or {}
+  userSettings.colorization.enabled=enabled~=false
+  return userSettings
+end
 return Settings

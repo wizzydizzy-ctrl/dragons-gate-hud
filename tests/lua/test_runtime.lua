@@ -14,6 +14,8 @@ local function fake()
     applyLayout=function(self,layout) f.layouts[#f.layouts+1]=layout end,
     renderChat=function(self,entries,categories,filter) f.chatRenders=(f.chatRenders or 0)+1; f.renderedChat={entries=entries,categories=categories,filter=filter} end,
     setChatFilterCallback=function(self,callback) f.chatFilterCallback=callback end,
+    setColorToggleCallback=function(self,callback) f.colorToggleCallback=callback end,
+    setColorEnabled=function(self,enabled) f.viewColorEnabled=enabled end,
     setMapCenterCallback=function(self,callback) f.mapCenterCallback=callback end,
     setMapZoomCallback=function(self,callback) f.mapZoomCallback=callback; f.mapZoomCallbackSets=(f.mapZoomCallbackSets or 0)+1 end,
     setMapClearAllCallback=function(self,callback) f.mapClearAllCallback=callback end,
@@ -32,6 +34,11 @@ local function fake()
     if self.failChatTrigger and self.lineTriggerCalls==2 then error("chat trigger registration failed") end
     self.next=self.next+1; local id="trigger-"..self.next; self.triggers[id]=fn; return id
   end
+  function f:addColorizerTrigger(fn)
+    self.next=self.next+1; local id="trigger-"..self.next; self.triggers[id]=fn; self.colorizerTrigger=id; return id
+  end
+  function f:applyLineColors(segments) self.coloredSegments=segments; return true end
+  function f:reportColorizerStatus(enabled) self.reportedColorizer=enabled; return true end
   function f:killTrigger(id) self.killed[id]=true; self.triggers[id]=nil end
   function f:epoch() return self.epochValue or 100 end
   function f:localTime() return self.localTimeValue or "12:41:06 AM" end
@@ -341,8 +348,8 @@ test("cleanup reconciliation requires a valid fresh current room after mutation"
   end
 end)
 
-test("cleanup shutdown removes all six owned aliases",function()
-  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); local before=f:count(f.aliases); eq(before,#Events.aliases+7)
+test("cleanup shutdown removes all six owned map aliases",function()
+  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); local before=f:count(f.aliases); eq(before,#Events.aliases+8)
   local owned={}; for id,alias in pairs(f.aliases) do if alias.pattern:match("%^dghud map ") then owned[id]=true end end; eq(f:count(owned),6)
   assert(hud:shutdown()); for id in pairs(owned) do eq(f.killed[id],true) end; eq(f:count(f.aliases),0)
 end)
@@ -421,8 +428,8 @@ test("resize preserves chat controller history and trigger ownership",function()
   eq(hud.chat,controller); eq(hud.chat.trigger,trigger); eq(f:count(f.triggers),runtime); eq(hud.chat:entries()[1].message,"kept")
   eq(f.layouts[#f.layouts].chat_height>160,true); eq(f.set_borders[2],f.layouts[#f.layouts].console_top)
 end)
-test("controller merges collector snapshots and removes collector runtime",function()
-  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud.collector.snapshot.info={attributes={STR="Good"}}; hud:refresh(); eq(hud.last_state.attributes.STR,"Good"); eq(f:count(f.triggers),2); hud:shutdown(); eq(f:count(f.triggers),0); eq(f:count(f.timers),0)
+test("controller merges collector snapshots and removes owned trigger runtime",function()
+  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud.collector.snapshot.info={attributes={STR="Good"}}; hud:refresh(); eq(hud.last_state.attributes.STR,"Good"); eq(f:count(f.triggers),3); hud:shutdown(); eq(f:count(f.triggers),0); eq(f:count(f.timers),0)
 end)
 test("GMCP identity arrival hydrates persisted character history without appending it",function()
   local f=fake()
@@ -479,7 +486,7 @@ test("a different character welcome performs another update check without discon
   eq(checks,2); eq(#completions,2)
 end)
 test("reload leaves one command collector",function()
-  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); eq(f:count(f.triggers),2); local outgoing=0; for _,name in pairs(f.events) do if name=="sysDataSendRequest" then outgoing=outgoing+1 end end; eq(outgoing,2)
+  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); eq(f:count(f.triggers),3); local outgoing=0; for _,name in pairs(f.events) do if name=="sysDataSendRequest" then outgoing=outgoing+1 end end; eq(outgoing,2)
 end)
 
 test("runtime wires one automapper handler per event and cleans it exactly",function()
@@ -643,6 +650,17 @@ test("repeated resize changes typography without growing runtime",function()
     eq(r.inventory_row_height>=r.inventory_font+8,true); eq(r.details_line_height>=r.body_font+4,true); eq(r.console_width>=math.floor(size[1]*.65),true); eq(f:count(f.events)+f:count(f.triggers)+f:count(f.aliases),runtime)
   end
 end)
+test("optional output colors toggle through one owned alias and public API",function()
+  local f=fake(); local personal=f:addLineTrigger(function() end); local hud=Main.new(f,{layout={}}); assert(hud:start())
+  DGHUD={controller=hud}; Main.installChatApi(DGHUD)
+  eq(DGHUD.colors.status().enabled,true); eq(aliasCallback(f,"^dghud colors(?: (on|off|toggle|status))?$")({"","off"}),false); eq(f.reportedColorizer,false)
+  eq(aliasCallback(f,"^dghud colors(?: (on|off|toggle|status))?$")({"","on"}),true)
+  local trigger=assert(f.triggers[f.colorizerTrigger]); trigger("Obvious paths: north east west."); eq(#f.coloredSegments,4)
+  eq(DGHUD.colors.toggle(),false); eq(DGHUD.user_settings.colorization.enabled,false); eq(DGHUD.colors.setEnabled(true),true); eq(DGHUD.colors.status().started,true); eq(hud.colorizer_enabled,true); eq(f.viewColorEnabled,true)
+  eq(f.colorToggleCallback(),false); eq(DGHUD.user_settings.colorization.enabled,false); eq(f.colorToggleCallback(),true)
+  local owned=f.colorizerTrigger; hud:reload(); eq(f.triggers[owned],nil); eq(hud.colorizer:status().enabled,true); eq(f.triggers[personal]~=nil,true)
+  hud:shutdown(); eq(f:count(f.triggers),1); DGHUD=nil
+end)
 test("chat trigger registration failure rolls back partial HUD runtime",function()
   local f=fake(); f.failChatTrigger=true; local hud=Main.new(f,{layout={}}); local started,err=hud:start()
   eq(started,nil); eq(tostring(err):find("chat trigger registration failed",1,true)~=nil,true); eq(hud.started,false); eq(hud.chat,nil); eq(hud:healthCheck(),nil)
@@ -650,10 +668,10 @@ test("chat trigger registration failure rolls back partial HUD runtime",function
 end)
 test("chat runtime has one owned trigger and cached personal API survives reload safely",function()
   local f=fake(); local unrelated=f:addLineTrigger(function() end); local hud=Main.new(f,{layout={}}); hud:start()
-  eq(hud.chat.started,true); eq(f:count(f.triggers),3)
+  eq(hud.chat.started,true); eq(f:count(f.triggers),4)
   DGHUD={controller=hud}; Main.installChatApi(DGHUD); local capture=DGHUD.chat.capture
   assert(capture("QUEST","before reload")); hud:reload(); DGHUD={controller=hud}; Main.installChatApi(DGHUD)
-  eq(f:count(f.triggers),3); eq(f.loadRecentCalls,2); eq(#hud.chat:entries(),1); eq(hud.chat:entries()[1].message,"before reload")
+  eq(f:count(f.triggers),4); eq(f.loadRecentCalls,2); eq(#hud.chat:entries(),1); eq(hud.chat:entries()[1].message,"before reload")
   assert(capture("QUEST","after reload")); eq(#hud.chat:entries(),2); eq(hud.chat:entries()[2].message,"after reload")
   hud:shutdown(); eq(f:count(f.triggers),1); eq(f.triggers[unrelated]~=nil,true)
   local result,err=capture("QUEST","during shutdown"); eq(result,nil); eq(err,"chatbox is not running"); DGHUD=nil

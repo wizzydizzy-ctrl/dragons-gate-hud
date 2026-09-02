@@ -2,7 +2,7 @@ local Updater=require("updater"); local SHA=require("sha256"); local Adapter=req
 local function releaseManifest(version)
   return {package="DragonsGateHUD",version=version,minimum_mudlet="5.0.0",archive_url="https://github.com/wizzydizzy-ctrl/dragons-gate-hud/releases/download/v"..version.."/DragonsGateHUD.mpackage",sha256=string.rep("a",64),archive_size=100}
 end
-local updateSettings={version="0.2.75",github={owner="wizzydizzy-ctrl",repository="dragons-gate-hud"},update={package_limit=1000}}
+local updateSettings={version="0.2.76",github={owner="wizzydizzy-ctrl",repository="dragons-gate-hud"},update={package_limit=1000}}
 test("update staging lives outside the installed package directory",function()
   local base=Adapter.updateBase("/profile")
   eq(base,"/profile/DGHUDUpdater")
@@ -55,7 +55,7 @@ test("replacement failure attempts rollback before completing",function()
 end)
 test("manifest compatibility blocks replacement on an older known Mudlet",function()
   local u=Updater.new({mudletVersion=function() return "4.17.2" end},updateSettings)
-  local ok,err=u:validateManifest(releaseManifest("0.2.76")); eq(ok,nil); assert(err:find("older than required",1,true))
+  local ok,err=u:validateManifest(releaseManifest("0.2.77")); eq(ok,nil); assert(err:find("older than required",1,true))
 end)
 test("post-install refresh joins the new controller startup sequence",function()
   local prior=_G.DGHUD; local entries=0; local forced=0
@@ -73,8 +73,8 @@ local function replacementHarness(options,body)
   options=options or {}; local globalNames={"lfs","yajl","getMudletHomeDir","registerAnonymousEventHandler","killAnonymousEventHandler","tempTimer","killTimer","downloadFile","getPackages","uninstallPackage","installPackage","cecho","DGHUD","getMudletVersion"}
   local saved={}; for _,name in ipairs(globalNames) do saved[name]=_G[name] end
   local originalOpen=io.open; local h={files={},downloads={},handlers={},timers={},nextID=0,active=true,uninstalls=0,installs={},result=nil}
-  local target=releaseManifest("0.2.76"); target.sha256=SHA.hex("new-package")
-  local rollback=releaseManifest("0.2.75"); rollback.sha256=SHA.hex("old-package")
+  local target=releaseManifest("0.2.77"); target.sha256=SHA.hex("new-package")
+  local rollback=releaseManifest("0.2.76"); rollback.sha256=SHA.hex("old-package")
   h.manifests={target=target,rollback=rollback}
   local function restore() io.open=originalOpen; for _,name in ipairs(globalNames) do _G[name]=saved[name] end end
   local ok,err=pcall(function()
@@ -108,7 +108,7 @@ end
 test("first updater-managed update bootstraps exact rollback before uninstall",function()
   replacementHarness({},function(h)
     deliverTarget(h); eq(h.uninstalls,0); eq(#h.downloads,3)
-    assert(h.downloads[3].url:find("/releases/download/v0.2.75/manifest.json",1,true)); h.handlers.sysDownloadDone(nil,"/unowned/path"); h:error("https://unrelated.example/failure","ignore me"); eq(h.uninstalls,0)
+    assert(h.downloads[3].url:find("/releases/download/v0.2.76/manifest.json",1,true)); h.handlers.sysDownloadDone(nil,"/unowned/path"); h:error("https://unrelated.example/failure","ignore me"); eq(h.uninstalls,0)
     h:done(h.downloads[3].path,"rollback"); eq(h.uninstalls,0); eq(#h.downloads,4)
     h:done(h.downloads[4].path,"old-package"); eq(h.uninstalls,1); eq(h.files["/profile/DGHUDUpdater/previous.mpackage"],"old-package")
     assert(h:run(.25)); assert(h:run(.40)); eq(h.result[1],true); eq(h.active,true)
@@ -129,7 +129,7 @@ test("failed first replacement restores checksum-verified bootstrapped package",
 end)
 test("startup check skips installation when current and continues startup",function()
   local order={}; local completed
-  local adapter={checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.75")) end}
+  local adapter={checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.76")) end}
   local u=Updater.new(adapter,updateSettings)
   eq(u:checkAtCharacterEntry(function(updated,err) completed={updated,err}; order[#order+1]="commands" end),true)
   eq(table.concat(order,","),"check,commands"); eq(completed[1],false); eq(completed[2],nil); eq(u.lock,nil)
@@ -137,7 +137,7 @@ end)
 test("startup check updates before allowing startup commands",function()
   local order={}; local completed
   local adapter={
-    checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.76")) end,
+    checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.77")) end,
     startUpdate=function(_,updater,done) order[#order+1]="update"; done(true); return true end,
     isCharacterActive=function() return true end,
   }
@@ -171,7 +171,7 @@ test("startup check rejects overlap and completes only once",function()
   local u=Updater.new(adapter,updateSettings)
   eq(u:checkAtCharacterEntry(function() completions=completions+1 end),true)
   local ok,err=u:checkAtCharacterEntry(function() completions=completions+1 end); eq(ok,nil); eq(err,"startup check already in progress")
-  manifestDone(releaseManifest("0.2.75")); manifestDone(releaseManifest("0.2.75")); eq(completions,1)
+  manifestDone(releaseManifest("0.2.76")); manifestDone(releaseManifest("0.2.76")); eq(completions,1)
 end)
 test("async checksum mismatch never starts replacement",function()
   local called=false

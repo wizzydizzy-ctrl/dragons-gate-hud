@@ -11,6 +11,9 @@ local function fakeChatRuntimeWithPersonalTrigger()
   function f:addAlias(pattern,fn) self.next=self.next+1; local id="alias-"..self.next; self.aliases[id]={pattern=pattern,fn=fn}; return id end
   function f:killAlias(id) self.aliases[id]=nil end
   function f:addLineTrigger(fn) self.next=self.next+1; local id="trigger-"..self.next; self.triggers[id]=fn; return id end
+  function f:addColorizerTrigger(fn) self.next=self.next+1; local id="trigger-"..self.next; self.triggers[id]=fn; return id end
+  function f:applyLineColors() return true end
+  function f:reportColorizerStatus(enabled) self.reportedColorizer=enabled; return true end
   function f:killTrigger(id) self.triggers[id]=nil end
   function f:line(value) for _,fn in pairs(self.triggers) do fn(value) end end
   function f:getGMCP() return {Char={Status={name="Dace",surname="Alterac"},Vitals={hp=1,hp_max=1}}} end

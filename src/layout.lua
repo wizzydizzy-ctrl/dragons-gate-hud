@@ -75,6 +75,8 @@ local function metrics(width,height,layout,chatSettings,mapperSettings)
   layout.console_width=width-layout.console_left-layout.console_right
   layout.body_font=clamp(width/100,16,22); layout.small_font=clamp((layout.body_font-2)*2,28,40); layout.heading_font=clamp(layout.body_font+5,21,27)
   layout.header_clock_font=layout.mode=="medium" and 10 or clamp(layout.body_font-5,11,17)
+  layout.color_toggle_font=clamp(layout.body_font-5,10,14)
+  layout.color_toggle_height=clamp(layout.color_toggle_font+8,20,24)
   layout.attribute_strip_font=clamp(layout.console_width/100,10,14)
   layout.panel_padding=clamp(width/120,12,22); layout.gauge_height=clamp(layout.small_font+10,38,50); layout.row_gap=clamp(layout.body_font*.7,11,15)
   layout.title_height=layout.heading_font+30
@@ -116,8 +118,11 @@ end
 function Layout.compute(width,height,chatSettings,mapperSettings)
   width=tonumber(width) or 1200; height=tonumber(height) or 800
   local rail=math.floor(width*.17)
-  if width>=1400 then return metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=0,show_character_rail=true,show_room_compass=height>=700,vitals_side="right"},chatSettings,mapperSettings) end
-  if width>=800 then return metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="right"},chatSettings,mapperSettings) end
-  return metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=0,show_character_rail=false,show_room_compass=false,vitals_side="compact"},chatSettings,mapperSettings)
+  local result
+  if width>=1400 then result=metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=0,show_character_rail=true,show_room_compass=height>=700,vitals_side="right"},chatSettings,mapperSettings)
+  elseif width>=800 then result=metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="right"},chatSettings,mapperSettings)
+  else result=metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=0,show_character_rail=false,show_room_compass=false,vitals_side="compact"},chatSettings,mapperSettings) end
+  result.window_width=width
+  return result
 end
 return Layout

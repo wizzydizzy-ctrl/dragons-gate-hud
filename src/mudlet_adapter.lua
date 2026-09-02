@@ -49,6 +49,26 @@ function Adapter:killEvent(id) return killAnonymousEventHandler(id) end
 function Adapter:addAlias(pattern,fn) return tempAlias(pattern,fn) end
 function Adapter:killAlias(id) return killAlias(id) end
 function Adapter:addLineTrigger(fn) return tempRegexTrigger("^.*$",function() fn(line or "") end) end
+function Adapter:addColorizerTrigger(fn)
+  return tempRegexTrigger([=[(?i)^\s*(?:\[[^\r\n\[\]]+\]|Obvious\s+(?:exits|paths)\s*:[^\r\n]*)\s*$]=],function()
+    fn(line or (type(getCurrentLine)=="function" and getCurrentLine() or ""))
+  end)
+end
+function Adapter:applyLineColors(segments,api)
+  api=api or _G
+  if type(segments)~="table" or type(api.selectSection)~="function" or type(api.setFgColor)~="function" then return nil,"Mudlet line-color API is unavailable" end
+  local ok,err=pcall(function()
+    for _,item in ipairs(segments) do
+      local color=item.color
+      assert(type(item.start)=="number" and type(item.length)=="number" and type(color)=="table","invalid color segment")
+      api.selectSection(item.start-1,item.length)
+      api.setFgColor(color[1],color[2],color[3])
+    end
+    if type(api.deselect)=="function" then api.deselect() end
+  end)
+  if not ok then if type(api.deselect)=="function" then pcall(api.deselect) end; return nil,tostring(err) end
+  return true
+end
 function Adapter:killTrigger(id) return killTrigger(id) end
 function Adapter:epoch() return os.time() end
 function Adapter:localTime() return os.date("%I:%M:%S %p"):gsub("^0","") end
@@ -86,6 +106,10 @@ function Adapter:reportChatStatus(status)
   local storage=status.storage_key or "unknown"; local error=status.last_storage_error or "none"
   cecho("\n<gold>[DGHUD Chat]<reset> filter="..tostring(status.active_filter or "OFF").." visible="..tostring(status.visible_count or 0).." storage="..tostring(storage).." last storage error="..tostring(error).."\n")
   return status
+end
+function Adapter:reportColorizerStatus(enabled)
+  cecho("\n<gold>[DGHUD Colors]<reset> "..(enabled and "ON" or "OFF").."\n")
+  return true
 end
 function Adapter:schedule(seconds,fn) return tempTimer(seconds,fn) end
 function Adapter:cancelTimer(id) return killTimer(id) end

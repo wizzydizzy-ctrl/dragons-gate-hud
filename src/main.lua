@@ -1,7 +1,9 @@
-local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local Clock=require("game_clock"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local SpecialTransition=require("special_transition"); local MapWalker=require("map_walker"); local Cleanup=require("map_cleanup")
+package.loaded["output_colorizer"]=nil
+local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local Clock=require("game_clock"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local OutputColorizer=require("output_colorizer"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local SpecialTransition=require("special_transition"); local MapWalker=require("map_walker"); local Cleanup=require("map_cleanup")
 local Main={}; Main.__index=Main
 function Main.new(adapter,settings)
-  local self=setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=nil,managed_rooms={}},Main)
+  local colorSettings=settings and settings.colorization
+  local self=setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=nil,managed_rooms={},colorizer_enabled=not (type(colorSettings)=="table" and colorSettings.enabled==false)},Main)
   self.clock=Clock.new(settings and settings.time,function() return adapter:epoch() end)
   return self
 end
@@ -23,7 +25,25 @@ function Main.installChatApi(namespace)
       if not controller then return nil,"HUD is not running" end
       return controller:chatStatus()
     end
+  Main.installColorizerApi(namespace)
   return chat
+end
+function Main.installColorizerApi(namespace)
+  local api=type(namespace.colors)=="table" and namespace.colors or {}; namespace.colors=api
+  local function active() local root=rawget(_G,"DGHUD"); local controller=root and root.controller; return controller,controller and controller.colorizer end
+  api.setEnabled=function(value) local controller,colorizer=active(); if not colorizer then return nil,"colorizer is not running" end; return controller:setColorizerEnabled(value==true) end
+  api.toggle=function() local controller,colorizer=active(); if not colorizer then return nil,"colorizer is not running" end; return controller:setColorizerEnabled(not colorizer.enabled) end
+  api.status=function() local _,colorizer=active(); if not colorizer then return nil,"colorizer is not running" end; return colorizer:status() end
+  return api
+end
+function Main:setColorizerEnabled(enabled)
+  enabled=enabled==true; self.colorizer_enabled=enabled
+  if self.colorizer then self.colorizer:setEnabled(enabled) end
+  self.settings.colorization=type(self.settings.colorization)=="table" and self.settings.colorization or {}; self.settings.colorization.enabled=enabled
+  local root=rawget(_G,"DGHUD")
+  if root then root.user_settings=type(root.user_settings)=="table" and root.user_settings or {}; root.user_settings.colorization=type(root.user_settings.colorization)=="table" and root.user_settings.colorization or {}; root.user_settings.colorization.enabled=enabled end
+  if self.view and self.view.setColorEnabled then self.view:setColorEnabled(enabled) end
+  return enabled
 end
 function Main:clockDisplay()
   local real
@@ -391,10 +411,13 @@ function Main:start()
   self:installMapClickHook()
   local startupOk,startupErr=pcall(function()
   self.view=self.adapter:createView(self.settings)
+  if self.view.setColorToggleCallback then self.view:setColorToggleCallback(function() local enabled=self:setColorizerEnabled(not self.colorizer_enabled); if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(enabled) end; return enabled end) end
+  if self.view.setColorEnabled then self.view:setColorEnabled(self.colorizer_enabled) end
   if self.view.setMapZoomCallback then self.view:setMapZoomCallback(function(action) return self:mapToolbarAction(action) end) end
   if self.view.setMapClearAllCallback then self.view:setMapClearAllCallback(function() return self:clearAllMapsAction() end) end
   self:applyResponsiveLayout()
   self.collector=Collector.new(self.adapter,Parser,function(snapshot,key) if key=="time" then self:onClockSync(snapshot.time) else self:refresh() end end,function(value) self:onRoundtime(value) end,function(name) self:onCharacterEntry(name) end); local collectorOk,collectorErr=self.collector:start(); if not collectorOk then error(collectorErr,0) end
+  self.colorizer=OutputColorizer.new(self.adapter,self.colorizer_enabled==true,self.settings.colorization); local colorizerOk,colorizerErr=self.colorizer:start(); if not colorizerOk then error(colorizerErr,0) end
   if self.adapter.isCharacterActive and self.adapter:isCharacterActive() then self:onCharacterEntry() end
   for _,name in ipairs(Events.gmcp) do local eventName=name; self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(eventName,function()
     if eventName=="gmcp.Char.Vitals" then local data=self.adapter:getGMCP(); local vitals=data and data.Char and data.Char.Vitals; self:onRoundtime(vitals and vitals.roundtime or 0); return end
@@ -437,6 +460,11 @@ function Main:start()
     {"^dghud map cancel$",function() local ok,err=self.cleanup:cancel(); self.clear_all_armed_at=nil; if self.view and self.view.setMapClearPending then self.view:setMapClearPending(false) end; if not ok then self:reportCleanup(err,true); return nil,err end; self:reportCleanup("Cleanup preview cancelled.",false); return true end},
   }
   for _,entry in ipairs(cleanupAliases) do self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias(entry[1],entry[2]) end
+  self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias("^dghud colors(?: (on|off|toggle|status))?$",function(value)
+    local action=tostring(aliasArgument(value) or "toggle"):lower(); local enabled
+    if action=="on" then enabled=self:setColorizerEnabled(true) elseif action=="off" then enabled=self:setColorizerEnabled(false) elseif action=="toggle" or action=="" then enabled=self:setColorizerEnabled(not self.colorizer_enabled) elseif action=="status" then enabled=self.colorizer:status().enabled else return nil,"unknown colorizer action" end
+    if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(enabled) end; return enabled
+  end)
   self.started=true; local data=self.adapter:getGMCP(); if self:mapperEnabled() and data and data.Room and data.Room.Info then local mapped=self.automapper:onRoom(data.Room.Info); if mapped and tonumber(data.Room.Info.num) then self.managed_rooms[tonumber(data.Room.Info.num)]=true end end; self:refresh(); self:scheduleRoundtimeTick(); self:scheduleClockTick()
   local chatStarted,chatErr=self:startChat(); if not chatStarted then error(chatErr,0) end
   end)
@@ -450,6 +478,7 @@ function Main:shutdown()
   end
   if self.roundtime_timer then self.adapter:cancelTimer(self.roundtime_timer); self.roundtime_timer=nil end
   local chat=self.chat; self.chat=nil; if chat then chat:shutdown() end
+  local colorizer=self.colorizer; self.colorizer=nil; if colorizer then colorizer:shutdown() end
   if self.collector then self.collector:shutdown(); self.collector=nil end
   if self.walker then self.walker:shutdown(); self.walker=nil end; self.generated_command=nil; self:removeMapClickHook()
   if self.special_transition then self:callSpecialTransition("shutdown"); self.special_transition=nil end
@@ -463,7 +492,7 @@ end
 function Main:reload() self:shutdown(); return self:start() end
 function Main:healthCheck()
   local chatEnabled=not (self.settings.chat and self.settings.chat.enabled==false)
-  if not self.started or not self.view or not self.collector or not self.collector.started or not self.automapper or not self.special_transition or (chatEnabled and (not self.chat or not self.chat.started or not self.chat.trigger)) or #self.runtime.events~=(#Events.gmcp+5) then return nil,"HUD is not healthy" end
+  if not self.started or not self.view or not self.collector or not self.collector.started or not self.colorizer or not self.colorizer.started or not self.colorizer.trigger or not self.automapper or not self.special_transition or (chatEnabled and (not self.chat or not self.chat.started or not self.chat.trigger)) or #self.runtime.events~=(#Events.gmcp+5) then return nil,"HUD is not healthy" end
   local ok=pcall(function() self:refresh() end); if not ok then return nil,"state refresh failed" end; return true
 end
 return Main

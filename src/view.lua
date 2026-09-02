@@ -129,7 +129,7 @@ function View.equipmentContent(v,items,t,layout)
   if layout==nil then layout=t; t=items; items={} end
   local function ready(value) return value and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:#c85b4b'><b>NOT READY</b></span>" end
   local body="Weapon &nbsp; "..ready(v.weapon_readied).."<br>Shield &nbsp; "..ready(v.shield_readied)
-  return View.withFont("<span style='color:"..t.accent.."'><b>EQUIPMENT</b></span><br><br>"..body,layout.body_font)
+  return View.withFont("<span style='color:"..t.accent.."'><b>EQUIPMENT</b></span><br>"..body,layout.equipment_font or layout.body_font)
 end
 function View.inventoryContent(inventory,vitals,t,layout,capacity)
   inventory=inventory or {}; vitals=vitals or {}
@@ -361,7 +361,8 @@ function View:applyLayout(layout)
   self.identity:setStyleSheet("background:"..t.panel..";border-right:1px solid "..t.border..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.details:setStyleSheet("background:"..t.panel..";border:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.left:setStyleSheet("background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
-  for _,card in ipairs({self.equipment,self.inventory,self.runes,self.skills}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
+  self.equipment:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..(layout.equipment_padding or p).."px;font-size:"..(layout.equipment_font or layout.body_font).."px;")
+  for _,card in ipairs({self.inventory,self.runes,self.skills}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
   for _,title in ipairs({self.inventory_title,self.runes_title,self.skills_title}) do title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.list_title_font.."px;font-weight:700;") end
   self.inventory_footer:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..(layout.list_font+2).."px;")
   for _,widget in ipairs({self.inventory_content,self.runes_content,self.skills_content,self.list_measure}) do
@@ -437,7 +438,8 @@ function View:applyLayout(layout)
     self.inventory_content:resize(self.inventory_content_width,math.max(layout.list_row_height*5,inventory_rows*layout.list_row_height))
     self.runes_content:resize(self.runes_content_width,math.max(layout.list_row_height*5,rune_rows*layout.list_row_height))
     self.skills_content:resize(self.skills_content_width,math.max(layout.list_row_height*5,skill_rows*layout.list_row_height))
-    local equipment_h=layout.heading_font+eq_rows*layout.details_line_height+p*2+18
+    local equipment_padding=layout.equipment_padding or p
+    local equipment_h=(layout.equipment_font or layout.body_font)+eq_rows*(layout.equipment_line_height or layout.details_line_height)+equipment_padding*2+10
     local show_psi,show_web=psi_visible,web_visible
     local function vitalsHeight()
       local count=3+(show_psi and 1 or 0)+(show_web and 1 or 0)

@@ -18,6 +18,11 @@ test("identity and right rail content remain separate",function()
   eq(identity:find("EQUIPMENT",1,true)==nil,true); eq(equipment:find("Test Tester",1,true)==nil,true)
   eq(equipment:find("EQUIPMENT",1,true)~=nil,true); eq(equipment:find("WEALTH",1,true)==nil,true)
 end)
+test("equipment uses its smaller dedicated font",function()
+  local html=View.equipmentContent({weapon_readied=true,shield_readied=false},{},{accent="#da5",jade="#7b8"},{body_font=20,equipment_font=15})
+  eq(html:find("font%-size:15px")~=nil,true)
+  eq(html:find("<br><br>",1,true),nil)
+end)
 
 test("visible header removes protocol wording",function()
   local h=View.headerContent({mode="wide",body_font=20,heading_font=25},{accent="#d8ae53",jade="#72bd82",text="#fff",muted="#777"},"Test Tester")
@@ -487,7 +492,7 @@ test("crossing responsive breakpoints repeatedly restores every desktop card",fu
   end
 end)
 
-test("wide short windows drop optional gauges before overlapping equipment",function()
+test("wide short windows keep compact equipment clear of required gauges",function()
   for _,size in ipairs({{1920,420},{2560,420}}) do
     local layout=require("layout").compute(size[1],size[2]); local view=chatView()
     view.last_state={vitals={psi={visible=true},web={visible=true}},equipment={items={}}}
@@ -495,7 +500,6 @@ test("wide short windows drop optional gauges before overlapping equipment",func
     local vitals_top=layout.window_height-view.vitals_right.height
     eq(view.equipment.y+view.equipment.height+12<=vitals_top,true)
     eq(view.hp.visible,true); eq(view.fatigue.visible,true); eq(view.carry.visible,true)
-    eq(view.psi.visible and view.web.visible,false)
   end
 end)
 

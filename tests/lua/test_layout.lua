@@ -107,6 +107,14 @@ test("responsive typography remains readable at every breakpoint",function()
   eq(wide.heading_font>wide.body_font,true); eq(wide.gauge_height>=26,true); eq(wide.panel_padding>=16,true)
   eq(wide.small_font>=(wide.body_font-2)*2,true); eq(wide.gauge_height>=wide.small_font+10,true)
 end)
+test("equipment card typography and padding are smaller than standard cards",function()
+  for _,size in ipairs({{1000,900},{1920,1080},{3840,2160}}) do
+    local r=Layout.compute(size[1],size[2])
+    eq(r.equipment_font<r.body_font,true)
+    eq(r.equipment_font>=13,true)
+    eq(r.equipment_padding<r.panel_padding,true)
+  end
+end)
 test("scrollable list text is three pixels smaller while headings stay readable",function()
   for _,size in ipairs({{1000,900},{1920,1080},{3840,2160}}) do
     local r=Layout.compute(size[1],size[2])

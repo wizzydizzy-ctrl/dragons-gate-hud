@@ -267,8 +267,16 @@ function View:applyLayout(layout)
     if widget.setFontSize then widget:setFontSize(layout.list_font) end
   end
   if self.inventory_footer.setFontSize then self.inventory_footer:setFontSize(layout.list_font+2) end
-  self.list_measure:echo("Ag<br>Ag<br>Ag<br>Ag<br>Ag")
-  local measured; if self.list_measure.getSizeHint then local ok,_,height=pcall(self.list_measure.getSizeHint,self.list_measure); if ok then measured=tonumber(height) end end
+  self.list_measure:setStyleSheet("background:transparent;color:transparent;font-family:'"..self.list_font_family.."';font-size:"..layout.list_font.."px;")
+  local glyphRun=string.rep("M",10)
+  self.list_measure:echo(table.concat({glyphRun,glyphRun,glyphRun,glyphRun,glyphRun},"<br>"))
+  local measured,measuredWidth
+  if self.list_measure.getSizeHint then
+    local ok,width,height=pcall(self.list_measure.getSizeHint,self.list_measure)
+    if ok then measuredWidth=tonumber(width); measured=tonumber(height) end
+  end
+  local fallbackCharacterWidth=math.max(1,layout.list_font*.62)
+  self.list_character_width=measuredWidth and measuredWidth>0 and measuredWidth/#glyphRun or fallbackCharacterWidth
   local fallback=math.ceil(layout.list_font*1.3)*5
   layout.list_viewport_height=measured and measured>0 and math.ceil(measured) or fallback
   layout.list_row_height=layout.list_viewport_height/5
@@ -297,8 +305,9 @@ function View:applyLayout(layout)
     layout.lower_geometry=lower
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
     local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=2
-    self.list_content_width=math.max(1,card_w-p*2-24)
-    self.skill_character_capacity=math.max(17,math.floor(self.list_content_width/(layout.list_font*.62))); self.skill_name_width=math.max(8,math.min(24,self.skill_character_capacity-9))
+    local scrollbarWidth=math.max(0,tonumber(self.list_scrollbar_width) or 24)
+    self.list_content_width=math.max(1,card_w-p*2-scrollbarWidth)
+    self.skill_character_capacity=math.max(1,math.floor(self.list_content_width/self.list_character_width)); self.skill_name_width=math.max(6,math.min(24,self.skill_character_capacity-9))
     local inventory_rows=self.last_state and self.last_state.inventory and #(self.last_state.inventory.items or {}) or 0
     local skill_rows=self.last_state and self.last_state.skills and #(self.last_state.skills.items or {}) or 0
     self.inventory_content:resize(self.list_content_width,math.max(layout.list_row_height*5,inventory_rows*layout.list_row_height))

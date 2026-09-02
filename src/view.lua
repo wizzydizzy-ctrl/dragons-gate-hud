@@ -76,10 +76,14 @@ local function clipped(value,width)
   if #value<=width then return value end
   return width>1 and value:sub(1,width-1).."~" or value:sub(1,1)
 end
-function View.skillHeader(nameWidth) return string.format("%-"..nameWidth.."s %3s %4s","SKILLS","LVL","USES") end
-function View.skillLine(skill,nameWidth)
+local function skillFormat(nameWidth,gaps)
+  gaps=math.max(0,math.min(2,tonumber(gaps) or 2))
+  return "%-"..nameWidth.."s"..(gaps>=1 and " " or "").."%3s"..(gaps>=2 and " " or "").."%4s"
+end
+function View.skillHeader(nameWidth,gaps) return string.format(skillFormat(nameWidth,gaps),"SKILLS","LVL","USES") end
+function View.skillLine(skill,nameWidth,gaps)
   nameWidth=math.max(1,tonumber(nameWidth) or 22); skill=skill or {}
-  return string.format("%-"..nameWidth.."s %3d %4d",clipped(skill.name,nameWidth),tonumber(skill.level) or 0,tonumber(skill.remain) or 0)
+  return string.format(skillFormat(nameWidth,gaps),clipped(skill.name,nameWidth),tonumber(skill.level) or 0,tonumber(skill.remain) or 0)
 end
 function View.detailsContent(combat,attributes,t,layout,vitals)
   combat=combat or {}; attributes=attributes or {}; local parts={}; local columns=layout.details_columns or 4
@@ -122,6 +126,24 @@ local function gauge(name,parent,color,theme)
   return g
 end
 local function place(item,x,y,w,h) item:move(x,y); item:resize(w,h); item:show() end
+local function listViewportWidth(output,plannedWidth,override)
+  local outer=tonumber(plannedWidth) or 1
+  if output and type(output.get_width)=="function" then
+    local ok,value=pcall(output.get_width,output); value=ok and tonumber(value) or nil
+    if value and value>0 and math.abs(value-outer)<=1 then outer=value end
+  end
+  local scrollbar=tonumber(override)
+  if not scrollbar and output then
+    for _,method in ipairs({"getScrollBarWidth","getScrollbarWidth"}) do
+      if type(output[method])=="function" then
+        local ok,value=pcall(output[method],output); value=ok and tonumber(value) or nil
+        if value and value>=0 then scrollbar=value; break end
+      end
+    end
+  end
+  if not scrollbar then scrollbar=math.max(24,math.min(40,math.ceil(outer*.12))) end
+  return math.max(1,outer-math.max(0,math.min(scrollbar,outer-1))),scrollbar
+end
 function View.new(settings)
   local self=setmetatable({settings=settings,geyser=Geyser,direction_buttons={},utility_buttons={},exit_available={}},View); local t=settings.theme
   local available={}; if type(rawget(_G,"getAvailableFonts"))=="function" then local ok,value=pcall(getAvailableFonts); if ok and type(value)=="table" then available=value end end
@@ -275,7 +297,7 @@ function View:applyLayout(layout)
     local ok,width,height=pcall(self.list_measure.getSizeHint,self.list_measure)
     if ok then measuredWidth=tonumber(width); measured=tonumber(height) end
   end
-  local fallbackCharacterWidth=math.max(1,layout.list_font*.62)
+  local fallbackCharacterWidth=math.max(1,layout.list_font)
   self.list_character_width=measuredWidth and measuredWidth>0 and measuredWidth/#glyphRun or fallbackCharacterWidth
   local fallback=math.ceil(layout.list_font*1.3)*5
   layout.list_viewport_height=measured and measured>0 and math.ceil(measured) or fallback
@@ -305,9 +327,10 @@ function View:applyLayout(layout)
     layout.lower_geometry=lower
     place(self.right,0,"100%-"..(bottom+panel_height),layout.left,panel_height)
     local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=2
-    local scrollbarWidth=math.max(0,tonumber(self.list_scrollbar_width) or 24)
-    self.list_content_width=math.max(1,card_w-p*2-scrollbarWidth)
-    self.skill_character_capacity=math.max(1,math.floor(self.list_content_width/self.list_character_width)); self.skill_name_width=math.max(6,math.min(24,self.skill_character_capacity-9))
+    self.list_content_width,self.list_resolved_scrollbar_width=listViewportWidth(self.skills_output,card_w-p*2,self.list_scrollbar_width)
+    self.skill_character_capacity=math.max(1,math.floor(self.list_content_width/self.list_character_width))
+    self.skill_column_gaps=math.min(2,math.max(0,self.skill_character_capacity-13))
+    self.skill_name_width=math.min(24,math.max(1,self.skill_character_capacity-7-self.skill_column_gaps))
     local inventory_rows=self.last_state and self.last_state.inventory and #(self.last_state.inventory.items or {}) or 0
     local skill_rows=self.last_state and self.last_state.skills and #(self.last_state.skills.items or {}) or 0
     self.inventory_content:resize(self.list_content_width,math.max(layout.list_row_height*5,inventory_rows*layout.list_row_height))
@@ -408,8 +431,8 @@ function View:renderSkills(s)
   for _,skill in ipairs(items) do signature[#signature+1]=tostring(skill.name or "").."\31"..tostring(skill.level or "").."\31"..tostring(skill.remain or "") end
   signature=table.concat(signature,"\30"); if signature==self.skills_signature then return end; self.skills_signature=signature
   local function fixed(value) return (esc(value):gsub(" ","&nbsp;")) end
-  self.skills_title:echo("<b>"..fixed(View.skillHeader(nameWidth)).."</b>")
-  local lines={}; for _,skill in ipairs(items) do lines[#lines+1]=fixed(View.skillLine(skill,nameWidth)) end
+  self.skills_title:echo("<b>"..fixed(View.skillHeader(nameWidth,self.skill_column_gaps)).."</b>")
+  local lines={}; for _,skill in ipairs(items) do lines[#lines+1]=fixed(View.skillLine(skill,nameWidth,self.skill_column_gaps)) end
   self.skills_content:echo("<div style='white-space:nowrap'>"..table.concat(lines,"<br>").."</div>"); self.skills_content:move(0,0); self.skills_content:resize(self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.skills_content:show()
 end
 function View:renderChat(entries,categories,activeFilter,savedScroll)

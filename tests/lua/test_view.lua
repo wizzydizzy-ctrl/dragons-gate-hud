@@ -74,13 +74,14 @@ test("combat card renders ready roundtime and position without a status heading"
   eq(html:find("Roundtime",1,true)~=nil,true); eq(html:find("READY",1,true)~=nil,true); eq(html:find("Position",1,true)~=nil,true)
 end)
 
-local function fakeGeyser(glyphWidth)
+local function fakeGeyser(glyphWidth,scrollbarWidth,measureFails)
   glyphWidth=tonumber(glyphWidth) or 6
   local function widget(cons,parent,kind)
     local item={name=cons.name,parent=parent,kind=kind,visible=true,echoes={},currentScroll=0,lastLine=0}
     function item:setStyleSheet(value) self.style=value end
     function item:move(x,y) self.x=x; self.y=y end
     function item:resize(width,height) self.width=width; self.height=height end
+    function item:get_width() return self.width end
     function item:show() self.visible=true end
     function item:hide() self.visible=false end
     function item:raise() self.raised=true end
@@ -107,6 +108,7 @@ local function fakeGeyser(glyphWidth)
     function item:setFontSize(value) self.fontSize=value end
     function item:setFont(value) self.font=value end
     function item:getSizeHint()
+      if measureFails then error("size hint unavailable") end
       local message=tostring(self.message or "")
       local _,rows=message:gsub("<br>","")
       local longest=0
@@ -118,6 +120,7 @@ local function fakeGeyser(glyphWidth)
     end
     function item:enableScrollBar() self.scrollBar=true end
     function item:disableHorizontalScrollBar() self.horizontalScrollBar=false end
+    if kind=="scrollbox" and scrollbarWidth then function item:getScrollBarWidth() return scrollbarWidth end end
     function item:getScroll() return self.currentScroll end
     function item:getLastLineNumber() return self.lastLine end
     function item:scrollTo(line) self.scrollCalls=self.scrollCalls or {}; self.scrollCalls[#self.scrollCalls+1]=line==nil and "bottom" or line; self.currentScroll=line or self.lastLine end
@@ -136,8 +139,8 @@ local function fakeGeyser(glyphWidth)
   return geyser
 end
 
-local function chatView(glyphWidth)
-  local original=Geyser; Geyser=fakeGeyser(glyphWidth)
+local function chatView(glyphWidth,scrollbarWidth,measureFails)
+  local original=Geyser; Geyser=fakeGeyser(glyphWidth,scrollbarWidth,measureFails)
   local view=View.new({theme={background="#080b0a",panel="#0d1210",border="#423825",text="#d7d0bf",muted="#75857c",accent="#e0b56c",jade="#79b386",hp="#ba5147",fatigue="#8bad4e"},chat={timestamps=true}})
   Geyser=original
   return view
@@ -168,9 +171,26 @@ test("scrollable list content uses resolved numeric widths",function()
   eq(view.inventory_content.width<view.inventory_output.width,true); eq(view.skills_content.width<view.skills_output.width,true)
   eq(view.inventory_content.raised,true); eq(view.skills_content.raised,true)
 end)
+test("skill viewport uses live scrollbox geometry and scrollbar width",function()
+  local view=chatView(7,40); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
+  eq(view.list_content_width,view.skills_output:get_width()-40)
+  local header=View.skillHeader(view.skill_name_width,view.skill_column_gaps)
+  local row=View.skillLine({name="Identify Armor Quality",level=30,remain=7},view.skill_name_width,view.skill_column_gaps)
+  eq(#header*view.list_character_width<=view.list_content_width,true)
+  eq(#row*view.list_character_width<=view.list_content_width,true)
+end)
+test("failed glyph measurement uses a conservative skill width",function()
+  local view=chatView(7,32,true); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
+  eq(view.list_character_width>=layout.list_font,true)
+  local header=View.skillHeader(view.skill_name_width,view.skill_column_gaps)
+  local row=View.skillLine({name="Identify Armor Quality",level=30,remain=7},view.skill_name_width,view.skill_column_gaps)
+  eq(#header*view.list_character_width<=view.list_content_width,true)
+  eq(#row*view.list_character_width<=view.list_content_width,true)
+end)
 test("measured fixed-width skill columns fit before scaled scrollbars",function()
   local cases={
     {1000,900,6,24},
+    {1000,900,7,24},
     {1024,768,6,24},
     {1200,800,7,24},
     {1366,768,8,24},
@@ -181,8 +201,8 @@ test("measured fixed-width skill columns fit before scaled scrollbars",function(
     local width,height,glyph,scrollbar=case[1],case[2],case[3],case[4]
     local view=chatView(glyph); view.list_scrollbar_width=scrollbar
     local layout=require("layout").compute(width,height); view:applyLayout(layout)
-    local header=View.skillHeader(view.skill_name_width)
-    local row=View.skillLine({name=string.rep("Wide Skill ",5),level=30,remain=7},view.skill_name_width)
+    local header=View.skillHeader(view.skill_name_width,view.skill_column_gaps)
+    local row=View.skillLine({name=string.rep("Wide Skill ",5),level=30,remain=7},view.skill_name_width,view.skill_column_gaps)
     eq(view.list_character_width,glyph)
     eq(view.list_content_width,view.skills_output.width-scrollbar)
     eq(#header*glyph<=view.list_content_width,true)

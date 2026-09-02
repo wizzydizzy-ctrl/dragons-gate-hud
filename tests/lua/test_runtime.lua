@@ -1,6 +1,7 @@
 local Main=require("main")
 local MudletAdapter=require("mudlet_adapter")
 local MapAdapter=require("map_adapter")
+local MapperModel=require("mapper_model")
 local Events=require("events")
 local function fake()
   local f={next=0,killed={},deleted=0,borders={10,20,30,40},set_borders={},callbacks={},layouts={},triggers={},timers={},timer_delays={},timer_cancels={},events={},aliases={}}
@@ -118,6 +119,19 @@ local function fake()
       return f.route or {rooms={fromID,toID},commands={"n"}}
     end
     function map:validateRouteStep(from,to,command)
+      local direction=MapperModel.direction(command)
+      if direction then
+        for _,link in ipairs(self.links) do
+          if link.from==from and link.to==to and link.direction==direction then return true,direction end
+        end
+        local route=f.route
+        if type(route)=="table" then
+          for index,routeCommand in ipairs(route.commands or {}) do
+            if route.rooms[index]==from and route.rooms[index+1]==to and MapperModel.direction(routeCommand)==direction then return true,direction end
+          end
+        end
+        return nil,"standard exit is not persisted from "..from.." to "..to
+      end
       for _,exit in ipairs(self.special) do
         if exit.from==from and exit.to==to and exit.command==tostring(command):match("^%s*(.-)%s*$") and self:isOwned(from) and self:isOwned(to) then return true,exit.command end
       end
@@ -192,9 +206,19 @@ test("map clear button previews then confirms a complete owned-map reset",functi
   local f=fake(); f.gmcp=gmcpRoom(200); local hud=Main.new(f,{layout={}}); assert(hud:start())
   addCleanupRoom(f,200,8,"zone"); addCleanupRoom(f,201,8,"zone"); f.map.areaNames.Alpha=8
   assert(f.mapClearAllCallback()); eq(f.mapClearPending,true); eq(f.map.rooms[200]~=nil,true)
+  f.cleanupTime=1001
   assert(f.mapClearAllCallback()); eq(f.mapClearPending,false)
   eq(f.map.areas[8],nil); eq(f.map.rooms[201],nil); eq(f.map.rooms[200]~=nil,true)
   eq(f.map.rooms[200].owned,true); eq(f.cleanupReports[#f.cleanupReports].error,false)
+end)
+test("map clear button rejects immediate double click while typed confirmation remains immediate",function()
+  local f=fake(); f.gmcp=gmcpRoom(200); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,200,8,"zone"); addCleanupRoom(f,201,8,"zone"); f.map.areaNames.Alpha=8
+  assert(f.mapClearAllCallback()); local result,err=f.mapClearAllCallback(); eq(result,nil); eq(err,"wait one second before confirming clear all"); eq(f.map.rooms[201]~=nil,true)
+  assert(aliasCallback(f,"^dghud map confirm (\\S+)$")({"",hud.cleanup:pending().token})); eq(f.map.rooms[201],nil)
+end)
+test("clear-all preview reports bounded counts instead of every room id",function()
+  local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); for area=1,25 do f.map.areaNames["Area"..area]=area; addCleanupRoom(f,area+1000,area,"zone"..area) end
+  assert(f.mapClearAllCallback()); local report=f.cleanupReports[#f.cleanupReports].message; eq(report:find("Rooms: 25 total",1,true)~=nil,true); eq(report:find("Areas: 25 total",1,true)~=nil,true); eq(report:find("Room IDs:",1,true),nil); eq(#report<1000,true)
 end)
 
 test("typed clear-all confirmation resets the mapper warning button",function()
@@ -412,6 +436,12 @@ test("GMCP identity arrival hydrates persisted character history without appendi
   eq(table.concat(f.loadedCharacterKeys,","),"unknown,dace_alterac")
   eq(#hud.chat:entries(),1); eq(hud.chat:entries()[1].message,"persisted after login"); eq(f.chatStorageAppends or 0,0)
 end)
+test("welcome identity switches chat history before delayed GMCP status changes",function()
+  local f=fake(); f.chatEntriesByKey={unknown={{category="ROOM",message="old"}},dace={{category="ESP",message="new"}}}
+  local hud=Main.new(f,{layout={},chat={visible_limit=1000,dedupe_seconds=3}}); assert(hud:start()); eq(hud.chat:entries()[1].message,"old")
+  hud.collector:onLine("Welcome to Dragon's Gate, Dace!")
+  eq(hud:characterName(),"Dace"); eq(hud.chat:entries()[1].message,"new"); eq(table.concat(f.loadedCharacterKeys,","),"unknown,dace")
+end)
 test("controller status and storage use the effective bounded visible limit",function()
   local oversized=fake(); oversized.chatEntries={}
   for index=1,1001 do oversized.chatEntries[index]={category="ROOM",message="line-"..index} end
@@ -591,6 +621,10 @@ test("roundtime counts down once per second and becomes ready",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:onRoundtime(2); eq(hud.last_state.vitals.roundtime,2)
   f:fireTimer(); eq(hud.last_state.vitals.roundtime,1); f:fireTimer(); eq(hud.last_state.vitals.roundtime,0); eq(f:count(f.timers),0)
 end)
+test("GMCP vitals starts and resynchronizes the visible roundtime countdown",function()
+  local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1,roundtime=3}}}; local hud=Main.new(f,{layout={}}); assert(hud:start()); eq(hud.last_state.vitals.roundtime,3); f:fireTimer(); eq(hud.last_state.vitals.roundtime,2)
+  f.gmcp.Char.Vitals.roundtime=5; f.callbacks["gmcp.Char.Vitals"](); eq(hud.last_state.vitals.roundtime,5); f:fireTimer(); eq(hud.last_state.vitals.roundtime,4)
+end)
 test("GMCP roundtime pauses controlled walking until a ready vitals update",function()
   local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1,roundtime=0}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}
   f.route={rooms={175,176,180},commands={"north","east"}}
@@ -706,6 +740,7 @@ test("map adapter validates exact owned route steps and preserves special comman
   local owners={[1]="DragonsGateHUD",[2]="DragonsGateHUD",[3]="DragonsGateHUD"}
   local adapter=MapAdapter.new({
     getRoomUserData=function(id,key) if key=="dghud.owner" then return owners[id] or "" end end,
+    getRoomExits=function() return {} end,
     getSpecialExits=function(from,listAll) eq(from,1); eq(listAll,true); return {[2]={['Go Gate']="0"}} end,
   })
   local ok,command=adapter:validateRouteStep(1,2,"Go Gate")
@@ -718,7 +753,7 @@ test("map adapter validates exact owned route steps and preserves special comman
   eq(ok,nil); eq(command,"special exit is not confirmed from 1 to 2")
   owners[2]="Personal"
   ok,command=adapter:validateRouteStep(1,2,"Go Gate")
-  eq(ok,nil); eq(command,"special exit is not confirmed from 1 to 2")
+  eq(ok,nil); eq(command,"route endpoints are not owned by DragonsGateHUD")
 end)
 
 test("walkto crosses a confirmed special exit one command at a time around roundtime",function()
@@ -739,7 +774,7 @@ end)
 test("native map click crosses a confirmed special exit with exact generated isolation",function()
   local oldHook,oldPath,oldDir=_G.doSpeedWalk,_G.speedWalkPath,_G.speedWalkDir
   local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start())
-  hud.map.rooms[2]={}; hud.map.rooms[3]={}; hud.map.special[1]={from=1,to=2,command="go gate"}
+  hud.map.rooms[2]={}; hud.map.rooms[3]={}; hud.map.special[1]={from=1,to=2,command="go gate"}; hud.map.links[1]={from=2,to=3,direction="e"}
   _G.speedWalkPath={1,2,3}; _G.speedWalkDir={"go gate","east"}; assert(_G.doSpeedWalk())
   eq(f.sentCommands[1],"go gate"); eq(hud.generated_command,"go gate")
   f.callbacks["sysDataSendRequest"](nil,"go gate"); f.gmcp=gmcpRoom(2); f.callbacks["gmcp.Room.Info"]()
@@ -788,7 +823,7 @@ test("native map click uses walker route and restores the previous global hook",
   local previous=function() return "personal" end; local oldHook=_G.doSpeedWalk; _G.doSpeedWalk=previous
   local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}
   local hud=Main.new(f,{layout={}}); assert(hud:start()); local ownedHook=_G.doSpeedWalk; eq(ownedHook~=previous,true)
-  hud.map.rooms[176]={}; _G.speedWalkPath={175,176}; _G.speedWalkDir={"north"}; assert(ownedHook()); eq(f.sentCommands[#f.sentCommands],"n")
+  hud.map.rooms[176]={}; hud.map.links[1]={from=175,to=176,direction="n"}; _G.speedWalkPath={175,176}; _G.speedWalkDir={"north"}; assert(ownedHook()); eq(f.sentCommands[#f.sentCommands],"n")
   hud:shutdown(); eq(_G.doSpeedWalk,previous); eq(f:count(f.timers),0); eq(f:count(f.aliases),0)
   _G.doSpeedWalk=oldHook; _G.speedWalkPath=nil; _G.speedWalkDir=nil
 end)
@@ -805,14 +840,14 @@ test("map click delegates unowned and mixed routes but handles wholly owned rout
   local hud=Main.new(f,{layout={},mapper={}}); assert(hud:start()); hud.map.isOwned=function(_,id) return id==175 or id==176 end
   _G.speedWalkPath={900,901}; _G.speedWalkDir={"n"}; eq(_G.doSpeedWalk(),"personal"); eq(delegated,1)
   _G.speedWalkPath={175,901}; _G.speedWalkDir={"n"}; eq(_G.doSpeedWalk(),"personal"); eq(delegated,2)
-  _G.speedWalkPath={175,176}; _G.speedWalkDir={"n"}; assert(_G.doSpeedWalk()); eq(delegated,2)
+  hud.map.links[1]={from=175,to=176,direction="n"}; _G.speedWalkPath={175,176}; _G.speedWalkDir={"n"}; assert(_G.doSpeedWalk()); eq(delegated,2)
   hud:shutdown(); eq(_G.doSpeedWalk,personal); _G.doSpeedWalk=oldHook; _G.speedWalkPath=oldPath; _G.speedWalkDir=oldDir
 end)
 
 test("native map click accepts speedWalkPath without the current room",function()
   local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}
   local hud=Main.new(f,{layout={}}); assert(hud:start())
-  hud.map.rooms[176]={}; _G.speedWalkPath={176}; _G.speedWalkDir={"north"}; assert(_G.doSpeedWalk()); eq(hud.walker:active(),true); eq(f.sentCommands[#f.sentCommands],"n")
+  hud.map.rooms[176]={}; hud.map.links[1]={from=175,to=176,direction="n"}; _G.speedWalkPath={176}; _G.speedWalkDir={"north"}; assert(_G.doSpeedWalk()); eq(hud.walker:active(),true); eq(f.sentCommands[#f.sentCommands],"n")
   hud:shutdown(); _G.speedWalkPath=nil; _G.speedWalkDir=nil
 end)
 

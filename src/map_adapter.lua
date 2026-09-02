@@ -113,10 +113,19 @@ end
 
 function MapAdapter:ensureArea(areaKey)
   local key=tostring(areaKey or "unknown")
-  if self.areas[key]~=nil then return self.areas[key] end
   local name=areaName(key)
   local areas,areasErr=read(self.api,"getAreaTable")
   if areas==nil then return nil,areasErr end
+  local cached=self.areas[key]
+  if cached~=nil then
+    if positiveInteger(areas[name])==positiveInteger(cached) then
+      local owner,ownerErr=read(self.api,"getAreaUserData",cached,"dghud.owner")
+      if ownerErr then return nil,ownerErr end
+      if owner==self.owner then return cached end
+      return nil,"area "..name.." is not owned by DragonsGateHUD"
+    end
+    self.areas[key]=nil; self.createdAreas[cached]=nil
+  end
   local area=areas[name]
   local createdThisCall=false
   if area~=nil then
@@ -146,6 +155,16 @@ function MapAdapter:ensureArea(areaKey)
   self.createdAreas[area]=nil
   self.areas[key]=area
   return area
+end
+
+function MapAdapter:areaDeletionSafe(areaID)
+  local area=positiveInteger(areaID)
+  if not area then return nil,"mapper area ID must be a positive integer" end
+  local labels,labelsErr=read(self.api,"getMapLabels",area)
+  if labels==nil then return nil,labelsErr or "map label ownership cannot be verified" end
+  if type(labels)~="table" then return nil,"Mudlet mapper API getMapLabels returned invalid data" end
+  if next(labels)~=nil then return nil,"mapper area "..tostring(area).." contains labels not demonstrably owned by DragonsGateHUD" end
+  return true
 end
 
 function MapAdapter:roomRecord(roomID)
@@ -223,6 +242,81 @@ function MapAdapter:roomsInArea(areaID)
   return normalized
 end
 
+function MapAdapter:beginAreaRoomScan(areaIDs)
+  if type(areaIDs)~="table" then return nil,"mapper area IDs must be a table" end
+  local normalized={}
+  for index,value in ipairs(areaIDs) do
+    local area=positiveInteger(value); if not area then return nil,"mapper area ID must be a positive integer" end
+    normalized[index]=area
+  end
+  return {area_ids=normalized,area_index=1,current=nil}
+end
+
+function MapAdapter:scanAreaRoomBatch(scan,limit)
+  if type(scan)~="table" or type(scan.area_ids)~="table" then return nil,nil,"invalid mapper area scan" end
+  local maximum=positiveInteger(limit); if not maximum then return nil,nil,"mapper scan limit must be a positive integer" end
+  local found={}
+  while #found<maximum do
+    local area=scan.area_ids[scan.area_index]
+    if not area then return found,true end
+    if not scan.current then
+      local rooms,err=read(self.api,"getAreaRooms1",area)
+      if rooms==nil then return nil,nil,err or "Mudlet mapper API getAreaRooms1 failed" end
+      if type(rooms)~="table" then return nil,nil,"Mudlet mapper API getAreaRooms1 returned invalid data" end
+      scan.current={rooms=rooms,key=nil,count=0,minimum=nil,maximum=nil,area=area}
+    end
+    local current=scan.current
+    local key,value=next(current.rooms,current.key); current.key=key
+    if key==nil then
+      if current.count>0 and (current.minimum>1 or current.count~=current.maximum-current.minimum+1) then return nil,nil,"Mudlet mapper API getAreaRooms1 returned invalid data" end
+      scan.current=nil; scan.area_index=scan.area_index+1
+    else
+      local room=type(value)=="number" and positiveInteger(value) or nil
+      if type(key)~="number" or key%1~=0 or key<0 or not room then return nil,nil,"Mudlet mapper API getAreaRooms1 returned invalid data" end
+      current.count=current.count+1; current.minimum=current.minimum and math.min(current.minimum,key) or key; current.maximum=current.maximum and math.max(current.maximum,key) or key
+      found[#found+1]={id=room,area=area}
+    end
+  end
+  return found,false
+end
+
+function MapAdapter:beginInboundScan()
+  local rooms,err=read(self.api,"getRooms")
+  if rooms==nil then return nil,err or "Mudlet mapper API getRooms failed" end
+  if type(rooms)~="table" then return nil,"Mudlet mapper API getRooms returned invalid data" end
+  return {rooms=rooms,key=nil}
+end
+
+function MapAdapter:scanInboundBatch(scan,deleting,limit)
+  if type(scan)~="table" or type(scan.rooms)~="table" or type(deleting)~="table" then return nil,nil,"invalid inbound mapper scan" end
+  local maximum=positiveInteger(limit); if not maximum then return nil,nil,"mapper scan limit must be a positive integer" end
+  local inspected=0; local sources={}
+  while inspected<maximum do
+    local key,name=next(scan.rooms,scan.key); scan.key=key
+    if key==nil then return sources,true end
+    local source=type(key)=="number" and positiveInteger(key) or nil
+    if not source or type(name)~="string" then return nil,nil,"Mudlet mapper API getRooms returned invalid data" end
+    inspected=inspected+1
+    if not deleting[source] then
+      local ordinary,ordinaryErr=read(self.api,"getRoomExits",source)
+      if ordinary==nil then return nil,nil,ordinaryErr or "Mudlet mapper API getRoomExits failed" end
+      if type(ordinary)~="table" then return nil,nil,"Mudlet mapper API getRoomExits returned invalid data" end
+      local special,specialErr=read(self.api,"getSpecialExits",source,true)
+      if special==nil then return nil,nil,specialErr or "Mudlet mapper API getSpecialExits failed" end
+      if type(special)~="table" then return nil,nil,"Mudlet mapper API getSpecialExits returned invalid data" end
+      local inbound=false
+      for _,destination in pairs(ordinary) do if deleting[positiveInteger(destination)] then inbound=true; break end end
+      if not inbound then for destination in pairs(special) do if deleting[positiveInteger(destination)] then inbound=true; break end end end
+      if inbound then
+        local record,recordErr=self:roomRecord(source); if not record then return nil,nil,recordErr end
+        if not record.exists or not record.owned then return nil,nil,"unowned room "..tostring(source).." has an inbound exit" end
+        sources[#sources+1]=source
+      end
+    end
+  end
+  return sources,false
+end
+
 function MapAdapter:inboundSources(roomIDs)
   if type(roomIDs)~="table" then return nil,"room IDs must be a table" end
   local deleting={}
@@ -280,6 +374,7 @@ function MapAdapter:deleteEmptyOwnedArea(areaID)
   local record,recordErr=self:areaRecord(areaID)
   if record==nil then return nil,recordErr end
   if not record.owned then return nil,"mapper area "..tostring(record.id).." is not owned by DragonsGateHUD" end
+  local safe,safeErr=self:areaDeletionSafe(record.id); if not safe then return nil,safeErr end
   local rooms,roomsErr=self:roomsInArea(record.id)
   if rooms==nil then return nil,roomsErr end
   if #rooms>0 then return nil,"mapper area "..tostring(record.id).." is not empty" end
@@ -430,11 +525,25 @@ function MapAdapter:specialExitMatches(fromID,toID,command)
 end
 
 function MapAdapter:validateRouteStep(fromID,toID,command)
+  local from=positiveInteger(fromID); local to=positiveInteger(toID)
+  if not from or not to then return nil,"route endpoints require positive numeric IDs" end
+  if not self:isOwned(from) or not self:isOwned(to) then return nil,"route endpoints are not owned by DragonsGateHUD" end
   local direction=MapperModel.direction(command)
-  if direction then return true,direction end
+  if direction then
+    local exits,exitsErr=read(self.api,"getRoomExits",from)
+    if exits==nil then return nil,exitsErr end
+    if type(exits)~="table" then return nil,"Mudlet mapper API getRoomExits returned invalid data" end
+    if positiveInteger(exits[direction])==to then return true,direction end
+    return nil,"standard exit is not persisted from "..tostring(from).." to "..tostring(to)
+  end
   local normalized=normalizeCommand(command)
-  if self:isOwned(fromID) and self:isOwned(toID) and self:specialExitMatches(fromID,toID,normalized) then return true,normalized end
-  return nil,"special exit is not confirmed from "..tostring(fromID).." to "..tostring(toID)
+  if self:specialExitMatches(from,to,normalized) then return true,normalized end
+  return nil,"special exit is not confirmed from "..tostring(from).." to "..tostring(to)
+end
+
+function MapAdapter:defer(callback)
+  if type(callback)~="function" then return nil,"deferred callback is required" end
+  return invoke(self.api,"tempTimer",0,callback)
 end
 
 function MapAdapter:connectSpecial(fromID,toID,command)
@@ -537,7 +646,7 @@ end
 function MapAdapter.mudletApi(globals)
   globals=globals or _G
   local api={}
-  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","getAreaRooms1","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","getRoomExits","addSpecialExit","getSpecialExits","getRoomCoordinates","getRooms","getRoomsByPosition","getMapZoom","setMapZoom","setRoomIDbyHash","centerview","updateMap"}
+  local names={"addRoom","deleteRoom","addAreaName","deleteArea","getAreaTable","getAreaRooms1","getMapLabels","setAreaUserData","getAreaUserData","setRoomArea","getRoomArea","setRoomName","setRoomCoordinates","setRoomUserData","getRoomUserData","setExitStub","setExit","getRoomExits","addSpecialExit","getSpecialExits","getRoomCoordinates","getRooms","getRoomsByPosition","getMapZoom","setMapZoom","setRoomIDbyHash","centerview","updateMap","tempTimer"}
   local function wrapper(name)
     return function(...)
       local fn=globals[name]
@@ -548,7 +657,7 @@ function MapAdapter.mudletApi(globals)
       return a,b,c
     end
   end
-  local mutations={addRoom=true,deleteRoom=true,addAreaName=true,deleteArea=true,setAreaUserData=true,setRoomArea=true,setRoomName=true,setRoomCoordinates=true,setRoomUserData=true,setExitStub=true,setExit=true,addSpecialExit=true,setMapZoom=true,setRoomIDbyHash=true,centerview=true,updateMap=true}
+  local mutations={addRoom=true,deleteRoom=true,addAreaName=true,deleteArea=true,setAreaUserData=true,setRoomArea=true,setRoomName=true,setRoomCoordinates=true,setRoomUserData=true,setExitStub=true,setExit=true,addSpecialExit=true,setMapZoom=true,setRoomIDbyHash=true,centerview=true,updateMap=true,tempTimer=true}
   for _,name in ipairs(names) do
     if mutations[name] then
       api[name]=wrapper(name)

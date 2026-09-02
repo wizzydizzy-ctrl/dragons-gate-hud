@@ -44,6 +44,33 @@ local function fakeMap()
     local result={}; for _,roomID in ipairs(source) do result[#result+1]=roomID end
     table.sort(result); return result
   end
+  function map:areaDeletionSafe(id) if self.unsafeArea==id then return nil,"mapper area "..id.." contains labels not demonstrably owned by DragonsGateHUD" end; return true end
+  function map:beginAreaRoomScan(areaIDs) self.areaScanStarts=(self.areaScanStarts or 0)+1; return {areas=areaIDs,area=1,index=1} end
+  function map:scanAreaRoomBatch(scan,limit)
+    self.areaScanCalls=(self.areaScanCalls or 0)+1; local out={}; local processed=0
+    while processed<limit do
+      local area=scan.areas[scan.area]; if not area then self.maxAreaBatch=math.max(self.maxAreaBatch or 0,processed); return out,true end
+      local rooms=self.areaRoomsByID[area] or {}; local room=rooms[scan.index]
+      if room then out[#out+1]={id=room,area=area}; scan.index=scan.index+1; processed=processed+1 else scan.area=scan.area+1; scan.index=1 end
+    end
+    self.maxAreaBatch=math.max(self.maxAreaBatch or 0,processed); return out,false
+  end
+  function map:beginInboundScan() self.inboundScanStarts=(self.inboundScanStarts or 0)+1; return {key=nil} end
+  function map:scanInboundBatch(scan,deleting,limit)
+    self.inboundScanCalls=(self.inboundScanCalls or 0)+1; local out={}; local processed=0
+    while processed<limit do
+      local source=next(self.rooms,scan.key); scan.key=source
+      if source==nil then self.maxInboundBatch=math.max(self.maxInboundBatch or 0,processed); return out,true end
+      processed=processed+1
+      if not deleting[source] then
+        for _,destination in ipairs(self.inbound[source] or {}) do
+          if deleting[destination] then if not self.rooms[source].owned then return nil,nil,"unowned room "..source.." has an inbound exit" end; out[#out+1]=source; break end
+        end
+      end
+    end
+    self.maxInboundBatch=math.max(self.maxInboundBatch or 0,processed); return out,false
+  end
+  function map:defer(callback) callback(); return true end
   function map:inboundSources(ids)
     local selected={}; for _,id in ipairs(ids) do selected[id]=true end
     local result={}
@@ -125,8 +152,42 @@ end)
 test("clear-all preview selects every owned area and permits the current owned room",function()
   local cleanup,map,runtime=fixture(); runtime.snapshot.current_room=200
   local preview=assert(cleanup:previewAll())
-  eq(preview.operation,"clear_all"); listEq(preview.area_ids,{8,42}); listEq(preview.room_ids,{200,201,900,901})
+  eq(preview.operation,"clear_all"); listEq(preview.area_ids,{8,42}); listEq(preview.room_ids,{})
   eq(preview.allow_current,true); eq(map.rooms[50].owned,false)
+end)
+
+test("clear-all preview performs no room discovery ownership or inbound iteration",function()
+  local cleanup,map,runtime=fixture(); runtime.snapshot.current_room=200
+  local roomRecords=0; local original=map.roomRecord; function map:roomRecord(id) roomRecords=roomRecords+1; return original(self,id) end
+  local preview=assert(cleanup:previewAll()); listEq(preview.area_ids,{8,42}); listEq(preview.room_ids,{})
+  eq(roomRecords,0); eq(map.areaScanStarts,nil); eq(map.inboundScanStarts,nil); eq(map.deleteCalls,0)
+end)
+
+test("area and clear-all previews refuse areas containing unowned labels",function()
+  local cleanup,map=fixture(); map.unsafeArea=8
+  local result,err=cleanup:previewArea(8); eq(result,nil); assert(err:find("contains labels",1,true)); eq(map.deleteCalls,0)
+  result,err=cleanup:previewAll(); eq(result,nil); assert(err:find("contains labels",1,true)); eq(map.deleteCalls,0)
+end)
+
+test("large clear-all yields in bounded batches",function()
+  local cleanup,map,runtime=fixture(); map.rooms={}; map.areaRoomsByID[8]={}; map.areaRoomsByID[42]={}; map.areas[42]=nil; map.areaNames={["Alpha"]=8}
+  for id=1,250 do map.rooms[id]={exists=true,owned=true,area=8,partition="A"}; map.areaRoomsByID[8][id]=id end
+  function map:roomsInArea() error("eager room discovery must not run") end
+  function map:inboundSources() error("eager inbound discovery must not run") end
+  local queued={}; function map:defer(callback) queued[#queued+1]=callback; return #queued end
+  cleanup.batch_size=50; runtime.snapshot.current_room=1
+  local result=assert(cleanup:confirm(assert(cleanup:previewAll()).token)); eq(result.pending,true); eq(result.background,true); eq(map.deleteCalls,0); eq(map.areaScanStarts,1); eq(map.areaScanCalls,nil)
+  local maximumDeletes=0; while #queued>0 do local callback=table.remove(queued,1); local before=map.deleteCalls; callback(); maximumDeletes=math.max(maximumDeletes,map.deleteCalls-before) end
+  eq(maximumDeletes,50); eq(map.maxAreaBatch,50); eq(map.maxInboundBatch<=50,true); eq(#result.deleted,250); eq(result.pending,false); eq(cleanup.busy,false); eq(runtime.afterCalls,1); eq(runtime.afterResult.pending,false)
+end)
+
+test("deferred clear-all revalidates ownership and aborts remaining batches",function()
+  local cleanup,map,runtime=fixture(); map.rooms={}; map.areaRoomsByID[8]={}; map.areaRoomsByID[42]={}; map.areas[42]=nil; map.areaNames={["Alpha"]=8}
+  for id=1,120 do map.rooms[id]={exists=true,owned=true,area=8,partition="A"}; map.areaRoomsByID[8][id]=id end
+  local queued={}; function map:defer(callback) queued[#queued+1]=callback; return #queued end
+  cleanup.batch_size=50; runtime.snapshot.current_room=1
+  local result=assert(cleanup:confirm(assert(cleanup:previewAll()).token)); while #result.deleted==0 and #queued>0 do table.remove(queued,1)() end; map.rooms[51].owned=false; table.remove(queued,1)()
+  eq(#result.deleted,50); eq(result.failed,51); eq(#result.untouched,70); eq(map.deleteCalls,51); eq(result.pending,false); eq(runtime.afterCalls,1); eq(map.areas[8]~=nil,true)
 end)
 
 test("clear-all confirmation deletes every owned area but preserves personal map data",function()

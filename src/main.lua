@@ -1,7 +1,7 @@
 local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local Clock=require("game_clock"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local SpecialTransition=require("special_transition"); local MapWalker=require("map_walker"); local Cleanup=require("map_cleanup")
 local Main={}; Main.__index=Main
 function Main.new(adapter,settings)
-  local self=setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=0,managed_rooms={}},Main)
+  local self=setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=nil,managed_rooms={}},Main)
   self.clock=Clock.new(settings and settings.time,function() return adapter:epoch() end)
   return self
 end
@@ -38,7 +38,7 @@ function Main:refreshClock()
   if self.view and type(self.view.updateClock)=="function" then self.view:updateClock(clock) end
   return clock
 end
-function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {}); normalized.vitals.roundtime=self.roundtime_display or normalized.vitals.roundtime; normalized.clock=self:clockDisplay(); self.view:update(normalized); self.last_state=normalized; if self.chat then self.chat:syncCharacter() end; return true end
+function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {}); if self.roundtime_display~=nil then normalized.vitals.roundtime=self.roundtime_display end; normalized.clock=self:clockDisplay(); self.view:update(normalized); self.last_state=normalized; if self.chat then self.chat:syncCharacter() end; return true end
 function Main:onClockSync(value) local ok,err=self.clock:sync(value,self.adapter:epoch()); if not ok then return nil,err end; self:refreshClock(); return true end
 function Main:scheduleClockTick()
   if self.clock_timer then return true end
@@ -48,11 +48,15 @@ function Main:scheduleClockTick()
   if not id then return nil,err or "clock timer could not be created" end
   self.clock_timer=id; return true
 end
-function Main:characterName() return self.last_state and self.last_state.character and self.last_state.character.full_name or nil end
+function Main:characterName()
+  if self.character_entry_name and self.character_entry_name~="" then return self.character_entry_name end
+  return self.last_state and self.last_state.character and self.last_state.character.full_name or nil
+end
 function Main:onCharacterEntry(name)
   name=tostring(name or ""):match("^%s*(.-)%s*$")
   if self.character_entry_started and (name=="" or name==self.character_entry_name) then return false end
   self.character_entry_started=true; self.character_entry_name=name~="" and name or self.character_entry_name
+  if self.chat then self.chat:syncCharacter() end
   local function refreshCommands()
     local collector=self.collector
     if collector then collector:refresh() end
@@ -251,26 +255,43 @@ function Main:previewCleanup(method,target)
   local ids={}; for index,roomID in ipairs(preview.room_ids) do ids[index]=tostring(roomID) end
   local areas={}; for index,areaID in ipairs(preview.area_ids or {}) do areas[index]=tostring(areaID) end
   local message="Operation: "..preview.operation.."\nArea: "..tostring(preview.area_id or "none")
-  if #areas>0 then message=message.."\nAreas: "..table.concat(areas,",") end
-  message=message.."\nCount: "..tostring(#preview.room_ids).."\nRoom IDs: "..table.concat(ids,",").."\n[DGHUD Map] Preview "..preview.token.." expires in 30 seconds.\n[DGHUD Map] Confirm with: dghud map confirm "..preview.token
+  if preview.operation=="clear_all" then
+    local shown={}; for index=1,math.min(#areas,20) do shown[index]=areas[index] end
+    message=message.."\nAreas: "..tostring(#areas).." total"
+    if #shown>0 then message=message.." ("..table.concat(shown,",")..(#areas>#shown and ",..." or "")..")" end
+    if preview.incremental then message=message.."\nRooms: counted after confirmation in safe batches"
+    else message=message.."\nRooms: "..tostring(#preview.room_ids).." total" end
+  else
+    if #areas>0 then message=message.."\nAreas: "..table.concat(areas,",") end
+    message=message.."\nCount: "..tostring(#preview.room_ids).."\nRoom IDs: "..table.concat(ids,",")
+  end
+  message=message.."\n[DGHUD Map] Preview "..preview.token.." expires in 30 seconds.\n[DGHUD Map] Confirm with: dghud map confirm "..preview.token
   self:reportCleanup(message,false); return preview
 end
 function Main:confirmCleanup(token)
+  self.clear_all_armed_at=nil
   local result,err=self.cleanup:confirm(token)
   if self.view and self.view.setMapClearPending then self.view:setMapClearPending(false) end
   if not result then self:reportCleanup(err,true); return nil,err end
+  if result.pending then self:reportCleanup("Cleanup started; large map data will be removed in safe batches.",false); return result end
+  self:reportCleanup(self:cleanupResultMessage(result),result.error~=nil); return result
+end
+function Main:cleanupResultMessage(result)
   local function ids(values) local out={}; for i,value in ipairs(values or {}) do out[i]=tostring(value) end; return #out>0 and table.concat(out,",") or "none" end
   local message="Deleted IDs: "..ids(result.deleted).."\nFailed ID: "..tostring(result.failed or "none").."\nUntouched IDs: "..ids(result.untouched).."\nArea deleted: "..tostring(result.area_deleted==true)
   if #(result.deleted_areas or {})>0 then message=message.."\nDeleted areas: "..ids(result.deleted_areas) end
   if result.error then message=message.."\nError: "..tostring(result.error) end
-  self:reportCleanup(message,result.error~=nil); return result
+  return message
 end
 function Main:clearAllMapsAction()
   local pending=self.cleanup and self.cleanup:pending()
   if pending and pending.operation=="clear_all" then
+    local now=self.adapter.cleanupClock and self.adapter:cleanupClock() or os.time()
+    if self.clear_all_armed_at and now-self.clear_all_armed_at<1 then return nil,"wait one second before confirming clear all" end
     return self:confirmCleanup(pending.token)
   end
   local preview,err=self:previewCleanup("previewAll")
+  self.clear_all_armed_at=preview and (self.adapter.cleanupClock and self.adapter:cleanupClock() or os.time()) or nil
   if self.view and self.view.setMapClearPending then self.view:setMapClearPending(preview~=nil) end
   return preview,err
 end
@@ -355,11 +376,15 @@ function Main:start()
   function walkerAdapter:clearGenerated() self.owner.generated_command=nil end
   self.walker=MapWalker.new(walkerAdapter,function(kind,message,isError) self:mapperStatus(kind,message,isError) end,(self.settings.mapper and self.settings.mapper.walk_timeout) or 12)
   local initialVitals=self.adapter:getGMCP(); initialVitals=initialVitals and initialVitals.Char and initialVitals.Char.Vitals
-  self.walker:onRoundtime(initialVitals and initialVitals.roundtime or 0)
+  self.roundtime_display=math.max(0,math.floor(tonumber(initialVitals and initialVitals.roundtime) or 0)); self.walker:onRoundtime(self.roundtime_display)
   local cleanupRuntime={owner=self}
   function cleanupRuntime:safetySnapshot(roomIDs) return self.owner:safetySnapshot(roomIDs) end
   function cleanupRuntime:beforeDelete(plan) return self.owner:beforeCleanupDelete(plan) end
-  function cleanupRuntime:afterDelete(result) return self.owner:afterCleanupDelete(result) end
+  function cleanupRuntime:afterDelete(result)
+    local ok,err=self.owner:afterCleanupDelete(result)
+    if result.background then self.owner:reportCleanup(self.owner:cleanupResultMessage(result),result.error~=nil or not ok) end
+    return ok,err
+  end
   local clock=function() return self.adapter:cleanupClock() end
   local tokenFactory=function() local token,err=self.adapter:cleanupToken(); if not token then error(err or "secure random source is unavailable",0) end; return token end
   self.cleanup=Cleanup.new(self.map,cleanupRuntime,clock,tokenFactory,30)
@@ -372,7 +397,7 @@ function Main:start()
   self.collector=Collector.new(self.adapter,Parser,function(snapshot,key) if key=="time" then self:onClockSync(snapshot.time) else self:refresh() end end,function(value) self:onRoundtime(value) end,function(name) self:onCharacterEntry(name) end); local collectorOk,collectorErr=self.collector:start(); if not collectorOk then error(collectorErr,0) end
   if self.adapter.isCharacterActive and self.adapter:isCharacterActive() then self:onCharacterEntry() end
   for _,name in ipairs(Events.gmcp) do local eventName=name; self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(eventName,function()
-    if eventName=="gmcp.Char.Vitals" and self.walker then local data=self.adapter:getGMCP(); local vitals=data and data.Char and data.Char.Vitals; self.walker:onRoundtime(vitals and vitals.roundtime or 0) end
+    if eventName=="gmcp.Char.Vitals" then local data=self.adapter:getGMCP(); local vitals=data and data.Char and data.Char.Vitals; self:onRoundtime(vitals and vitals.roundtime or 0); return end
     self:refresh()
   end) end
   self.runtime.events[#self.runtime.events+1]=self.adapter:addEvent(Events.mapper.room,function()
@@ -409,10 +434,10 @@ function Main:start()
     {"^dghud map clear area (.+)$",function(value) return self:previewCleanup("previewArea",aliasArgument(value)) end},
     {"^dghud map clear all$",function() return self:clearAllMapsAction() end},
     {"^dghud map confirm (\\S+)$",function(value) return self:confirmCleanup(aliasArgument(value)) end},
-    {"^dghud map cancel$",function() local ok,err=self.cleanup:cancel(); if self.view and self.view.setMapClearPending then self.view:setMapClearPending(false) end; if not ok then self:reportCleanup(err,true); return nil,err end; self:reportCleanup("Cleanup preview cancelled.",false); return true end},
+    {"^dghud map cancel$",function() local ok,err=self.cleanup:cancel(); self.clear_all_armed_at=nil; if self.view and self.view.setMapClearPending then self.view:setMapClearPending(false) end; if not ok then self:reportCleanup(err,true); return nil,err end; self:reportCleanup("Cleanup preview cancelled.",false); return true end},
   }
   for _,entry in ipairs(cleanupAliases) do self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias(entry[1],entry[2]) end
-  self.started=true; local data=self.adapter:getGMCP(); if self:mapperEnabled() and data and data.Room and data.Room.Info then local mapped=self.automapper:onRoom(data.Room.Info); if mapped and tonumber(data.Room.Info.num) then self.managed_rooms[tonumber(data.Room.Info.num)]=true end end; self:refresh(); self:scheduleClockTick()
+  self.started=true; local data=self.adapter:getGMCP(); if self:mapperEnabled() and data and data.Room and data.Room.Info then local mapped=self.automapper:onRoom(data.Room.Info); if mapped and tonumber(data.Room.Info.num) then self.managed_rooms[tonumber(data.Room.Info.num)]=true end end; self:refresh(); self:scheduleRoundtimeTick(); self:scheduleClockTick()
   local chatStarted,chatErr=self:startChat(); if not chatStarted then error(chatErr,0) end
   end)
   if not startupOk then pcall(function() self:shutdown() end); return nil,startupErr end

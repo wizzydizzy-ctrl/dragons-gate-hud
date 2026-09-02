@@ -402,9 +402,20 @@ function View:applyLayout(layout)
       if skills_y-(inventory_y+inventory_h)>=right_details_h+24 then place(self.details,card_x,inventory_y+inventory_h+12,card_w,right_details_h) else self.details:hide() end
       place(self.skills,card_x,skills_y,card_w,skills_h); place(self.skills_title,"100%-"..(layout.right-p*2),skills_y+p,card_w-p*2,title_h); place(self.skills_output,"100%-"..(layout.right-p*2),skills_y+p+title_h,card_w-p*2,list_h)
     else
-      self.skills:hide(); self.skills_title:hide(); self.skills_output:hide(); self.details:hide()
-      local fallback_h=math.max(0,rail_bottom-inventory_y); if fallback_h>title_h+layout.list_row_height+p*2 then place(self.inventory,card_x,inventory_y,card_w,fallback_h); place(self.inventory_title,"100%-"..(layout.right-p*2),inventory_y+p,card_w-p*2,title_h); place(self.inventory_output,"100%-"..(layout.right-p*2),inventory_y+p+title_h,card_w-p*2,math.max(layout.list_row_height,fallback_h-p*2-title_h-footer_h-8)); place(self.inventory_footer,"100%-"..(layout.right-p*2),rail_bottom-p-footer_h,card_w-p*2,footer_h) else self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide() end
+      self.details:hide()
+      local fallback_h=math.max(0,rail_bottom-inventory_y); local gap=8
+      local minimum_inventory=p*2+title_h+layout.list_row_height+footer_h+4
+      local minimum_skills=p*2+title_h+layout.list_row_height+4
+      if fallback_h>=minimum_inventory+gap+minimum_skills then
+        local inventory_h=math.floor((fallback_h-gap)/2); local skills_h=fallback_h-gap-inventory_h; local skills_y=inventory_y+inventory_h+gap
+        place(self.inventory,card_x,inventory_y,card_w,inventory_h); place(self.inventory_title,"100%-"..(layout.right-p*2),inventory_y+p,card_w-p*2,title_h); place(self.inventory_output,"100%-"..(layout.right-p*2),inventory_y+p+title_h,card_w-p*2,math.max(layout.list_row_height,inventory_h-p*2-title_h-footer_h-4)); place(self.inventory_footer,"100%-"..(layout.right-p*2),inventory_y+inventory_h-p-footer_h,card_w-p*2,footer_h)
+        place(self.skills,card_x,skills_y,card_w,skills_h); place(self.skills_title,"100%-"..(layout.right-p*2),skills_y+p,card_w-p*2,title_h); place(self.skills_output,"100%-"..(layout.right-p*2),skills_y+p+title_h,card_w-p*2,math.max(layout.list_row_height,skills_h-p*2-title_h-4))
+      else
+        self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide()
+      end
     end
+    if self.inventory_output.visible then self.inventory_content:show() end
+    if self.skills_output.visible then self.skills_content:show() end
     View.raiseCards({self.equipment,self.inventory,self.details,self.skills,self.inventory_title,self.inventory_output,self.inventory_content,self.inventory_footer,self.skills_title,self.skills_output,self.skills_content})
   else
     self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide(); self.vitals_right:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.map_clear_all:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
@@ -424,8 +435,9 @@ function View:applyLayout(layout)
     if layout.mapper_visible and mapper_h>0 then
       place(self.mapper_frame,inset,mapper_y,"100%-"..(inset*2),mapper_h)
       local toolbar=layout.lower_mapper_toolbar_height or 0; local button_h=math.max(16,toolbar-6)
-      local frame_w=math.max(1,layout.left-inset*2); local clear_w=math.max(54,math.min(110,frame_w-84))
-      place(self.map_zoom_out,4,3,24,button_h); place(self.map_center,30,3,24,button_h); place(self.map_zoom_in,56,3,24,button_h)
+      local frame_w=math.max(1,layout.left-inset*2); local clear_w=math.max(54,math.min(110,frame_w-60))
+      local zoom_w=math.max(12,math.min(24,math.floor((frame_w-clear_w-8)/3)))
+      place(self.map_zoom_out,4,3,zoom_w,button_h); place(self.map_center,4+zoom_w,3,zoom_w,button_h); place(self.map_zoom_in,4+zoom_w*2,3,zoom_w,button_h)
       place(self.map_clear_all,frame_w-clear_w-4,3,clear_w,button_h)
       self.map_zoom_out:echo(View.withFont("<center><b>−</b></center>",layout.lower_utility_font)); self.map_center:echo(View.withFont("<center><b>◎</b></center>",layout.lower_utility_font)); self.map_zoom_in:echo(View.withFont("<center><b>+</b></center>",layout.lower_utility_font))
       self:setMapClearPending(self.map_clear_pending)
@@ -446,7 +458,7 @@ function View:setMapClearAllCallback(callback) self.map_clear_all_callback=type(
 function View:setMapClearPending(pending)
   self.map_clear_pending=pending==true
   local font=self.layout and self.layout.lower_utility_font or 12
-  local text=self.map_clear_pending and "CONFIRM CLEAR" or "⚠ CLEAR ALL"
+  local text=self.map_clear_pending and "CONFIRM" or "CLEAR ALL"
   self.map_clear_all:echo(View.withFont("<center><b>"..text.."</b></center>",font))
   return true
 end
@@ -525,7 +537,7 @@ local function chatConsoleWidth(output,layout)
 end
 local function liveChatColumns(output,layout)
   local fontWidth=chatFontWidth(output)
-  if not fontWidth then return math.max(30,math.floor(tonumber(layout.chat_wrap_columns) or 30)) end
+  if not fontWidth then return math.max(1,math.floor(tonumber(layout.chat_wrap_columns) or 1)) end
   local allowance=output.scrollBar==false and 0 or (tonumber(layout.chat_scrollbar_allowance) or 15)
   local width=math.max(1,chatConsoleWidth(output,layout)-allowance)
   return math.max(1,math.floor(width/fontWidth)),fontWidth
@@ -556,7 +568,7 @@ function View:update(s)
   self.hp:setValue(v.hp.current,math.max(v.hp.maximum,1),"Health  "..v.hp.current.." / "..v.hp.maximum); self.fatigue:setValue(v.fatigue.current,math.max(v.fatigue.maximum,1),"Fatigue  "..v.fatigue.current.." / "..v.fatigue.maximum); self.carry:setValue(v.carry.current,math.max(v.carry.maximum,1),"Carry  "..v.carry.current.." / "..v.carry.maximum)
   if v.psi.visible then self.psi:setValue(v.psi.current,v.psi.maximum,"PSI  "..v.psi.current.." / "..v.psi.maximum) end; if v.web.visible then self.web:setValue(v.web.current,v.web.maximum,"Web  "..v.web.current.." / "..v.web.maximum) end
   self.room:echo(View.withFont("<span style='color:"..t.accent..";font-size:"..layout.lower_heading_font.."px'><b>"..esc(s.room.name).."</b></span><br><span style='color:"..t.muted.."'>Room "..esc(s.room.num or "—").." · Area "..esc(s.room.area or "—").."</span><br><br>"..esc(s.room.environment).."<br>Players &nbsp; <b>"..#s.room.players.."</b><br>Flags &nbsp; "..esc(table.concat(s.room.flags,", ")),layout.lower_body_font))
-  self.compact:echo(View.withFont("<b>HP "..v.hp.current.."/"..v.hp.maximum.."</b> &nbsp; FAT "..v.fatigue.current.."/"..v.fatigue.maximum.." &nbsp; WPN "..(v.weapon_readied and "✓" or "×").." &nbsp; SHD "..(v.shield_readied and "✓" or "×").." &nbsp; <span style='color:"..t.accent.."'>"..esc(s.room.name).."</span>",layout.body_font))
+  self.compact:echo(View.withFont("<b>HP "..v.hp.current.."/"..v.hp.maximum.."</b> &nbsp; FAT "..v.fatigue.current.."/"..v.fatigue.maximum.." &nbsp; CARRY "..v.carry.current.."/"..v.carry.maximum.." &nbsp; WPN "..(v.weapon_readied and "✓" or "×").." &nbsp; SHD "..(v.shield_readied and "✓" or "×").."<br><span style='color:"..t.accent.."'>"..esc(s.room.name).."</span> &nbsp; EXITS "..esc(table.concat(s.room.exits,", ")),layout.body_font))
   self.bottom:echo(View.withFont("EXITS &nbsp; <b>"..esc(table.concat(s.room.exits,", ")).."</b> &nbsp;&nbsp; | &nbsp;&nbsp; CARRY &nbsp; <b>"..v.carry.current.." / "..v.carry.maximum.."</b> &nbsp;&nbsp; | &nbsp;&nbsp; ROUND &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b>",layout.small_font))
   if self.layout then self:applyLayout(self.layout); self.details:echo(View.detailsContent(s.combat,s.attributes,t,self.layout,v)); self:renderInventory(s); self:renderSkills(s); self:renderNavigation(s.room.exits) end
 end

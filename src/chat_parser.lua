@@ -54,7 +54,8 @@ local rules={
   {category="STAFF",pattern='^%[GM%] '..name..': (.+)$',speaker=1,message=2},
   {category="STAFF",pattern='^You hear the voice of '..name..' say, "(.*)"$',speaker=1,message=2},
   {category="DRAGON",pattern="^You pick up "..name.."'s mental link, \"(.*)\"$",speaker=1,message=2},
-  {category="DRAGON",pattern="^You pick up "..name.."'s Dragon link, \"(.*)\" %[%s*r%-[01]%s*%]$",speaker=1,message=2},
+  {category="DRAGON",pattern="^"..name.." picks up "..name.."'s mental link, \"(.*)\"$",speaker=2,message=3},
+  {category="DRAGON",pattern="^You pick up "..name.."'s Dragon link, \"(.*)\" %[%s*r%-(%d+)%s*%]$",speaker=1,message=2},
   {category="CONTACT",pattern="^You pick up "..name.."'s thoughts echoing through the area, \"(.*)\"$",speaker=1,message=2},
 }
 

@@ -3,7 +3,7 @@ local Automapper=require("automapper")
 local Model=require("mapper_model")
 
 local function fakeMapApi(seed)
-  local api={rooms=seed or {},areas={},areaUser={},nextArea=1,fail={},path=nil,refreshed=0,deletedRooms={},deletedAreas={},special={},specialAdds=0,zoom={}}
+  local api={rooms=seed or {},areas={},areaUser={},labels={},nextArea=1,fail={},path=nil,refreshed=0,deletedRooms={},deletedAreas={},special={},specialAdds=0,zoom={}}
   local function gate(name)
     if api.fail[name]=="throw" then error(name.." exploded") end
     if api.fail[name] then return nil,name.." rejected" end
@@ -23,6 +23,7 @@ local function fakeMapApi(seed)
     for roomID,room in pairs(api.rooms) do if room.area==id then out[index]=roomID; index=index+1 end end
     return out
   end
+  function api.getMapLabels(id) local ok,e=gate("getMapLabels"); if not ok then return nil,e end; return api.labels[id] or {} end
   function api.setRoomArea(id,v) local ok,e=gate("setRoomArea"); if not ok then return nil,e end; api.rooms[id].area=v; return true end
   function api.getRoomArea(id) local ok,e=gate("getRoomArea"); if not ok then return nil,e end; return api.rooms[id] and api.rooms[id].area end
   function api.setRoomName(id,v) local ok,e=gate("setRoomName"); if not ok then return nil,e end; api.rooms[id].name=v; return true end
@@ -60,6 +61,7 @@ local function fakeMapApi(seed)
   function api.centerview(id) local ok,e=gate("centerview"); if not ok then return nil,e end; api.centered=id; return true end
   function api.getPath(a,b) local ok,e=gate("getPath"); if not ok then return nil,e end; return api.path or {a.."-"..b} end
   function api.updateMap() local ok,e=gate("updateMap"); if not ok then return nil,e end; api.refreshed=api.refreshed+1; return true end
+  function api.tempTimer(_,callback) local ok,e=gate("tempTimer"); if not ok then return nil,e end; callback(); return 1 end
   return api
 end
 
@@ -123,6 +125,17 @@ end)
 test("reuses a persisted owned area after adapter reload",function()
   local api=fakeMapApi(); assert(Adapter.new(api):ensureRoom(descriptor(1,"Castle"),{})); local area=api.rooms[1].area
   assert(Adapter.new(api):ensureRoom(descriptor(2,"Castle"),{})); eq(api.rooms[2].area,area); eq(api.nextArea,2)
+end)
+
+test("cached area IDs are validated and recreated after external backend clearing",function()
+  local api=fakeMapApi(); local map=Adapter.new(api); local first=assert(map:ensureArea("Castle")); api.areas={}; api.areaUser={}; api.nextArea=first+1
+  local recreated=assert(map:ensureArea("Castle")); assert(recreated~=first); eq(api.areaUser[recreated]["dghud.owner"],"DragonsGateHUD")
+end)
+
+test("area deletion fails closed for labels or unavailable label inspection",function()
+  local api=fakeMapApi(); local map=Adapter.new(api); local area=assert(map:ensureArea("Owned")); api.labels[area]={[1]={text="personal"}}
+  local ok,err=map:deleteEmptyOwnedArea(area); eq(ok,nil); assert(err:find("contains labels",1,true)); eq(api.areas["Dragons Gate - Owned"],area)
+  api.labels[area]={}; api.fail.getMapLabels=true; ok,err=map:deleteEmptyOwnedArea(area); eq(ok,nil); eq(err,"getMapLabels rejected")
 end)
 
 test("rejects an unowned area collision before adding a room",function()
@@ -429,6 +442,20 @@ test("area inspection and membership use persisted state and normalized sorted I
   eq(missing,nil); eq(e,"mapper area 999 does not exist")
 end)
 
+test("incremental room and inbound scans never process more than their limit",function()
+  local api=fakeMapApi(); local map=Adapter.new(api); local owned=assert(map:ensureArea("Owned")); local personal=assert(map:ensureArea("Other"))
+  api.areaUser[personal]["dghud.owner"]="Personal"
+  for id=1,205 do api.rooms[id]={name="",area=owned,user={["dghud.owner"]="DragonsGateHUD"},exits={},stubs={}} end
+  api.rooms[1000]={name="Personal",area=personal,user={},exits={n=1},stubs={}}
+  local scan=assert(map:beginAreaRoomScan({owned})); local discovered={}; local calls=0
+  while true do local batch,done=assert(map:scanAreaRoomBatch(scan,37)); calls=calls+1; assert(#batch<=37); for _,item in ipairs(batch) do discovered[item.id]=true end; if done then break end end
+  eq(calls,6); eq(discovered[1],true); eq(discovered[205],true)
+  local inbound=assert(map:beginInboundScan()); local deleting={}; for id=1,205 do deleting[id]=true end
+  local seenError
+  while true do local batch,done,err=map:scanInboundBatch(inbound,deleting,31); assert(batch==nil or #batch<=31); if not batch then seenError=err; break end; if done then break end end
+  eq(seenError,"unowned room 1000 has an inbound exit")
+end)
+
 test("numeric room names never replace documented getRooms ID keys",function()
   local api=fakeMapApi(); local map=Adapter.new(api)
   assert(map:ensureRoom(descriptor(100,"A"),{x=0,y=0,z=0}))
@@ -502,6 +529,16 @@ end)
 test("creates stubs one-way and confirmed reverse links",function()
   local api=fakeMapApi(); local map=Adapter.new(api); assert(map:ensureRoom(descriptor(1),{})); assert(map:ensureRoom(descriptor(2),{})); assert(map:ensureStub(1,"n"))
   assert(map:connect(1,2,"e",false)); eq(api.rooms[2].exits.w,nil); assert(map:connect(1,2,"n",true)); eq(api.rooms[2].exits.s,1)
+end)
+
+test("route validation requires exact persisted directional connectivity",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(1),{})); assert(map:ensureRoom(descriptor(2),{})); assert(map:ensureRoom(descriptor(3),{}))
+  assert(map:connect(1,2,"n",false))
+  local ok,command=map:validateRouteStep(1,2,"north"); eq(ok,true); eq(command,"n")
+  ok,command=map:validateRouteStep(1,3,"north"); eq(ok,nil); eq(command,"standard exit is not persisted from 1 to 3")
+  api.rooms[2].user["dghud.owner"]="Personal"
+  ok,command=map:validateRouteStep(1,2,"north"); eq(ok,nil); eq(command,"route endpoints are not owned by DragonsGateHUD")
 end)
 
 test("reports stub forward and reverse failures",function()

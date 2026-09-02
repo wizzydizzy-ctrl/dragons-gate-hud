@@ -2,7 +2,7 @@ local Updater=require("updater"); local SHA=require("sha256"); local Adapter=req
 local function releaseManifest(version)
   return {package="DragonsGateHUD",version=version,minimum_mudlet="5.0.0",archive_url="https://github.com/wizzydizzy-ctrl/dragons-gate-hud/releases/download/v"..version.."/DragonsGateHUD.mpackage",sha256=string.rep("a",64),archive_size=100}
 end
-local updateSettings={version="0.2.74",github={owner="wizzydizzy-ctrl",repository="dragons-gate-hud"},update={package_limit=1000}}
+local updateSettings={version="0.2.75",github={owner="wizzydizzy-ctrl",repository="dragons-gate-hud"},update={package_limit=1000}}
 test("update staging lives outside the installed package directory",function()
   local base=Adapter.updateBase("/profile")
   eq(base,"/profile/DGHUDUpdater")
@@ -10,6 +10,7 @@ test("update staging lives outside the installed package directory",function()
 end)
 test("verified update archive retains the Mudlet package name",function()
   eq(Adapter.updateArchivePath("/profile"),"/profile/DGHUDUpdater/staging/DragonsGateHUD.mpackage")
+  eq(Adapter.verifyArchive("prior",SHA.hex("prior")),true); eq(Adapter.verifyArchive("tampered",SHA.hex("prior")),false)
 end)
 test("stable manifest downloads use a unique cache-busting URL",function()
   local url=Adapter.manifestUrl({owner="wizzydizzy-ctrl",repository="dragons-gate-hud"},1788221000)
@@ -46,9 +47,89 @@ test("successful in-session update refreshes command-backed character data",func
   u:installVerifiedAsync("payload",SHA.hex("payload"),function() end)
   eq(refreshed,true)
 end)
+test("replacement failure attempts rollback before completing",function()
+  local order={}; local result
+  local adapter={replacePackageAsync=function(_,_,_,done) order[#order+1]="replace"; done(nil,"install failed") end,rollbackAsync=function(_,_,done) order[#order+1]="rollback"; done(true) end}
+  Updater.new(adapter,{}):installVerifiedAsync("payload",SHA.hex("payload"),function(ok,err) result={ok,err}; order[#order+1]="done" end)
+  eq(table.concat(order,","),"replace,rollback,done"); eq(result[1],nil); eq(result[2],"install failed")
+end)
+test("manifest compatibility blocks replacement on an older known Mudlet",function()
+  local u=Updater.new({mudletVersion=function() return "4.17.2" end},updateSettings)
+  local ok,err=u:validateManifest(releaseManifest("0.2.76")); eq(ok,nil); assert(err:find("older than required",1,true))
+end)
+test("post-install refresh joins the new controller startup sequence",function()
+  local prior=_G.DGHUD; local entries=0; local forced=0
+  _G.DGHUD={controller={character_entry_started=false,onCharacterEntry=function(self) entries=entries+1; self.character_entry_started=true; return true end,collector={forceRefresh=function() forced=forced+1 end}}}
+  local ok,err=pcall(function() eq(Adapter.new():refreshCharacterData(),true); eq(Adapter.new():refreshCharacterData(),true) end)
+  _G.DGHUD=prior; if not ok then error(err,0) end
+  eq(entries,1); eq(forced,0)
+end)
+test("Mudlet version adapter captures the API numeric tuple",function()
+  local prior=_G.getMudletVersion; _G.getMudletVersion=function(mode) eq(mode,"table"); return 5,0,1 end
+  local value=Adapter.new():mudletVersion(); _G.getMudletVersion=prior
+  eq(value[1],5); eq(value[2],0); eq(value[3],1)
+end)
+local function replacementHarness(options,body)
+  options=options or {}; local globalNames={"lfs","yajl","getMudletHomeDir","registerAnonymousEventHandler","killAnonymousEventHandler","tempTimer","killTimer","downloadFile","getPackages","uninstallPackage","installPackage","cecho","DGHUD","getMudletVersion"}
+  local saved={}; for _,name in ipairs(globalNames) do saved[name]=_G[name] end
+  local originalOpen=io.open; local h={files={},downloads={},handlers={},timers={},nextID=0,active=true,uninstalls=0,installs={},result=nil}
+  local target=releaseManifest("0.2.76"); target.sha256=SHA.hex("new-package")
+  local rollback=releaseManifest("0.2.75"); rollback.sha256=SHA.hex("old-package")
+  h.manifests={target=target,rollback=rollback}
+  local function restore() io.open=originalOpen; for _,name in ipairs(globalNames) do _G[name]=saved[name] end end
+  local ok,err=pcall(function()
+    io.open=function(path,mode)
+      if mode=="rb" and h.files[path]==nil then return nil end
+      return {read=function() return h.files[path] end,write=function(_,data) h.files[path]=data end,close=function() end}
+    end
+    lfs={mkdir=function() return true end}; getMudletHomeDir=function() return "/profile" end; getMudletVersion=nil
+    yajl={to_value=function(raw) return assert(h.manifests[raw],"unexpected manifest payload") end}
+    registerAnonymousEventHandler=function(name,fn) h.nextID=h.nextID+1; h.handlers[name]=fn; return h.nextID end
+    killAnonymousEventHandler=function() end
+    tempTimer=function(delay,fn) h.nextID=h.nextID+1; h.timers[h.nextID]={delay=delay,fn=fn}; return h.nextID end
+    killTimer=function(id) h.timers[id]=nil end
+    downloadFile=function(path,url) h.downloads[#h.downloads+1]={path=path,url=url}; return true end
+    getPackages=function() return h.active and {"DragonsGateHUD"} or {} end
+    uninstallPackage=function() h.uninstalls=h.uninstalls+1; h.active=false; return true end
+    installPackage=function(path) h.installs[#h.installs+1]=path; if options.failTarget and path==Adapter.updateArchivePath("/profile") then return nil end; h.active=true; return true end
+    cecho=function() end; DGHUD={shutdown=function() end,healthCheck=function() return true end}
+    function h:done(path,payload) self.files[path]=payload; self.handlers.sysDownloadDone(nil,path) end
+    function h:error(url,message) self.handlers.sysDownloadError(nil,message or "download failed",url) end
+    function h:run(delay) for id,timer in pairs(self.timers) do if timer.delay==delay then self.timers[id]=nil; timer.fn(); return true end end return false end
+    h.adapter=Adapter.new(); h.updater=Updater.new(h.adapter,updateSettings); assert(h.updater:update(function(success,message) h.result={success,message} end))
+    body(h)
+  end)
+  restore(); if not ok then error(err,0) end
+end
+local function deliverTarget(h)
+  h:done(h.downloads[1].path,"target")
+  h:done(h.downloads[2].path,"new-package")
+end
+test("first updater-managed update bootstraps exact rollback before uninstall",function()
+  replacementHarness({},function(h)
+    deliverTarget(h); eq(h.uninstalls,0); eq(#h.downloads,3)
+    assert(h.downloads[3].url:find("/releases/download/v0.2.75/manifest.json",1,true)); h.handlers.sysDownloadDone(nil,"/unowned/path"); h:error("https://unrelated.example/failure","ignore me"); eq(h.uninstalls,0)
+    h:done(h.downloads[3].path,"rollback"); eq(h.uninstalls,0); eq(#h.downloads,4)
+    h:done(h.downloads[4].path,"old-package"); eq(h.uninstalls,1); eq(h.files["/profile/DGHUDUpdater/previous.mpackage"],"old-package")
+    assert(h:run(.25)); assert(h:run(.40)); eq(h.result[1],true); eq(h.active,true)
+  end)
+end)
+test("rollback bootstrap timeout aborts before touching active package",function()
+  replacementHarness({},function(h)
+    deliverTarget(h); eq(h.result,nil); eq(h.uninstalls,0); assert(h:run(30))
+    eq(h.result[1],nil); assert(h.result[2]:find("timed out",1,true)); eq(h.uninstalls,0); eq(h.active,true)
+  end)
+end)
+test("failed first replacement restores checksum-verified bootstrapped package",function()
+  replacementHarness({failTarget=true},function(h)
+    deliverTarget(h); h:done(h.downloads[3].path,"rollback"); h:done(h.downloads[4].path,"old-package")
+    eq(h.uninstalls,1); assert(h:run(.25)); eq(h.active,false); assert(h:run(.25)); assert(h:run(.40))
+    eq(h.active,true); eq(h.installs[#h.installs],"/profile/DGHUDUpdater/previous.mpackage"); eq(h.result[1],nil); assert(h.result[2]:find("could not install HUD package",1,true))
+  end)
+end)
 test("startup check skips installation when current and continues startup",function()
   local order={}; local completed
-  local adapter={checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.74")) end}
+  local adapter={checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.75")) end}
   local u=Updater.new(adapter,updateSettings)
   eq(u:checkAtCharacterEntry(function(updated,err) completed={updated,err}; order[#order+1]="commands" end),true)
   eq(table.concat(order,","),"check,commands"); eq(completed[1],false); eq(completed[2],nil); eq(u.lock,nil)
@@ -56,7 +137,7 @@ end)
 test("startup check updates before allowing startup commands",function()
   local order={}; local completed
   local adapter={
-    checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.75")) end,
+    checkLatestAsync=function(_,updater,done) order[#order+1]="check"; done(releaseManifest("0.2.76")) end,
     startUpdate=function(_,updater,done) order[#order+1]="update"; done(true); return true end,
     isCharacterActive=function() return true end,
   }
@@ -90,7 +171,7 @@ test("startup check rejects overlap and completes only once",function()
   local u=Updater.new(adapter,updateSettings)
   eq(u:checkAtCharacterEntry(function() completions=completions+1 end),true)
   local ok,err=u:checkAtCharacterEntry(function() completions=completions+1 end); eq(ok,nil); eq(err,"startup check already in progress")
-  manifestDone(releaseManifest("0.2.74")); manifestDone(releaseManifest("0.2.74")); eq(completions,1)
+  manifestDone(releaseManifest("0.2.75")); manifestDone(releaseManifest("0.2.75")); eq(completions,1)
 end)
 test("async checksum mismatch never starts replacement",function()
   local called=false

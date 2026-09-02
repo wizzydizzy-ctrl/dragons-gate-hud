@@ -200,6 +200,16 @@ test("narrow list panes preserve readable fonts and overflow horizontally",funct
   eq(view.inventory_content.height,layout.list_row_height*5)
   eq(view.skills_content.height,layout.list_row_height*5)
 end)
+test("mapper clear labels remain short enough for the medium breakpoint",function()
+  local layout=require("layout").compute(1000,700); local view=chatView(7)
+  view:applyLayout(layout)
+  eq(view.map_clear_all.visible,true)
+  eq(view.map_clear_all.message:find("CLEAR ALL",1,true)~=nil,true)
+  view:setMapClearPending(true)
+  eq(view.map_clear_all.message:find("CONFIRM",1,true)~=nil,true)
+  eq(#"CONFIRM"*layout.lower_utility_font*.7<=view.map_clear_all.width,true)
+  eq(view.map_zoom_in.x+view.map_zoom_in.width<=view.map_clear_all.x,true)
+end)
 test("skill viewport uses live geometry with a conservative scrollbar reservation",function()
   local view=chatView(7); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
   eq(view.list_resolved_scrollbar_width>=40,true)
@@ -354,14 +364,36 @@ test("short layouts keep right-side vitals separate from the mapper",function()
   if view.room.visible then eq(view.room.y+view.room.height<=view.mapper_frame.y,true) end
 end)
 
-test("right-side vitals preserve inventory before optional combat details",function()
+test("right-side vitals preserve scrollable lists before optional combat details",function()
   local layout=require("layout").compute(1200,600); local view=chatView()
   view.last_state={vitals={psi={visible=false},web={visible=false}},equipment={items={}}}
   view:applyLayout(layout)
   eq(view.inventory.visible,true)
-  eq(view.inventory.height>=layout.heading_font+layout.inventory_row_height*3+layout.panel_padding*2+30,true)
+  eq(view.skills.visible,true); eq(view.skills_output.visible,true)
   eq(view.details.visible,false)
   eq(view.inventory.y+view.inventory.height<=layout.window_height-view.vitals_right.height-12,true)
+end)
+test("short desktop windows retain both inventory and skills as scrollable cards",function()
+  for _,size in ipairs({{1000,600},{1200,600},{1400,600}}) do
+    local layout=require("layout").compute(size[1],size[2]); local view=chatView(7)
+    view.last_state={vitals={psi={visible=false},web={visible=false}},equipment={items={}},inventory={items={}},skills={items={}}}
+    view:applyLayout(layout)
+    eq(view.inventory.visible,true); eq(view.inventory_output.visible,true)
+    eq(view.skills.visible,true); eq(view.skills_output.visible,true)
+    eq(view.inventory.y+view.inventory.height<=view.skills.y,true)
+    eq(view.skills.y+view.skills.height<=layout.window_height-view.vitals_right.height-12,true)
+  end
+end)
+
+test("crossing responsive breakpoints repeatedly restores every desktop card",function()
+  local Layout=require("layout"); local view=chatView(7)
+  view.last_state={vitals={psi={visible=false},web={visible=false}},equipment={items={}},inventory={items={}},skills={items={}}}
+  for _,size in ipairs({{1400,800},{1399,800},{1000,800},{999,800},{760,800},{999,800},{1400,800}}) do
+    local layout=Layout.compute(size[1],size[2]); view:applyLayout(layout)
+    if layout.mode=="compact" then eq(view.compact.visible,true) else
+      for _,widget in ipairs({view.identity,view.equipment,view.inventory,view.inventory_title,view.inventory_output,view.inventory_content,view.skills,view.skills_title,view.skills_output,view.skills_content,view.right}) do eq(widget.visible,true) end
+    end
+  end
 end)
 
 test("wide short windows drop optional gauges before overlapping equipment",function()

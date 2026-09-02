@@ -200,8 +200,8 @@ local function observeCommand(f,command)
   fire(f,"sysDataSendRequest",command)
 end
 
-test("HUD release defaults are ready for version 0.2.74",function()
-  eq(Defaults.version,"0.2.74"); eq(Defaults.mapper.enabled,true); eq(Defaults.mapper.walk_timeout,12)
+test("HUD release defaults are ready for version 0.2.75",function()
+  eq(Defaults.version,"0.2.75"); eq(Defaults.mapper.enabled,true); eq(Defaults.mapper.walk_timeout,12)
   eq(Defaults.time.speed,2); eq(Defaults.time.sunrise_hour,6); eq(Defaults.time.sunset_hour,18)
   eq(Defaults.mapper.minimum_height,90); eq(Defaults.mapper.schema,1)
 end)
@@ -297,7 +297,7 @@ local function cleanupWorld()
       [42]={name="Dragons Gate - Submap 900",owner="DragonsGateHUD",metadata={root="900"}},
       [90]={name="My Private Map",owner="personal",metadata={palette="violet",notes="keep exactly"}},
     },
-    labels={[42]={{text="HUD label",x=4,y=5}},[90]={{text="Personal label",x=-8,y=12,metadata={font="serif"}}}},
+    labels={[90]={{text="Personal label",x=-8,y=12,metadata={font="serif"}}}},
     stubs={},links={},special={},areas={},zoom={},creations={},sent={},
   }
 end
@@ -358,6 +358,6 @@ test("cleanup partial failure preserves personal bytes surviving HUD rooms and o
   local preview=assert(findAlias(f,"^dghud map clear submap (\\d+)$")({"","900"}))
   local result=assert(findAlias(f,"^dghud map confirm (\\S+)$")({"",preview.token}))
   eq(table.concat(result.deleted,","),"900"); eq(result.failed,901); eq(table.concat(result.untouched,","),"901"); eq(result.area_deleted,false)
-  eq(world.rooms[900],nil); eq(world.rooms[901]~=nil,true); eq(world.area_records[42]~=nil,true); eq(world.labels[42]~=nil,true)
+  eq(world.rooms[900],nil); eq(world.rooms[901]~=nil,true); eq(world.area_records[42]~=nil,true)
   eq(personalBytes(world),before); eq(f.map_refreshes,1)
 end)

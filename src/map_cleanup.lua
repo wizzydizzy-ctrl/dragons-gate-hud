@@ -102,7 +102,13 @@ function Cleanup.new(map,runtime,clock,tokenFactory,ttlSeconds)
   assert(type(tokenFactory)=="function","cleanup token factory is required")
   local ttl=tonumber(ttlSeconds or 30)
   assert(ttl and ttl>0,"cleanup token lifetime must be positive")
-  return setmetatable({map=map,runtime=runtime,clock=clock,tokenFactory=tokenFactory,ttl=ttl},Cleanup)
+  return setmetatable({map=map,runtime=runtime,clock=clock,tokenFactory=tokenFactory,ttl=ttl,batch_size=100},Cleanup)
+end
+
+local function verifyAreaSafety(map,areaIDs)
+  if type(map.areaDeletionSafe)~="function" then return true end
+  for _,areaID in ipairs(areaIDs or {}) do local safe,err=map:areaDeletionSafe(areaID); if not safe then return nil,err or "map label ownership cannot be verified" end end
+  return true
 end
 
 function Cleanup:_finishPlan(plan,issueToken)
@@ -145,6 +151,7 @@ function Cleanup:_areaPlan(target,issueToken)
   local record,recordErr=self.map:areaRecord(area)
   if record==nil then return nil,recordErr end
   if not record.owned then return nil,"mapper area "..tostring(area).." is not owned by DragonsGateHUD" end
+  local safe,safeErr=verifyAreaSafety(self.map,{area}); if not safe then return nil,safeErr end
   local rooms,roomsErr=self.map:roomsInArea(area)
   if rooms==nil then return nil,roomsErr end
   return self:_finishPlan({operation="clear_area",target=tostring(target),area_id=area,partition=nil,room_ids=copy(rooms)},issueToken)
@@ -159,6 +166,7 @@ function Cleanup:_submapPlan(rootRoomID,issueToken)
   local record,recordErr=self.map:areaRecord(area)
   if record==nil then return nil,recordErr end
   if not record.owned then return nil,"mapper area "..tostring(area).." is not owned by DragonsGateHUD" end
+  local safe,safeErr=verifyAreaSafety(self.map,{area}); if not safe then return nil,safeErr end
   local rooms,roomsErr=self.map:roomsInArea(area)
   if rooms==nil then return nil,roomsErr end
   return self:_finishPlan({operation="clear_submap",target=tostring(root),area_id=area,partition=partition,room_ids=copy(rooms)},issueToken)
@@ -181,14 +189,26 @@ function Cleanup:_allPlan(issueToken)
   end
   table.sort(areaIDs)
   if #areaIDs==0 then return nil,"no DragonsGateHUD map areas exist" end
-  local roomSet={}
-  for _,areaID in ipairs(areaIDs) do
-    local rooms,roomsErr=self.map:roomsInArea(areaID)
-    if rooms==nil then return nil,roomsErr end
-    for _,roomID in ipairs(rooms) do roomSet[roomID]=true end
+  local safe,safeErr=verifyAreaSafety(self.map,areaIDs); if not safe then return nil,safeErr end
+  local incremental=type(self.map.defer)=="function" and type(self.map.beginAreaRoomScan)=="function" and type(self.map.scanAreaRoomBatch)=="function" and type(self.map.beginInboundScan)=="function" and type(self.map.scanInboundBatch)=="function"
+  if not incremental then
+    local roomSet={}
+    for _,areaID in ipairs(areaIDs) do
+      local rooms,roomsErr=self.map:roomsInArea(areaID); if rooms==nil then return nil,roomsErr end
+      for _,roomID in ipairs(rooms) do roomSet[roomID]=true end
+    end
+    local roomIDs={}; for roomID in pairs(roomSet) do roomIDs[#roomIDs+1]=roomID end; table.sort(roomIDs)
+    return self:_finishPlan({operation="clear_all",target="all",area_id=nil,area_ids=areaIDs,partition=nil,room_ids=roomIDs,allow_current=true,incremental=false},issueToken)
   end
-  local roomIDs={}; for roomID in pairs(roomSet) do roomIDs[#roomIDs+1]=roomID end; table.sort(roomIDs)
-  return self:_finishPlan({operation="clear_all",target="all",area_id=nil,area_ids=areaIDs,partition=nil,room_ids=roomIDs,allow_current=true},issueToken)
+  local snapshot,snapshotErr=self.runtime:safetySnapshot({})
+  if snapshot==nil then return nil,snapshotErr or "cleanup safety state is unavailable" end
+  local blocker=safetyError(snapshot,{},true); if blocker then return nil,blocker end
+  local plan={operation="clear_all",target="all",area_id=nil,area_ids=areaIDs,partition=nil,room_ids={},ownership={},inbound_sources={},allow_current=true,incremental=true,safety=copy(snapshot),blockers={}}
+  if issueToken then
+    plan.created_at=self.clock(); plan.token=tostring(self.tokenFactory())
+    if plan.token=="" then return nil,"cleanup token factory returned an empty token" end
+  end
+  return plan
 end
 
 function Cleanup:_preview(builder,...)
@@ -232,7 +252,7 @@ end
 
 local function comparable(plan)
   return {
-    operation=plan.operation,target=plan.target,area_id=plan.area_id,area_ids=plan.area_ids,partition=plan.partition,allow_current=plan.allow_current,
+    operation=plan.operation,target=plan.target,area_id=plan.area_id,area_ids=plan.area_ids,partition=plan.partition,allow_current=plan.allow_current,incremental=plan.incremental,
     room_ids=plan.room_ids,ownership=plan.ownership,inbound_sources=plan.inbound_sources,safety=plan.safety,blockers=plan.blockers,
   }
 end
@@ -243,10 +263,10 @@ local function exceptionMessage(value)
 end
 
 local function protectedCall(fn)
-  local first,second
-  local ok,err=xpcall(function() first,second=fn() end,exceptionMessage)
+  local first,second,third
+  local ok,err=xpcall(function() first,second,third=fn() end,exceptionMessage)
   if not ok then return false,nil,err end
-  return true,first,second
+  return true,first,second,third
 end
 
 local function appendUntouched(result,roomIDs,index)
@@ -261,6 +281,7 @@ function Cleanup:confirm(token)
   self.busy=true
   local result={deleted={},deleted_areas={},failed=nil,untouched={},area_deleted=false}
   local executionStarted=false
+  local asynchronous=false
   local failureError
   local activeRoomIndex
   local bodyOK,bodyError=xpcall(function()
@@ -279,6 +300,95 @@ function Cleanup:confirm(token)
     if not beforeOK then failureError="cleanup confirmation failed: "..beforeError; return end
     if before==nil or before==false then failureError=beforeError or "cleanup preparation failed"; return end
     executionStarted=true
+
+    if plan.operation=="clear_all" and plan.incremental then
+      asynchronous=true; result.pending=true; result.background=true
+      local roomSet={}; local roomAreas={}; local deleteIndex=1
+      local areaScan,areaScanErr=self.map:beginAreaRoomScan(plan.area_ids)
+      if not areaScan then failureError=areaScanErr or "map room discovery could not start"; asynchronous=false; executionStarted=false; return end
+      local inboundScan
+      local function finish()
+        if not result.failed then
+          for _,areaID in ipairs(plan.area_ids) do
+            local callOK,areaDeleted,areaError=protectedCall(function() return self.map:deleteEmptyOwnedArea(areaID) end)
+            if not callOK then areaDeleted=nil end
+            if areaDeleted then result.deleted_areas[#result.deleted_areas+1]=areaID else result.area_error=areaError or "area deletion failed"; result.error=result.area_error; break end
+          end
+          result.area_deleted=#result.deleted_areas==#plan.area_ids
+        end
+        local invalidateOK,invalidated,invalidateError=protectedCall(function()
+          local ok,err=self.map:invalidateDeleted(copy(result.deleted),nil); if not ok then return ok,err end
+          for _,areaID in ipairs(result.deleted_areas) do ok,err=self.map:invalidateDeleted({},areaID); if not ok then return ok,err end end
+          return true
+        end)
+        if not invalidateOK then invalidated=nil end
+        if invalidated==nil or invalidated==false then result.invalidation_error=invalidateError or "map cache invalidation failed"; result.error=result.error or result.invalidation_error end
+        result.pending=false
+        local afterOK,after,afterError=protectedCall(function() return self.runtime:afterDelete(copy(result)) end)
+        if not afterOK then after=nil end
+        if after==nil or after==false then result.lifecycle_error=afterError or "cleanup reconciliation failed"; result.error=result.error or result.lifecycle_error end
+        self.busy=false
+      end
+      local function fail(message,roomID)
+        result.failed=roomID; result.error=message or "map cleanup failed"
+        if deleteIndex<=#plan.room_ids then appendUntouched(result,plan.room_ids,deleteIndex) end
+        finish()
+      end
+      local step
+      local function scheduleNext()
+        local deferOK,deferred,deferError=protectedCall(function() return self.map:defer(step) end)
+        if not deferOK then deferred=nil end
+        if deferred==nil or deferred==false then fail(deferError or "map cleanup continuation could not be scheduled",plan.room_ids[deleteIndex]) end
+      end
+      local stage="discover"
+      step=function()
+        if stage=="discover" then
+          local callOK,batch,done,scanError=protectedCall(function() return self.map:scanAreaRoomBatch(areaScan,self.batch_size) end)
+          if not callOK then return fail(done or batch) end
+          if batch==nil then return fail(scanError or "map room discovery failed") end
+          for _,item in ipairs(batch) do
+            local record,recordErr=self.map:roomRecord(item.id)
+            if not record then return fail(recordErr,item.id) end
+            if not record.exists then return fail("room "..tostring(item.id).." does not exist",item.id) end
+            if not record.owned then return fail("room "..tostring(item.id).." is not owned by DragonsGateHUD",item.id) end
+            if record.area~=item.area then return fail("room "..tostring(item.id).." changed mapper areas during clear-all",item.id) end
+            if roomAreas[item.id] and roomAreas[item.id]~=item.area then return fail("room "..tostring(item.id).." belongs to multiple mapper areas",item.id) end
+            if not roomSet[item.id] then roomSet[item.id]=true; roomAreas[item.id]=item.area; plan.room_ids[#plan.room_ids+1]=item.id end
+          end
+          if done then
+            table.sort(plan.room_ids)
+            local scan,scanErr=self.map:beginInboundScan(); if not scan then return fail(scanErr or "inbound map scan could not start") end
+            inboundScan=scan; stage="inbound"
+          end
+          return scheduleNext()
+        end
+        if stage=="inbound" then
+          local callOK,sources,done,scanError=protectedCall(function() return self.map:scanInboundBatch(inboundScan,roomSet,self.batch_size) end)
+          if not callOK then return fail(done or sources) end
+          if sources==nil then return fail(scanError or "inbound map scan failed") end
+          for _,source in ipairs(sources) do result.inbound_sources=result.inbound_sources or {}; result.inbound_sources[#result.inbound_sources+1]=source end
+          if done then
+            local snapshot,snapshotErr=self.runtime:safetySnapshot(copy(plan.room_ids))
+            if not snapshot then return fail(snapshotErr or "cleanup safety state is unavailable") end
+            local blocker=safetyError(snapshot,plan.room_ids,true); if blocker then return fail(blocker) end
+            stage="delete"
+          end
+          return scheduleNext()
+        end
+        local last=math.min(#plan.room_ids,deleteIndex+self.batch_size-1)
+        while deleteIndex<=last do
+          local roomID=plan.room_ids[deleteIndex]
+          local callOK,deleted,deleteError=protectedCall(function() return self.map:deleteOwnedRoom(roomID) end)
+          if not callOK then deleted=nil end
+          if not deleted then return fail(deleteError or "room deletion failed",roomID) end
+          result.deleted[#result.deleted+1]=roomID; deleteIndex=deleteIndex+1
+        end
+        if deleteIndex>#plan.room_ids then return finish() end
+        scheduleNext()
+      end
+      scheduleNext()
+      return
+    end
 
     for index,roomID in ipairs(plan.room_ids) do
       activeRoomIndex=index
@@ -337,6 +447,8 @@ function Cleanup:confirm(token)
       failureError="cleanup confirmation failed: "..bodyError
     end
   end
+
+  if asynchronous then return result end
 
   if executionStarted then
     local afterOK,after,afterError=protectedCall(function() return self.runtime:afterDelete(copy(result)) end)

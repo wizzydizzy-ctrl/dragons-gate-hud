@@ -38,6 +38,7 @@ end
 function History.new(limit,dedupeSeconds)
   return setmetatable({limit=History.visibleLimit(limit),dedupeSeconds=math.max(0,tonumber(dedupeSeconds) or 3),items={},categoryOrder={},knownCategories={}},History)
 end
+function History:newSibling() return History.new(self.limit,self.dedupeSeconds) end
 
 function History:append(entry,epoch)
   if type(entry)~="table" then return false end

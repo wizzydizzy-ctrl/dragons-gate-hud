@@ -21,6 +21,10 @@ local function fakeAdapter()
     local timer=self.timers[id]
     if timer then self.timers[id]=nil; timer.callback() end
   end
+  function adapter:validateStep(_,_,command)
+    local aliases={north="n",northeast="ne",east="e",southeast="se",south="s",southwest="sw",west="w",northwest="nw",u="up",d="down"}; local value=tostring(command):lower()
+    return true,aliases[value] or value
+  end
   return adapter
 end
 
@@ -84,11 +88,13 @@ test("walker sends a confirmed special command exactly and waits for its exact r
   local adapter=fakeAdapter(); local validated={}
   function adapter:validateStep(from,to,command)
     validated[#validated+1]={from=from,to=to,command=command}
-    return from==1 and to==2 and command=="Go Gate"
+    if from==1 and to==2 and command=="Go Gate" then return true,command end
+    if from==2 and to==3 and command=="north" then return true,"n" end
+    return nil,"exit is not confirmed"
   end
   local walker=Walker.new(adapter,function() end)
   assert(walker:start({rooms={1,2,3},commands={"Go Gate","north"}},3))
-  eq(#validated,1); eq(validated[1].from,1); eq(validated[1].to,2); eq(validated[1].command,"Go Gate")
+  eq(#validated,2); eq(validated[1].from,1); eq(validated[1].to,2); eq(validated[1].command,"Go Gate")
   eq(adapter.sent[1].command,"Go Gate"); eq(adapter.sent[2],nil)
   assert(walker:onRoom(2)); eq(adapter.sent[2].command,"n")
 end)
@@ -104,6 +110,12 @@ test("walker validates every special edge before activation",function()
   local ok,err=walker:start({rooms={1,2,3},commands={"go gate","pull lever"}},3)
   eq(ok,nil); eq(err,"special exit is not confirmed from 2 to 3")
   eq(#validated,2); eq(#adapter.sent,0); eq(walker:active(),false)
+end)
+
+test("walker validates every directional edge before sending anything",function()
+  local adapter=fakeAdapter(); local checked={}; function adapter:validateStep(from,to,command) checked[#checked+1]={from,to,command}; if from==1 and to==2 then return true,"n" end; return nil,"standard exit is not persisted from "..from.." to "..to end
+  local walker=Walker.new(adapter,function() end); local ok,err=walker:start({rooms={1,2,3},commands={"north","east"}},3)
+  eq(ok,nil); eq(err,"standard exit is not persisted from 2 to 3"); eq(#checked,2); eq(#adapter.sent,0)
 end)
 
 test("walker rejects unconfirmed special route commands and contains validator exceptions",function()

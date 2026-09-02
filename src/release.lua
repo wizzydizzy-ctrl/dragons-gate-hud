@@ -1,6 +1,20 @@
 local Release={}
 local function versionParts(value) local a,b,c=tostring(value or ""):match("^v?(%d+)%.(%d+)%.(%d+)$"); if not a then return nil end; return {tonumber(a),tonumber(b),tonumber(c)} end
+function Release.version(value)
+  if type(value)=="table" then
+    local major=value.major or value[1]; local minor=value.minor or value[2]; local patch=value.patch or value.revision or value[3]
+    if tonumber(major) and tonumber(minor) and tonumber(patch) then return tostring(major).."."..tostring(minor).."."..tostring(patch) end
+    return nil
+  end
+  return tostring(value or ""):match("v?(%d+%.%d+%.%d+)")
+end
 function Release.compareVersions(a,b) local x,y=versionParts(a),versionParts(b); assert(x and y,"invalid semantic version"); for i=1,3 do if x[i]<y[i] then return -1 elseif x[i]>y[i] then return 1 end end; return 0 end
+function Release.validateMinimumMudlet(minimum,running)
+  local actual=Release.version(running); if not actual then return true end
+  local ok,comparison=pcall(Release.compareVersions,actual,minimum); if not ok then return nil,"invalid Mudlet compatibility version" end
+  if comparison<0 then return nil,"Mudlet "..actual.." is older than required version "..tostring(minimum) end
+  return true
+end
 function Release.validateAssetUrl(url,owner,repository,version)
   if type(url)~="string" or not url:match("^https://") then return nil,"asset URL must use HTTPS" end
   if not versionParts(version) then return nil,"invalid release version" end

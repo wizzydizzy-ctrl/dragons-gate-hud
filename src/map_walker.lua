@@ -73,16 +73,12 @@ function Walker:start(route,destination)
   local commands={}
   for index,command in ipairs(route.commands) do
     local canonical=direction(command)
-    if canonical then
-      commands[index]=canonical
-    else
-      local validate=self.adapter and self.adapter.validateStep
-      if type(validate)~="function" then return nil,"special exit is not confirmed from "..rooms[index].." to "..rooms[index+1] end
-      local callOk,confirmed,validated=pcall(validate,self.adapter,rooms[index],rooms[index+1],command)
-      if not callOk then return nil,confirmed end
-      if not confirmed then return nil,validated or "special exit is not confirmed from "..rooms[index].." to "..rooms[index+1] end
-      commands[index]=validated or command
-    end
+    local validate=self.adapter and self.adapter.validateStep
+    if type(validate)~="function" then return nil,(canonical and "standard" or "special").." exit is not confirmed from "..rooms[index].." to "..rooms[index+1] end
+    local callOk,confirmed,validated=pcall(validate,self.adapter,rooms[index],rooms[index+1],command)
+    if not callOk then return nil,confirmed end
+    if not confirmed then return nil,validated or (canonical and "standard" or "special").." exit is not confirmed from "..rooms[index].." to "..rooms[index+1] end
+    commands[index]=validated or canonical or command
   end
   self.route={rooms=rooms,commands=commands}
   self.destination=destination; self.index=1

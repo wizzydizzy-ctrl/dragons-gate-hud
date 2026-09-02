@@ -9,7 +9,7 @@ local function call(object,name,...)
 end
 
 function Controller.new(adapter,parser,history,storage,onChange,characterProvider)
-  return setmetatable({adapter=adapter,parser=parser,history=history,storage=storage,onChange=onChange or function() end,characterProvider=characterProvider or function() end,filter="ALL",started=false,loadedCharacterKeys={}},Controller)
+  return setmetatable({adapter=adapter,parser=parser,history=history,storage=storage,onChange=onChange or function() end,characterProvider=characterProvider or function() end,filter="ALL",started=false,historiesByCharacter={}},Controller)
 end
 
 function Controller:character()
@@ -53,8 +53,10 @@ function Controller:syncCharacter()
   storageKey=tostring(storageKey)
   if self.currentCharacterKey==storageKey then return true end
   self.currentCharacterKey=storageKey
-  if self.loadedCharacterKeys[storageKey] then return true end
-  self.loadedCharacterKeys[storageKey]=true
+  local existing=self.historiesByCharacter[storageKey]
+  if existing then self.history=existing; if self.started then self:notify() end; return true end
+  if next(self.historiesByCharacter)~=nil then self.history=self.history:newSibling() end
+  self.historiesByCharacter[storageKey]=self.history
   local recent,loadErr=call(self.storage,"loadRecent",character)
   if loadErr then self:reportStorageError(loadErr) end
   self.history:hydrate(type(recent)=="table" and recent or {})

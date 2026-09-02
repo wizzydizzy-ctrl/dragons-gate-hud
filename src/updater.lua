@@ -17,7 +17,14 @@ function Updater:installVerifiedAsync(payload,expected,done)
   if type(payload)~="string" or SHA256.hex(payload)~=tostring(expected):lower() then done(nil,"package checksum mismatch"); return nil,"package checksum mismatch" end
   if not self.adapter.replacePackageAsync then done(nil,"package adapter unavailable"); return nil,"package adapter unavailable" end
   self.adapter:replacePackageAsync(payload,"DragonsGateHUD",function(ok,err)
-    if not ok then done(nil,err or "package installation failed"); return end
+    if not ok then
+      local message=err or "package installation failed"
+      if self.adapter.rollbackAsync then self.adapter:rollbackAsync("DragonsGateHUD",function(restored,rollbackErr)
+        if not restored and rollbackErr then message=message.."; rollback failed: "..tostring(rollbackErr) end
+        done(nil,message)
+      end) else done(nil,message) end
+      return
+    end
     if self.adapter.healthCheck then
       local healthy,healthErr=self.adapter:healthCheck()
       if not healthy then
@@ -34,7 +41,10 @@ function Updater:installVerifiedAsync(payload,expected,done)
 end
 function Updater:validateManifest(manifest)
   local github=self.settings.github or {}; local update=self.settings.update or {}
-  return Release.validateManifest(manifest,{owner=github.owner,repository=github.repository,package_limit=update.package_limit})
+  local valid,why=Release.validateManifest(manifest,{owner=github.owner,repository=github.repository,package_limit=update.package_limit})
+  if not valid then return nil,why end
+  local running=self.adapter.mudletVersion and self.adapter:mudletVersion() or nil
+  return Release.validateMinimumMudlet(manifest.minimum_mudlet,running)
 end
 function Updater:check()
   local ok,err=self:acquire("check"); if not ok then return nil,err end

@@ -76,7 +76,7 @@ test("loads recent entries once and rotates later captures to the active charact
   eq(f.storedCharacters[1],"Dace Alterac"); eq(f.storedCharacters[2],"Gia")
 end)
 
-test("sanitized character transition hydrates history once without re-persisting",function()
+test("character transition isolates visible history and restores it without re-persisting",function()
   local f=fake(); f.character=nil
   f.storageEntriesByKey={
     unknown={{schema=1,timestamp="2026-08-31T12:00:00-04:00",character="Unknown",category="ROOM",message="unknown recent",line="unknown recent",source="builtin"}},
@@ -87,10 +87,11 @@ test("sanitized character transition hydrates history once without re-persisting
   f.character="Dace/Alterac"; assert(controller:syncCharacter())
   local entries=controller:entries()
   eq(table.concat(f.loadedCharacterKeys,","),"unknown,dace_alterac")
-  eq(#entries,3); eq(entries[1].message,"persisted Dace"); eq(entries[2].message,"unknown recent"); eq(entries[3].message,"live unknown")
+  eq(#entries,1); eq(entries[1].message,"persisted Dace")
   eq(f.storageAppends,1)
   f.character="Dace Alterac"; assert(controller:syncCharacter())
   eq(table.concat(f.loadedCharacterKeys,","),"unknown,dace_alterac")
+  f.character=nil; assert(controller:syncCharacter()); entries=controller:entries(); eq(#entries,2); eq(entries[1].message,"unknown recent"); eq(entries[2].message,"live unknown"); eq(f.loadRecentCalls,2)
 end)
 
 test("filter changes notify with only matching entries and shutdown removes its trigger",function()

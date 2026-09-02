@@ -59,4 +59,13 @@ run_entry()
 assert(DGHUD.controller.special.generation==2,"entry retained stale special_transition on reload")
 '''.replace('ENTRY',entry)
                 self.run_lua(reload_probe,td)
+
+    def test_build_rejects_version_different_from_defaults(self):
+        with tempfile.TemporaryDirectory() as td:
+            completed=subprocess.run(
+                [sys.executable,str(ROOT/'scripts/build.py'),'--output',td,'--owner','ricwall','--repository','dragons-gate-hud','--version','9.9.9'],
+                text=True,capture_output=True,
+            )
+            self.assertNotEqual(completed.returncode,0)
+            self.assertIn('does not match defaults.version',completed.stderr)
 if __name__=='__main__': unittest.main()

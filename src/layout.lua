@@ -61,7 +61,7 @@ local function chatMetrics(width,height,layout,settings)
   layout.chat_font=clamp(width/148,11,15)
   layout.chat_character_width=math.max(6,layout.chat_font*.62)
   layout.chat_inner_width=math.max(1,layout.chat_width-(2*layout.chat_padding)-layout.chat_scrollbar_allowance)
-  layout.chat_wrap_columns=math.max(30,math.floor(layout.chat_inner_width/layout.chat_character_width))
+  layout.chat_wrap_columns=math.max(1,math.floor(layout.chat_inner_width/layout.chat_character_width))
   layout.console_top=layout.header_height+layout.chat_height
   layout.console_remainder=math.max(0,height-layout.console_top)
   layout.chat_output_height=math.max(0,layout.chat_height-chat_chrome_height)
@@ -117,7 +117,7 @@ function Layout.compute(width,height,chatSettings,mapperSettings)
   width=tonumber(width) or 1200; height=tonumber(height) or 800
   local rail=math.floor(width*.17)
   if width>=1400 then return metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=0,show_character_rail=true,show_room_compass=height>=700,vitals_side="right"},chatSettings,mapperSettings) end
-  if width>=1000 then return metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="right"},chatSettings,mapperSettings) end
+  if width>=800 then return metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="right"},chatSettings,mapperSettings) end
   return metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=0,show_character_rail=false,show_room_compass=false,vitals_side="compact"},chatSettings,mapperSettings)
 end
 return Layout

@@ -11,6 +11,7 @@ function Clock.new(settings,now)
     speed=positive(settings.speed,2),
     sunrise_hour=math.max(0,math.min(23,math.floor(tonumber(settings.sunrise_hour) or 6))),
     sunset_hour=math.max(0,math.min(23,math.floor(tonumber(settings.sunset_hour) or 18))),
+    days_per_month=math.max(1,math.floor(tonumber(settings.days_per_month) or 30)),
     now=type(now)=="function" and now or os.time,
   },Clock)
 end
@@ -31,7 +32,9 @@ function Clock:current(epoch)
   local total=self.base.hour*60+self.base.minute+advanced
   local days=math.floor(total/1440); total=total%1440
   local hour=math.floor(total/60)
-  return {hour=hour,minute=total%60,day=self.base.day+days,month=self.base.month,year=self.base.year,
+  local dayIndex=(self.base.day-1)+days
+  local monthIndex=(self.base.month-1)+math.floor(dayIndex/self.days_per_month)
+  return {hour=hour,minute=total%60,day=dayIndex%self.days_per_month+1,month=monthIndex%12+1,year=self.base.year+math.floor(monthIndex/12),
     period=(hour>=self.sunrise_hour and hour<self.sunset_hour) and "Daytime" or "Night"}
 end
 

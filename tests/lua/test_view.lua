@@ -46,6 +46,20 @@ test("skill rows use stable aligned name level and remaining columns",function()
   eq(header:find("LVL",1,true)~=nil,true); eq(header:find("USES",1,true)~=nil,true)
   eq(short:find("4",1,true),long:find("1",1,true)); eq(short:find("105",1,true)+2,long:find("7",1,true))
 end)
+test("skill display names abbreviate identify categories without changing source data",function()
+  local cases={
+    {"Identify Gems/Minerals","ID Gems"},
+    {"Identify Weapon Quality","ID Weapon"},
+    {"Identify Armor Quality","ID Armor"},
+    {"Identify Magick","ID Magick"},
+  }
+  for _,case in ipairs(cases) do
+    local skill={name=case[1],level=3,remain=100}
+    local row=View.skillLine(skill,20,2,3,4)
+    eq(row:sub(1,20):match("^%s*(.-)%s*$"),case[2])
+    eq(skill.name,case[1])
+  end
+end)
 test("identity details render while attributes move to the top strip",function()
   local theme={accent="#d8ae53",jade="#72bd82",muted="#91a098"}; local layout={body_font=20,heading_font=25}
   local identity=View.identityContent({full_name="Test Tester",race="Monitanian",class="Fighter",alignment="entropy",physical={age=28,sex="Male",height="6'10\""}},theme,layout)
@@ -161,7 +175,7 @@ test("inventory and skills own five-row scrollable consoles",function()
   eq(view.inventory_output.height,layout.list_row_height*5); eq(view.skills_output.height,layout.list_row_height*5)
   eq(view.inventory_content.fontSize,layout.list_font); eq(view.skills_content.fontSize,layout.list_font)
   eq(view.inventory_content.font,view.list_font_family); eq(view.skills_content.font,view.list_font_family)
-  eq(view.inventory_title.fontSize,layout.list_font); eq(view.skills_title.fontSize,layout.list_font)
+  eq(view.inventory_title.fontSize,layout.list_title_font); eq(view.skills_title.fontSize,layout.list_title_font)
   eq(view.inventory_footer.fontSize,layout.list_font+2)
   eq(view.skills_title.font,view.skills_content.font)
   eq(view.inventory_output.height,view.list_row_height*5); eq(view.skills_output.height,view.list_row_height*5)
@@ -180,7 +194,7 @@ test("narrow list panes preserve readable fonts and overflow horizontally",funct
   eq(view.inventory_content.fontSize,layout.list_font); eq(view.skills_content.fontSize,layout.list_font)
   eq(view.inventory_content.width>view.inventory_output.width,true)
   eq(view.skills_content.width>view.skills_output.width,true)
-  eq(view.skill_name_width>=24,true); eq(view.skill_level_width>=3,true); eq(view.skill_use_width>=4,true)
+  eq(view.skill_name_width,20); eq(view.skill_level_width>=3,true); eq(view.skill_use_width>=4,true)
   eq(view.inventory_output.height,layout.list_viewport_height+layout.list_horizontal_scrollbar_height)
   eq(view.skills_output.height,layout.list_viewport_height+layout.list_horizontal_scrollbar_height)
   eq(view.inventory_content.height,layout.list_row_height*5)
@@ -189,7 +203,7 @@ end)
 test("skill viewport uses live geometry with a conservative scrollbar reservation",function()
   local view=chatView(7); local layout=require("layout").compute(1920,1080); view:applyLayout(layout)
   eq(view.list_resolved_scrollbar_width>=40,true)
-  eq(view.list_content_width,math.max(view.skills_output:get_width()-view.list_resolved_scrollbar_width,33*view.list_character_width))
+  eq(view.list_content_width,math.max(view.skills_output:get_width()-view.list_resolved_scrollbar_width,29*view.list_character_width))
   local header=View.skillHeader(view.skill_name_width,view.skill_column_gaps,view.skill_level_width,view.skill_use_width)
   local row=View.skillLine({name="Identify Armor Quality",level=30,remain=7},view.skill_name_width,view.skill_column_gaps,view.skill_level_width,view.skill_use_width)
   eq(#header*view.list_character_width<=view.list_content_width,true)
@@ -223,7 +237,7 @@ test("measured fixed-width skill columns fit before scaled scrollbars",function(
     local header=View.skillHeader(view.skill_name_width,view.skill_column_gaps,view.skill_level_width,view.skill_use_width)
     local row=View.skillLine({name=string.rep("Wide Skill ",5),level=30,remain=7},view.skill_name_width,view.skill_column_gaps,view.skill_level_width,view.skill_use_width)
     eq(view.list_character_width,glyph)
-    eq(view.list_content_width,math.max(view.skills_output.width-view.list_resolved_scrollbar_width,33*glyph))
+    eq(view.list_content_width,math.max(view.skills_output.width-view.list_resolved_scrollbar_width,29*glyph))
     eq(#header*glyph<=view.list_content_width,true)
     eq(#row*glyph<=view.list_content_width,true)
     local levelColumn=row:find("30",1,true)-1

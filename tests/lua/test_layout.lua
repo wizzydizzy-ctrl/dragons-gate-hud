@@ -95,6 +95,13 @@ test("responsive typography remains readable at every breakpoint",function()
   eq(wide.heading_font>wide.body_font,true); eq(wide.gauge_height>=26,true); eq(wide.panel_padding>=16,true)
   eq(wide.small_font>=(wide.body_font-2)*2,true); eq(wide.gauge_height>=wide.small_font+10,true)
 end)
+test("scrollable list text is two pixels smaller while headings stay readable",function()
+  for _,size in ipairs({{1000,900},{1920,1080},{3840,2160}}) do
+    local r=Layout.compute(size[1],size[2])
+    eq(r.list_font>=11,true); eq(r.list_font<=15,true)
+    eq(r.list_title_font,r.list_font+2)
+  end
+end)
 test("header clock font fits the narrow medium identity rail",function()
   local medium=Layout.compute(1000,900); local wide=Layout.compute(1920,1080)
   eq(medium.header_clock_font,10); eq(wide.header_clock_font>=11,true)

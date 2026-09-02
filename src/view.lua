@@ -97,9 +97,14 @@ function View.skillHeader(nameWidth,gaps,levelWidth,useWidth)
   levelWidth=math.max(1,tonumber(levelWidth) or 3); useWidth=math.max(1,tonumber(useWidth) or 4)
   return string.format(skillFormat(nameWidth,gaps,levelWidth,useWidth),skillHeading("SKILLS",nameWidth,{"SKILL","SK","S"}),skillHeading("LVL",levelWidth,{"LV","L"}),skillHeading("USES",useWidth,{"USE","U"}))
 end
+function View.skillDisplayName(value)
+  value=tostring(value or ""):gsub("%c"," ")
+  value=value:gsub("^Identify%s+","ID "):gsub("Gems/Minerals","Gems"):gsub("%s+Quality$","")
+  return value
+end
 function View.skillLine(skill,nameWidth,gaps,levelWidth,useWidth)
   nameWidth=math.max(1,tonumber(nameWidth) or 22); skill=skill or {}
-  return string.format(skillFormat(nameWidth,gaps,levelWidth,useWidth),clipped(skill.name,nameWidth),tonumber(skill.level) or 0,tonumber(skill.remain) or 0)
+  return string.format(skillFormat(nameWidth,gaps,levelWidth,useWidth),clipped(View.skillDisplayName(skill.name),nameWidth),tonumber(skill.level) or 0,tonumber(skill.remain) or 0)
 end
 function View.detailsContent(combat,attributes,t,layout,vitals)
   combat=combat or {}; attributes=attributes or {}; local parts={}; local columns=layout.details_columns or 4
@@ -292,11 +297,15 @@ function View:applyLayout(layout)
   self.details:setStyleSheet("background:"..t.panel..";border:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.left:setStyleSheet("background:"..t.panel..";border-left:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   for _,card in ipairs({self.equipment,self.inventory,self.skills}) do card:setStyleSheet("background:#101713;border:1px solid "..t.border..";border-radius:7px;color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;") end
-  for _,title in ipairs({self.inventory_title,self.skills_title}) do title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.list_font.."px;font-weight:700;") end
+  for _,title in ipairs({self.inventory_title,self.skills_title}) do title:setStyleSheet("background:transparent;color:"..t.accent..";font-size:"..layout.list_title_font.."px;font-weight:700;") end
   self.inventory_footer:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..(layout.list_font+2).."px;")
-  for _,widget in ipairs({self.inventory_title,self.skills_title,self.inventory_content,self.skills_content,self.list_measure}) do
+  for _,widget in ipairs({self.inventory_content,self.skills_content,self.list_measure}) do
     if widget.setFont then widget:setFont(self.list_font_family) end
     if widget.setFontSize then widget:setFontSize(layout.list_font) end
+  end
+  for _,title in ipairs({self.inventory_title,self.skills_title}) do
+    if title.setFont then title:setFont(self.list_font_family) end
+    if title.setFontSize then title:setFontSize(layout.list_title_font) end
   end
   if self.inventory_footer.setFontSize then self.inventory_footer:setFontSize(layout.list_font+2) end
   self.list_measure:setStyleSheet("background:transparent;color:transparent;font-family:'"..self.list_font_family.."';font-size:"..layout.list_font.."px;")
@@ -341,7 +350,7 @@ function View:applyLayout(layout)
     local card_x="100%-"..(layout.right-p); local card_w=layout.right-p*2; local eq_rows=2
     self.list_outer_width=card_w-p*2
     self.list_viewport_width,self.list_resolved_scrollbar_width=listViewportWidth(self.skills_output,self.list_outer_width,self.list_scrollbar_width)
-    self.skills_content_width=math.max(self.list_viewport_width,33*self.list_character_width)
+    self.skills_content_width=math.max(self.list_viewport_width,29*self.list_character_width)
     self.inventory_content_width=math.max(self.list_viewport_width,36*self.list_character_width)
     self.list_content_width=self.skills_content_width
     self.list_horizontal_overflow=self.skills_content_width>self.list_outer_width or self.inventory_content_width>self.list_outer_width
@@ -350,7 +359,7 @@ function View:applyLayout(layout)
     self.skill_use_width=self.skill_character_capacity>=8 and 4 or 3
     local fixedColumns=self.skill_level_width+self.skill_use_width
     self.skill_column_gaps=math.min(2,math.max(0,self.skill_character_capacity-fixedColumns-1))
-    self.skill_name_width=math.min(24,math.max(1,self.skill_character_capacity-fixedColumns-self.skill_column_gaps))
+    self.skill_name_width=math.min(20,math.max(1,self.skill_character_capacity-fixedColumns-self.skill_column_gaps))
     local inventory_rows=self.last_state and self.last_state.inventory and #(self.last_state.inventory.items or {}) or 0
     local skill_rows=self.last_state and self.last_state.skills and #(self.last_state.skills.items or {}) or 0
     self.inventory_content:resize(self.inventory_content_width,math.max(layout.list_row_height*5,inventory_rows*layout.list_row_height))

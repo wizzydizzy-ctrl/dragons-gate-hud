@@ -60,11 +60,14 @@ function View.identityContent(character,t,layout)
   end
   return View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>"..esc(character.full_name).."</b></span><br><span style='color:"..t.jade.."'><b>"..esc(character.race).." · "..esc(character.class).."</b></span><br><span style='color:"..t.muted.."'>"..esc(character.alignment).."</span>"..detail..faith,layout.body_font)
 end
-function View.headerContent(layout,t,fullName,clock)
-  clock=type(clock)=="table" and clock or {}
+function View.headerContent(layout,t,fullName)
   local detail=layout.mode=="compact" and " &nbsp; <span style='color:"..t.text.."'><b>"..esc(fullName).."</b></span>" or ""
+  return View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>DRAGONS GATE</b></span>"..detail,layout.body_font)
+end
+function View.clockContent(layout,t,clock)
+  clock=type(clock)=="table" and clock or {}
   local clockFont=math.max(10,tonumber(layout.header_clock_font) or ((tonumber(layout.body_font) or 16)-4))
-  return View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>DRAGONS GATE</b></span>"..detail.."<br><span style='font-size:"..clockFont.."px;line-height:1.05'><span style='color:"..t.muted.."'>Real Time:</span> <b>"..esc(clock.real_time or "—").."</b><br><span style='color:"..t.muted.."'>Game Time:</span> <b>"..esc(clock.game_time or "—").."</b> <span style='color:"..t.jade.."'>· <b>"..esc(clock.period or "—").."</b></span></span>",layout.body_font)
+  return "<div style='text-align:right'><span style='font-size:"..clockFont.."px;line-height:1.05'><span style='color:"..t.muted.."'>Real Time:</span> <b>"..esc(clock.real_time or "—").."</b><br><span style='color:"..t.muted.."'>Game Time:</span> <b>"..esc(clock.game_time or "—").."</b> <span style='color:"..t.jade.."'>· <b>"..esc(clock.period or "—").."</b></span></span></div>"
 end
 function View.inventoryRows(items,capacity)
   items=items or {}; capacity=math.max(0,tonumber(capacity) or 0); local rows={}
@@ -155,6 +158,7 @@ function View.new(settings)
   self.list_font_family=View.monospaceFont(available)
   self.root=Geyser.Container:new({name="DGHUD.Root",x=0,y=0,width="100%",height="100%"})
   self.header=label("DGHUD.Header",self.root,"background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px 18px;")
+  self.clock_header=label("DGHUD.Header.Clock",self.root,"background:transparent;color:"..t.text..";padding:8px 18px;")
   self.attribute_strip=label("DGHUD.AttributeStrip",self.root,"background:transparent;color:"..t.text..";padding:10px 12px;")
   self.chat_container=Geyser.Container:new({name="DGHUD.Chat",x=0,y=0,width=100,height=240},self.root)
   self.chat=self.chat_container
@@ -282,6 +286,7 @@ end
 function View:applyLayout(layout)
   self.layout=layout; local top,bottom=layout.header_height or layout.top,layout.bottom; local t=self.settings.theme; local p=layout.panel_padding; local lp=layout.lower_panel_padding
   self.header:setStyleSheet("background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
+  self.clock_header:setStyleSheet("background:transparent;color:"..t.text..";padding:8px "..p.."px;text-align:right;")
   self.attribute_strip:setStyleSheet("background:transparent;color:"..t.text..";padding:10px 12px;font-size:"..layout.attribute_strip_font.."px;")
   self.identity:setStyleSheet("background:"..t.panel..";border-right:1px solid "..t.border..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
   self.details:setStyleSheet("background:"..t.panel..";border:1px solid "..t.border..";color:"..t.text..";padding:"..p.."px;font-size:"..layout.body_font.."px;")
@@ -314,7 +319,9 @@ function View:applyLayout(layout)
   self.bottom:setStyleSheet("background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px "..p.."px;font-size:"..layout.small_font.."px;")
   self.compact:setStyleSheet("background:"..t.panel..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
   for _,g in ipairs({self.hp,self.fatigue,self.carry,self.psi,self.web}) do g.text:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.lower_small_font.."px;font-weight:700;"); if g.text.setFontSize then g.text:setFontSize(layout.lower_small_font) end end
-  place(self.header,0,0,"100%",top); place(self.attribute_strip,layout.console_left or layout.left,0,layout.console_width,top); self.attribute_strip:raise(); self.bottom:hide()
+  place(self.header,0,0,"100%",top); place(self.attribute_strip,layout.console_left or layout.left,0,layout.console_width,top); self.attribute_strip:raise()
+  if layout.mode=="compact" then place(self.clock_header,"50%",0,"50%",top) else place(self.clock_header,"100%-"..layout.right,0,layout.right,top) end
+  self.clock_header:raise(); self.bottom:hide()
   place(self.chat_container,layout.chat_x or layout.left,top,layout.chat_width or layout.console_width,layout.chat_height or 240)
   place(self.chat_bg,0,0,"100%","100%")
   place(self.chat_tabs,0,0,"100%",32)
@@ -513,7 +520,7 @@ function View:applyChatWrap(layout)
 end
 function View:update(s)
   self.last_state=s; local t=self.settings.theme; local v=s.vitals; local layout=self.layout or {mode="wide",heading_font=20}; local ready=function(x) return x and "<span style='color:"..t.jade.."'><b>READY</b></span>" or "<span style='color:"..t.hp.."'><b>NOT READY</b></span>" end
-  self:updateClock(s.clock); self.attribute_strip:echo(View.attributeStripContent(s.attributes,t,layout))
+  self.header:echo(View.headerContent(layout,t,s.character.full_name)); self:updateClock(s.clock); self.attribute_strip:echo(View.attributeStripContent(s.attributes,t,layout))
   self.identity:echo(View.identityContent(s.character,t,layout))
   self.equipment:echo(View.equipmentContent(v,s.equipment.items,t,layout))
   self.hp:setValue(v.hp.current,math.max(v.hp.maximum,1),"Health  "..v.hp.current.." / "..v.hp.maximum); self.fatigue:setValue(v.fatigue.current,math.max(v.fatigue.maximum,1),"Fatigue  "..v.fatigue.current.." / "..v.fatigue.maximum); self.carry:setValue(v.carry.current,math.max(v.carry.maximum,1),"Carry  "..v.carry.current.." / "..v.carry.maximum)
@@ -525,8 +532,7 @@ function View:update(s)
 end
 function View:updateClock(clock)
   local layout=self.layout or {mode="wide",body_font=16,heading_font=20}; local t=self.settings.theme
-  local character=self.last_state and self.last_state.character or {}
-  self.header:echo(View.headerContent(layout,t,character.full_name,clock))
+  self.clock_header:echo(View.clockContent(layout,t,clock))
   return true
 end
 function View:delete() if self.root then self.root:delete(); self.root=nil end end

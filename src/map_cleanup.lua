@@ -157,6 +157,24 @@ function Cleanup:_areaPlan(target,issueToken)
   return self:_finishPlan({operation="clear_area",target=tostring(target),area_id=area,partition=nil,room_ids=copy(rooms)},issueToken)
 end
 
+function Cleanup:_currentPlan(roomID,issueToken)
+  local room=positiveInteger(roomID)
+  if not room then return nil,"current room ID must be a positive integer" end
+  local roomRecord,roomErr=self.map:roomRecord(room)
+  if roomRecord==nil then return nil,roomErr end
+  if not roomRecord.exists then return nil,"current room "..tostring(room).." does not exist" end
+  if not roomRecord.owned then return nil,"current room "..tostring(room).." is not owned by DragonsGateHUD" end
+  local area=positiveInteger(roomRecord.area)
+  if not area then return nil,"current room "..tostring(room).." has no valid mapper area" end
+  local areaRecord,areaErr=self.map:areaRecord(area)
+  if areaRecord==nil then return nil,areaErr end
+  if not areaRecord.owned then return nil,"mapper area "..tostring(area).." is not owned by DragonsGateHUD" end
+  local safe,safeErr=verifyAreaSafety(self.map,{area}); if not safe then return nil,safeErr end
+  local rooms,roomsErr=self.map:roomsInArea(area)
+  if rooms==nil then return nil,roomsErr end
+  return self:_finishPlan({operation="clear_current",target=tostring(room),area_id=area,partition=nil,room_ids=copy(rooms),allow_current=true},issueToken)
+end
+
 function Cleanup:_submapPlan(rootRoomID,issueToken)
   local root=positiveInteger(rootRoomID)
   if not root then return nil,"submap root room ID must be a positive integer" end
@@ -221,6 +239,7 @@ function Cleanup:_preview(builder,...)
 end
 
 function Cleanup:previewRoom(roomID) return self:_preview(self._roomPlan,roomID) end
+function Cleanup:previewCurrent(roomID) return self:_preview(self._currentPlan,roomID) end
 function Cleanup:previewArea(target) return self:_preview(self._areaPlan,target) end
 function Cleanup:previewSubmap(rootRoomID) return self:_preview(self._submapPlan,rootRoomID) end
 function Cleanup:previewAll()
@@ -244,6 +263,7 @@ end
 
 function Cleanup:_rebuild(plan)
   if plan.operation=="delete_room" then return self:_roomPlan(plan.target,false) end
+  if plan.operation=="clear_current" then return self:_currentPlan(plan.target,false) end
   if plan.operation=="clear_area" then return self:_areaPlan(plan.target,false) end
   if plan.operation=="clear_submap" then return self:_submapPlan(plan.target,false) end
   if plan.operation=="clear_all" then return self:_allPlan(false) end

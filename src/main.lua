@@ -490,6 +490,12 @@ function Main:start()
     {"^dghud map delete room (\\d+)$",function(value) return self:previewCleanup("previewRoom",aliasArgument(value)) end},
     {"^dghud map clear submap (\\d+)$",function(value) return self:previewCleanup("previewSubmap",aliasArgument(value)) end},
     {"^dghud map clear area (.+)$",function(value) return self:previewCleanup("previewArea",aliasArgument(value)) end},
+    {"^dghud map clear current$",function()
+      local data=self.adapter:getGMCP(); local info=data and data.Room and data.Room.Info
+      local room=info and tonumber(info.num) or self.automapper:currentRoom()
+      if not room then local err="current room is unavailable"; self:reportCleanup(err,true); return nil,err end
+      return self:previewCleanup("previewCurrent",room)
+    end},
     {"^dghud map clear all$",function() return self:clearAllMapsAction() end},
     {"^dghud map confirm (\\S+)$",function(value) return self:confirmCleanup(aliasArgument(value)) end},
     {"^dghud map cancel$",function() local ok,err=self.cleanup:cancel(); self.clear_all_armed_at=nil; if self.view and self.view.setMapClearPending then self.view:setMapClearPending(false) end; if not ok then self:reportCleanup(err,true); return nil,err end; self:reportCleanup("Cleanup preview cancelled.",false); return true end},

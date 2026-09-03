@@ -137,6 +137,26 @@ test("area preview resolves only exact names and numeric IDs",function()
   local result,err=cleanup:previewArea("Al"); eq(result,nil); eq(err,"mapper area Al does not exist")
 end)
 
+test("current preview resolves its complete owned area and permits current-room recreation",function()
+  local cleanup,_,runtime=fixture(); runtime.snapshot.current_room=200
+  local preview=assert(cleanup:previewCurrent(200))
+  eq(preview.operation,"clear_current"); eq(preview.target,"200"); eq(preview.area_id,8)
+  eq(preview.allow_current,true); listEq(preview.room_ids,{200,201})
+end)
+
+test("current preview refuses missing and unowned current rooms",function()
+  local cleanup=fixture(); local result,err=cleanup:previewCurrent(999)
+  eq(result,nil); eq(err,"current room 999 does not exist")
+  result,err=cleanup:previewCurrent(50); eq(result,nil); eq(err,"current room 50 is not owned by DragonsGateHUD")
+end)
+
+test("current cleanup deletes its area and runs reconciliation",function()
+  local cleanup,map,runtime=fixture(); runtime.snapshot.current_room=200
+  local result=assert(cleanup:confirm(assert(cleanup:previewCurrent(200)).token))
+  listEq(result.deleted,{200,201}); listEq(result.deleted_areas,{8}); eq(result.area_deleted,true)
+  eq(map.areas[8],nil); eq(runtime.afterCalls,1)
+end)
+
 test("ambiguous exact area names are rejected",function()
   local cleanup,map=fixture(); map.areaNames={[1]="Alpha",Alpha=8,["Alpha duplicate"]=8}
   local result,err=cleanup:previewArea("Alpha"); eq(result,nil); eq(err,"mapper area Alpha is ambiguous")

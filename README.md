@@ -151,12 +151,13 @@ The HUD tags only its own rooms and areas with `dghud.owner=DragonsGateHUD`. It 
 
 Cleanup previews require secure token entropy from `/dev/urandom`. If that source is unavailable, preview creation fails closed without changing the map. Standard Windows environments are unsupported for cleanup previews until a supported secure entropy source is added; mapping itself remains available.
 
-To repair incorrectly generated HUD map content, first move out of the affected room, submap, or area and run `walkstop`. Preview exactly one scope:
+To repair incorrectly generated HUD map content, run `walkstop` first. Move out of a room before deleting only that room. The current map command intentionally includes and then recreates your current room from live GMCP. Preview exactly one scope:
 
 ```text
 dghud map delete room 176
 dghud map clear submap 900
 dghud map clear area Dragons Gate - Training Grounds
+dghud map clear current
 dghud map clear all
 ```
 

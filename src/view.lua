@@ -164,6 +164,7 @@ local help_entries={
   {command="dghud map delete room <number>",description="Preview deletion of one DGHUD-owned room.",warning=true},
   {command="dghud map clear submap <number>",description="Preview deletion of one DGHUD-owned submap.",warning=true},
   {command="dghud map clear area <name>",description="Preview deletion of one DGHUD-owned area.",warning=true},
+  {command="dghud map clear current",description="Preview deletion of the HUD map or submap containing your current room.",warning=true},
   {command="dghud map clear all",description="Preview a reset of every DGHUD-owned map and submap.",warning=true},
   {command="dghud map cancel",description="Cancel a pending map cleanup preview."},
   {command="dghud map confirm <token>",description="Confirm the exact pending cleanup preview.",warning=true},

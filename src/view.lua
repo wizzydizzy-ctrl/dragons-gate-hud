@@ -11,6 +11,11 @@ end
 local function esc(v) return tostring(v or ""):gsub("&","&amp;"):gsub("<","&lt;"):gsub(">","&gt;") end
 local function safeText(v) return esc(tostring(v or ""):gsub("%c"," ")) end
 local function safeChatText(v) return tostring(v or ""):gsub("%c"," ") end
+local function alignmentLabel(value)
+  local raw=tostring(value or ""); local key=raw:lower()
+  if key=="order" then return "Orderly" elseif key=="entropy" then return "Entropic" end
+  return raw
+end
 local chat_colors={ROOM="text",OWN="jade",WHISPER="#d49bc8",ESP="#a6a3e8",DRAGON="#d9a869",CONTACT="#8bc6b0",STAFF="#e09672"}
 local function chatScroll(output,ranges)
   local okCurrent,current=pcall(function() return output:getScroll() end)
@@ -56,9 +61,10 @@ function View.identityContent(character,t,layout)
   local faith=""; if character.deity or character.religion then
     local values={}; for _,value in ipairs({character.religion,character.deity}) do if value and value~="" then values[#values+1]=esc(value) end end
     faith="<br><span style='color:"..t.muted.."'>"..table.concat(values," · ").."</span>"
-    if character.religious_balance and character.religious_balance~="" then faith=faith.."<br><span style='color:"..t.muted.."'>"..esc(character.religious_balance).."</span>" end
   end
-  return View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>"..esc(character.full_name).."</b></span><br><span style='color:"..t.jade.."'><b>"..esc(character.race).." · "..esc(character.class).."</b></span><br><span style='color:"..t.muted.."'>"..esc(character.alignment).."</span>"..detail..faith,layout.body_font)
+  local standing={}; for _,value in ipairs({character.religious_balance,alignmentLabel(character.alignment)}) do if value and value~="" then standing[#standing+1]=esc(value) end end
+  local standingLine=#standing>0 and "<br><span style='color:"..t.muted.."'>"..table.concat(standing," · ").."</span>" or ""
+  return View.withFont("<span style='color:"..t.accent..";font-size:"..layout.heading_font.."px'><b>"..esc(character.full_name).."</b></span><br><span style='color:"..t.jade.."'><b>"..esc(character.race).." · "..esc(character.class).."</b></span>"..detail..faith..standingLine,layout.body_font)
 end
 function View.headerContent(layout,t,fullName)
   local detail=layout.mode=="compact" and " &nbsp; <span style='color:"..t.text.."'><b>"..esc(fullName).."</b></span>" or ""

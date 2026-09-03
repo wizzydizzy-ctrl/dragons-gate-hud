@@ -6,6 +6,8 @@ The header shows the player's local computer time and a synchronized Dragons Gat
 
 The compact `OPTIONS ▾` control immediately left of Real Time opens a responsive options menu. Every highlight is on by default and can be toggled independently: room titles, exits/directions, currency, travel objects, attacks aimed at you, damage received, danger/movement blocks, recovery, ongoing costs, spell threats, and discoveries/loot. Normal room prose and chat remain unchanged. Preferences survive HUD reloads and updates without changing personal Mudlet triggers or colors.
 
+The HUD tracks posture from confirmed game output using the mutually exclusive global variables `standing` and `sitting`. Both begin unknown. Standing messages set `standing=true`; seated, lying, fallen, fainted, and passed-out messages set `sitting=true`. Merely being off balance, knocked back, seeing `You fall...`, or being told to stand does not change posture. The separate `unconscious` variable follows confirmed loss and recovery of consciousness. Matching is substring-safe so command echo and optional social wording do not prevent updates.
+
 ```text
 dghud colors
 dghud colors room off

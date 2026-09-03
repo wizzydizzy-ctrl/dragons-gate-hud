@@ -121,7 +121,10 @@ function Adapter:cancelTimer(id) return killTimer(id) end
 function Adapter:sendCommand(command) return send(command) end
 function Adapter:getGMCP() return gmcp or {} end
 function Adapter:getPostureVariables()
-  return {standing=rawget(_G,"standing")==true,sitting=rawget(_G,"sitting")==true}
+  return {standing=rawget(_G,"standing"),sitting=rawget(_G,"sitting"),unconscious=rawget(_G,"unconscious")}
+end
+function Adapter:setPostureVariables(state)
+  state=type(state)=="table" and state or {}; rawset(_G,"standing",state.standing); rawset(_G,"sitting",state.sitting); rawset(_G,"unconscious",state.unconscious); return true
 end
 function Adapter.characterPrompt(value) return tostring(value or ""):match("^>")~=nil end
 function Adapter:isCharacterActive() return Adapter.characterPrompt(getCurrentLine and getCurrentLine() or "") end

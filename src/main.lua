@@ -1,5 +1,5 @@
 package.loaded["output_colorizer"]=nil
-local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local Clock=require("game_clock"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local OutputColorizer=require("output_colorizer"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local SpecialTransition=require("special_transition"); local MapWalker=require("map_walker"); local Cleanup=require("map_cleanup")
+local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local Clock=require("game_clock"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local OutputColorizer=require("output_colorizer"); local PostureTracker=require("posture_tracker"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local SpecialTransition=require("special_transition"); local MapWalker=require("map_walker"); local Cleanup=require("map_cleanup")
 local Main={}; Main.__index=Main
 local colorFeatures={"room","exits","currency","portal","attack","damage","danger","recovery","upkeep","spell","discovery"}
 local function colorOptions(status)
@@ -94,7 +94,7 @@ function Main:refreshClock()
 end
 function Main:refresh()
   local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {})
-  if self.adapter.getPostureVariables then local ok,posture=pcall(self.adapter.getPostureVariables,self.adapter); if ok and type(posture)=="table" then normalized.vitals.standing=posture.standing==true; normalized.vitals.sitting=posture.sitting==true end end
+  if self.adapter.getPostureVariables then local ok,posture=pcall(self.adapter.getPostureVariables,self.adapter); if ok and type(posture)=="table" then normalized.vitals.standing=posture.standing; normalized.vitals.sitting=posture.sitting; normalized.vitals.unconscious=posture.unconscious end end
   if self.roundtime_display~=nil then normalized.vitals.roundtime=self.roundtime_display end; normalized.clock=self:clockDisplay(); self.view:update(normalized); self.last_state=normalized; Main.syncRunesApi(normalized); if self.chat then self.chat:syncCharacter() end; return true
 end
 function Main:onClockSync(value) local ok,err=self.clock:sync(value,self.adapter:epoch()); if not ok then return nil,err end; self:refreshClock(); return true end
@@ -461,6 +461,7 @@ function Main:start()
   self:installMapClickHook()
   local startupOk,startupErr=pcall(function()
   self.view=self.adapter:createView(self.settings)
+  self.posture=PostureTracker.new(self.adapter,function() if self.started then self:refresh() end end)
   if self.view.setColorToggleCallback then self.view:setColorToggleCallback(function(wanted) local enabled=self:setColorizerEnabled(type(wanted)=="boolean" and wanted or not self.colorizer_enabled); if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(self.colorizer:status()) end; return enabled end) end
   if self.view.setColorOptionsCallback then self.view:setColorOptionsCallback(function(name,wanted) local feature=name=="room_titles" and "room" or name; local enabled,err=self:setColorFeature(feature,wanted); if enabled==nil then return nil,err end; if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(self.colorizer:status()) end; return enabled end) end
   local colorSettings=type(self.settings.colorization)=="table" and self.settings.colorization or {}
@@ -547,6 +548,7 @@ function Main:start()
   self.started=true; local data=self.adapter:getGMCP(); if self:mapperEnabled() and data and data.Room and data.Room.Info then local mapped=self.automapper:onRoom(data.Room.Info); if mapped and tonumber(data.Room.Info.num) then self.managed_rooms[tonumber(data.Room.Info.num)]=true end end; self:refresh(); self:scheduleRoundtimeTick(); self:scheduleClockTick()
   local chatStarted,chatErr=self:startChat(); if not chatStarted then error(chatErr,0) end
   self.runtime.triggers[#self.runtime.triggers+1]=self.adapter:addLineTrigger(function(line) self:callSpecialTransition("onLine",line) end)
+  self.runtime.triggers[#self.runtime.triggers+1]=self.adapter:addLineTrigger(function(line) self.posture:onLine(line) end)
   end)
   if not startupOk then pcall(function() self:shutdown() end); return nil,startupErr end
   return true

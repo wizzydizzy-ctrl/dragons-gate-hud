@@ -114,16 +114,16 @@ function View.skillLine(skill,nameWidth,gaps,levelWidth,useWidth)
 end
 function View.detailsContent(combat,attributes,t,layout,vitals)
   combat=combat or {}; attributes=attributes or {}; local parts={}
-  local left=combat.body_armor and "Armor <b>"..esc(combat.body_armor).."%</b>" or ""
-  local right={}; if combat.or_rating~=nil then right[#right+1]="OR <b>"..esc(combat.or_rating).."</b>" end; if combat.dr~=nil then right[#right+1]="DR <b>"..esc(combat.dr).."</b>" end
-  if left~="" or #right>0 then parts[#parts+1]="<table width='100%' cellspacing='0' cellpadding='0'><tr><td>"..left.."</td><td align='right'>"..table.concat(right," &nbsp; ").."</td></tr></table>" end
-  if combat.stance then parts[#parts+1]="Stance <b>"..esc(combat.stance).."</b>" end
   vitals=vitals or {}
   local roundtime=tonumber(vitals.roundtime) or 0
-  parts[#parts+1]="Roundtime &nbsp; <b>"..(roundtime==0 and "READY" or esc(roundtime)).."</b>"
+  if combat.body_armor~=nil then parts[#parts+1]="Armor <b>"..esc(combat.body_armor).."%</b>" end
+  local stance="Stance <b>"..esc(combat.stance or "—").."</b>"; local offense=combat.or_rating~=nil and "OR <b>"..esc(combat.or_rating).."</b>" or ""
+  local timing="Roundtime <b>"..(roundtime==0 and "READY" or esc(roundtime)).."</b>"; local defense=combat.dr~=nil and "DR <b>"..esc(combat.dr).."</b>" or ""
+  parts[#parts+1]="<table width='100%' cellspacing='0' cellpadding='0'><tr><td>"..stance.."</td><td align='right'>"..offense.."</td></tr><tr><td>"..timing.."</td><td align='right'>"..defense.."</td></tr></table>"
   local posture=vitals.sitting and "Sitting" or (vitals.standing and "Standing" or nil)
   parts[#parts+1]="Position &nbsp; <b>"..esc(vitals.position or "—").."</b>"..(posture and " &nbsp; · &nbsp; <b>"..posture.."</b>" or "")
-  return View.withFont("<span style='color:"..t.accent.."'><b>COMBAT</b></span><br>"..table.concat(parts,"<br>"),layout.combat_font or layout.equipment_font or layout.inventory_font or layout.body_font)
+  local baseFont=layout.combat_font or layout.equipment_font or layout.inventory_font or layout.body_font or 12
+  return View.withFont("<span style='color:"..t.accent.."'><b>COMBAT</b></span><br>"..table.concat(parts,"<br>"),math.max(8,baseFont-2))
 end
 function View.attributeStripContent(attributes,t,layout)
   local parts={}; attributes=attributes or {}

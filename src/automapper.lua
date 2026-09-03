@@ -68,12 +68,15 @@ function Automapper:partitionFor(room,record)
   if self.pending and self.pending.direction and self.pending.from~=room.id then
     local origin,originErr=self:roomRecord(self.pending.from)
     if origin==nil then return nil,originErr end
-    if origin.exists and origin.owned and origin.game_area==room.area_key then
+    if origin.exists and origin.owned then
       local originPartition=origin.partition
       if not originPartition then originPartition,originErr=self.map:effectivePartition(self.pending.from) end
       if originPartition==nil and originErr then return nil,originErr end
-      if tostring(originPartition or ""):match("^special:%d+$") then return originPartition end
+      if originPartition~=nil then return originPartition end
     end
+  end
+  if self.current_id and self.current_id~=room.id and not self.pending then
+    return "isolated:"..tostring(room.id)
   end
   return room.area_key
 end
@@ -144,6 +147,7 @@ function Automapper:onRoom(raw)
   if not room then return failUnensuredRoom(self,nil,false,"invalid_room",normalizeErr) end
   local sameOrigin=self.pending and self.pending.from==room.id
   local specialArrival=self.pending and self.pending.kind=="special" and not sameOrigin
+  local specialCommand=specialArrival and self.pending.command or nil
   if specialArrival and self.pending.to~=room.id then
     local err="special transition destination did not match GMCP room"
     return failUnensuredRoom(self,room,sameOrigin,"invalid_room",err)
@@ -189,7 +193,13 @@ function Automapper:onRoom(raw)
   if not sameOrigin then self.pending=nil end; self.current_id=room.id
   local current,currentErr=self.map:setCurrent(room.id)
   if not current then self.current_id=nil; self:status("invalid_room",currentErr); return nil,currentErr end
-  if previous and previous~=room.id and not hadPending then self:status("teleport","room changed without a tracked direction") else self:status("mapped","room "..tostring(room.id)) end
+  if previous and previous~=room.id and not hadPending then
+    self:status("teleport","room changed without a tracked direction; isolated room "..tostring(room.id))
+  elseif specialArrival then
+    self:status("mapped","entered submap at room "..tostring(room.id).." via "..tostring(specialCommand or "special exit"))
+  else
+    self:status("mapped","room "..tostring(room.id))
+  end
   return true
 end
 

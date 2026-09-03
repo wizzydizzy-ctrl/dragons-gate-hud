@@ -1,7 +1,7 @@
 return {
   schema = 1,
   package_name = "DragonsGateHUD",
-  version = "0.2.83",
+  version = "0.2.84",
   layout = { left_width = 190, right_width = 270, min_console_width = 520 },
   chat = { enabled=true, height_percent=.21, target_height=240, min_height=160, max_height=320, visible_limit=1000, dedupe_seconds=3, timestamps=true },
   colorization = {
@@ -21,7 +21,8 @@ return {
     walk_timeout=12,
     minimum_height=90,
     schema=1,
-    special_timeout = 3,
+    special_timeout = 12,
+    special_patterns = {},
     zoom_step = 2.5,
     zoom_min = 3.0,
     zoom_max = 60.0,

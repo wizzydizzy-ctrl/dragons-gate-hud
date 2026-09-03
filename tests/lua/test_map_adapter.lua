@@ -61,7 +61,7 @@ local function fakeMapApi(seed)
   function api.getMapZoom(area) local ok,e=gate("getMapZoom"); if not ok then return nil,e end; return api.zoom[area] end
   function api.setMapZoom(value,area) local ok,e=gate("setMapZoom"); if not ok then return nil,e end; api.zoom[area]=value; return true end
   function api.centerview(id) local ok,e=gate("centerview"); if not ok then return nil,e end; api.centered=id; return true end
-  function api.getPath(a,b) local ok,e=gate("getPath"); if not ok then return nil,e end; return api.path or {a.."-"..b} end
+  function api.getPath(a,b) local ok,e=gate("getPath"); if not ok then return nil,e end; return api.path or {rooms={a,b},commands={a.."-"..b}} end
   function api.updateMap() local ok,e=gate("updateMap"); if not ok then return nil,e end; api.refreshed=api.refreshed+1; return true end
   function api.tempTimer(_,callback) local ok,e=gate("tempTimer"); if not ok then return nil,e end; callback(); return 1 end
   return api
@@ -179,6 +179,14 @@ test("persists a special destination partition keyed by canonical room ID",funct
   local record=assert(Adapter.new(api):roomRecord(900))
   eq(record.exists,true); eq(record.owned,true); eq(record.partition,"special:900"); eq(record.area,api.rooms[900].area)
   eq(record.coordinates.x,0); eq(record.coordinates.y,0); eq(record.coordinates.z,0); eq(record.placement_needed,false)
+end)
+
+test("persists an isolated destination area keyed by canonical room ID",function()
+  local api=fakeMapApi(); local map=Adapter.new(api)
+  assert(map:ensureRoom(descriptor(901,"7","Unexpected arrival"),{x=0,y=0,z=0},"isolated:901"))
+  eq(api.rooms[901].user["dghud.partition"],"isolated:901")
+  eq(api.areas["Dragons Gate - Isolated 901"],api.rooms[901].area)
+  eq(assert(Adapter.new(api):effectivePartition(901)),"isolated:901")
 end)
 
 test("existing canonical rooms retain their area coordinates and partition",function()
@@ -631,7 +639,7 @@ end)
 
 test("reads zero-indexed occupancy route and view",function()
   local api=fakeMapApi(); local map=Adapter.new(api); assert(map:ensureRoom(descriptor(10,"7"),{x=3,y=4,z=1})); local p=assert(map:coordinates(10)); eq(p.x,3); eq(p.y,4); eq(p.z,1)
-  local occupied=assert(map:roomsAt("7",3,4,1)); eq(occupied[0],10); api.path={"n","e"}; eq(assert(map:route(10,20))[2],"e"); assert(map:setCurrent(10)); assert(map:center(10)); eq(api.refreshed,1)
+  local occupied=assert(map:roomsAt("7",3,4,1)); eq(occupied[0],10); api.path={rooms={10,11,20},commands={"n","e"}}; eq(assert(map:route(10,20)).commands[2],"e"); assert(map:setCurrent(10)); assert(map:center(10)); eq(api.refreshed,1)
 end)
 
 test("visual zoom direction hides Mudlet numeric inversion and clamps per area",function()
@@ -744,7 +752,27 @@ test("production factory exposes guarded native zoom APIs",function()
   eq(api.getMapZoom(7),20); assert(api.setMapZoom(17.5,7)); eq(zoom[7],17.5)
 end)
 
-test("production route isolates speedWalkDir",function()
-  local globals={speedWalkDir={"old"}}; globals.getPath=function() globals.speedWalkDir={"north","east"}; return true end
-  local steps=assert(Adapter.new(Adapter.mudletApi(globals)):route(1,3)); eq(steps[1],"north"); globals.speedWalkDir[1]="changed"; eq(steps[1],"north")
+test("production route atomically snapshots path and directions",function()
+  local globals={speedWalkPath={99},speedWalkDir={"old"}}
+  globals.getPath=function()
+    globals.speedWalkPath={1,2,3}
+    globals.speedWalkDir={"north","east"}
+    return true
+  end
+  local route=assert(Adapter.new(Adapter.mudletApi(globals)):route(1,3))
+  eq(route.rooms[1],1); eq(route.rooms[2],2); eq(route.rooms[3],3)
+  eq(route.commands[1],"north"); eq(route.commands[2],"east")
+  globals.speedWalkPath[2]=88
+  globals.speedWalkDir[1]="changed"
+  eq(route.rooms[2],2); eq(route.commands[1],"north")
+end)
+
+test("production route requires both Mudlet route globals",function()
+  local globals={speedWalkDir={"north"},getPath=function() return true end}
+  local route,err=Adapter.new(Adapter.mudletApi(globals)):route(1,2)
+  eq(route,nil); eq(err,"Mudlet mapper API getPath did not provide speedWalkPath")
+
+  globals.speedWalkPath={1,2}; globals.speedWalkDir=nil
+  route,err=Adapter.new(Adapter.mudletApi(globals)):route(1,2)
+  eq(route,nil); eq(err,"Mudlet mapper API getPath did not provide speedWalkDir")
 end)

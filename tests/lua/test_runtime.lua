@@ -432,7 +432,7 @@ test("resize preserves chat controller history and trigger ownership",function()
   eq(f.layouts[#f.layouts].chat_height>160,true); eq(f.set_borders[2],f.layouts[#f.layouts].console_top)
 end)
 test("controller merges collector snapshots and removes owned trigger runtime",function()
-  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud.collector.snapshot.info={attributes={STR="Good"}}; hud:refresh(); eq(hud.last_state.attributes.STR,"Good"); eq(f:count(f.triggers),3); hud:shutdown(); eq(f:count(f.triggers),0); eq(f:count(f.timers),0)
+  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud.collector.snapshot.info={attributes={STR="Good"}}; hud:refresh(); eq(hud.last_state.attributes.STR,"Good"); eq(f:count(f.triggers),4); hud:shutdown(); eq(f:count(f.triggers),0); eq(f:count(f.timers),0)
 end)
 test("GMCP identity arrival hydrates persisted character history without appending it",function()
   local f=fake()
@@ -496,7 +496,7 @@ test("a different character welcome performs another update check without discon
   eq(checks,2); eq(#completions,2)
 end)
 test("reload leaves one command collector",function()
-  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); eq(f:count(f.triggers),3); local outgoing=0; for _,name in pairs(f.events) do if name=="sysDataSendRequest" then outgoing=outgoing+1 end end; eq(outgoing,2)
+  local f=fake(); local hud=Main.new(f,{layout={}}); hud:start(); hud:reload(); eq(f:count(f.triggers),4); local outgoing=0; for _,name in pairs(f.events) do if name=="sysDataSendRequest" then outgoing=outgoing+1 end end; eq(outgoing,2)
 end)
 
 test("runtime wires one automapper handler per event and cleans it exactly",function()
@@ -556,7 +556,13 @@ test("successful arbitrary special command owns the transition exactly",function
   f.callbacks["sysDataSendRequest"](nil,"  Climb RuneRope  ")
   f.gmcp=gmcpRoom(900); f.callbacks["gmcp.Room.Info"]()
   eq(#f.map.links,0); eq(#f.map.special,1)
-  eq(f.map.special[1].from,100); eq(f.map.special[1].to,900); eq(f.map.special[1].command,"Climb RuneRope")
+  eq(f.map.special[1].from,100); eq(f.map.special[1].to,900); eq(f.map.special[1].command,"climb runerope")
+end)
+test("runtime wires configured game-specific traversal patterns",function()
+  local f=fake(); f.gmcp=gmcpRoom(100); local hud=Main.new(f,{layout={},mapper={special_patterns={"^squeeze%s+through "}}}); assert(hud:start())
+  f.callbacks["sysDataSendRequest"](nil,"Squeeze through crack")
+  f.gmcp=gmcpRoom(900); f.callbacks["gmcp.Room.Info"]()
+  eq(#f.map.special,1); eq(f.map.special[1].command,"squeeze through crack")
 end)
 test("runtime reports tracker scheduler failures without retaining candidates",function()
   for _,mode in ipairs({"return","throw"}) do
@@ -689,10 +695,10 @@ test("chat trigger registration failure rolls back partial HUD runtime",function
 end)
 test("chat runtime has one owned trigger and cached personal API survives reload safely",function()
   local f=fake(); local unrelated=f:addLineTrigger(function() end); local hud=Main.new(f,{layout={}}); hud:start()
-  eq(hud.chat.started,true); eq(f:count(f.triggers),4)
+  eq(hud.chat.started,true); eq(f:count(f.triggers),5)
   DGHUD={controller=hud}; Main.installChatApi(DGHUD); local capture=DGHUD.chat.capture
   assert(capture("QUEST","before reload")); hud:reload(); DGHUD={controller=hud}; Main.installChatApi(DGHUD)
-  eq(f:count(f.triggers),4); eq(f.loadRecentCalls,2); eq(#hud.chat:entries(),1); eq(hud.chat:entries()[1].message,"before reload")
+  eq(f:count(f.triggers),5); eq(f.loadRecentCalls,2); eq(#hud.chat:entries(),1); eq(hud.chat:entries()[1].message,"before reload")
   assert(capture("QUEST","after reload")); eq(#hud.chat:entries(),2); eq(hud.chat:entries()[2].message,"after reload")
   hud:shutdown(); eq(f:count(f.triggers),1); eq(f.triggers[unrelated]~=nil,true)
   local result,err=capture("QUEST","during shutdown"); eq(result,nil); eq(err,"chatbox is not running"); DGHUD=nil
@@ -838,7 +844,7 @@ test("manually typed non-direction command replaces a generated special walk",fu
   assert(aliasCallback(f,"^walkto\\s+(\\d+)$")("2")); eq(hud.generated_command,"go gate")
   f.callbacks["sysDataSendRequest"](nil,"pull lever")
   eq(hud.walker:active(),false); eq(hud.generated_command,nil); eq(hud.last_mapper_status,"Walk stopped: manual movement")
-  eq(hud.special_transition:pending().command,"pull lever")
+  eq(hud.special_transition:pending(),nil)
 end)
 
 test("routine walking stops are statuses and do not overwrite mapper errors",function()
@@ -865,6 +871,19 @@ test("native map click uses walker route and restores the previous global hook",
   hud.map.rooms[176]={}; hud.map.links[1]={from=175,to=176,direction="n"}; _G.speedWalkPath={175,176}; _G.speedWalkDir={"north"}; assert(ownedHook()); eq(f.sentCommands[#f.sentCommands],"n")
   hud:shutdown(); eq(_G.doSpeedWalk,previous); eq(f:count(f.timers),0); eq(f:count(f.aliases),0)
   _G.doSpeedWalk=oldHook; _G.speedWalkPath=nil; _G.speedWalkDir=nil
+end)
+
+test("native map click snapshots route globals before ownership checks",function()
+  local oldHook,oldPath,oldDir=_G.doSpeedWalk,_G.speedWalkPath,_G.speedWalkDir
+  local f=fake(); f.gmcp={Char={Vitals={hp=1,hp_max=1}},Room={Info={num=175,name="A",area=1,exits={"north"}}}}
+  local hud=Main.new(f,{layout={}}); assert(hud:start()); hud.map.rooms[176]={}; hud.map.links[1]={from=175,to=176,direction="n"}
+  local originalIsOwned=hud.map.isOwned; local changed=false
+  hud.map.isOwned=function(map,id)
+    if not changed then changed=true; _G.speedWalkPath={999}; _G.speedWalkDir={"south"} end
+    return originalIsOwned(map,id)
+  end
+  _G.speedWalkPath={175,176}; _G.speedWalkDir={"north"}; assert(_G.doSpeedWalk()); eq(f.sentCommands[#f.sentCommands],"n")
+  hud:shutdown(); _G.doSpeedWalk=oldHook; _G.speedWalkPath=oldPath; _G.speedWalkDir=oldDir
 end)
 
 test("disabled mapper never replaces personal speedwalk hook",function()

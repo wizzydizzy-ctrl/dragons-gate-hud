@@ -109,7 +109,7 @@ Run `dghud chatstatus` to print the active filter, the current visible-entry cou
 
 The native Mudlet map is embedded in the lower-left HUD immediately above the compass. While the mapper is enabled, each valid `gmcp.Room.Info.num` is the canonical Dragons Gate room ID. Revisiting that GMCP number refreshes safe descriptive data on the same native room; it never creates a duplicate or relocates its saved area, partition, or coordinates. Walking through the twelve standard directions (`n`, `ne`, `e`, `se`, `s`, `sw`, `w`, `nw`, `up`, `down`, `in`, and `out`) discovers rooms, creates advertised exit stubs, and confirms links only after the destination room arrives through GMCP. Teleports do not invent links.
 
-A confirmed non-direction travel command to a newly discovered destination starts a destination-rooted sub-map such as `special:900`; directional exploration remains in that partition while the Dragons Gate area is unchanged. If the destination GMCP number is already canonical, the mapper preserves that room's saved partition and coordinates and records only the observed one-way special edge from the current origin. A command is confirmed only when a different canonical GMCP room arrives within three seconds. A later command replaces the candidate, and expiry, wrong direction, disconnect, reload, shutdown, or mapper disablement clears it. Standard directions and conservative non-travel/control commands—`dghud`, `walkto`, `walkstop`, `mapcenter`, `inventory`/`inv`, `stat`, `info`, `look`/`l`, `who`, `say`, `whisper`, and `link`, including argument forms—never become special exits. The mapper records only the exact observed one-way command. It does not invent a reverse special connection; the return edge appears only after its own command and destination are observed.
+A confirmed special-travel command to a newly discovered destination starts a destination-rooted sub-map such as `special:900`; directional exploration remains in that partition even if Dragons Gate changes its area label. The built-in classifier accepts `go gate`, `go door`, `go portal`, `go arch`, `go path`, and conservative traversal verbs including `enter`, `leave`, `climb`, `crawl`, `cross`, `board`, and `disembark`. Normal gameplay commands cannot create phantom special exits. If the destination GMCP number is already canonical, the mapper preserves that room's saved partition and coordinates and records only the observed one-way special edge from the current origin. A command is confirmed only when a different canonical GMCP room arrives within twelve seconds. A later command replaces the candidate, and expiry, wrong direction, disconnect, reload, shutdown, or mapper disablement clears it. The mapper records only the normalized observed one-way command. It does not invent a reverse special connection; the return edge appears only after its own command and destination are observed. An unexpected untracked room change starts an isolated destination-rooted map rather than placing the room unpredictably in an existing area.
 
 The default mapper settings are:
 
@@ -119,7 +119,7 @@ mapper = {
   walk_timeout = 12,
   minimum_height = 90,
   schema = 1,
-  special_timeout = 3,
+  special_timeout = 12,
   zoom_step = 2.5,
   zoom_min = 3.0,
   zoom_max = 60.0,

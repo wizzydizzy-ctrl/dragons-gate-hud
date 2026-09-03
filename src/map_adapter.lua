@@ -8,8 +8,12 @@ local LEGACY_ROOM_NAME_MIGRATION_KEY="dghud.legacy_room_names_schema"
 local LEGACY_ROOM_NAME_MIGRATION_SCHEMA="1"
 
 local function areaName(key)
-  local destination=tostring(key):match("^special:(%d+)$")
-  return destination and ("Dragons Gate - Submap "..destination) or ("Dragons Gate - "..tostring(key))
+  local value=tostring(key)
+  local destination=value:match("^special:(%d+)$")
+  if destination then return "Dragons Gate - Submap "..destination end
+  local isolated=value:match("^isolated:(%d+)$")
+  if isolated then return "Dragons Gate - Isolated "..isolated end
+  return "Dragons Gate - "..value
 end
 
 local function missing(name)
@@ -419,8 +423,10 @@ local function partitionForArea(self,area)
   local partition
   for name,id in pairs(areas) do
     if id==area then
-      local destination=tostring(name):match("^Dragons Gate %- Submap (%d+)$")
-      partition=destination and ("special:"..destination) or tostring(name):match("^Dragons Gate %- (.+)$")
+      local areaNameValue=tostring(name)
+      local destination=areaNameValue:match("^Dragons Gate %- Submap (%d+)$")
+      local isolated=areaNameValue:match("^Dragons Gate %- Isolated (%d+)$")
+      partition=destination and ("special:"..destination) or isolated and ("isolated:"..isolated) or areaNameValue:match("^Dragons Gate %- (.+)$")
       if partition then break end
     end
   end
@@ -602,9 +608,9 @@ function MapAdapter:roomsAt(areaKey,x,y,z)
 end
 
 function MapAdapter:route(fromID,toID)
-  local steps,err=invoke(self.api,"getPath",fromID,toID)
-  if steps==nil then return nil,err end
-  return steps
+  local route,err=invoke(self.api,"getPath",fromID,toID)
+  if route==nil then return nil,err end
+  return route
 end
 
 function MapAdapter:center(roomID)
@@ -693,10 +699,12 @@ function MapAdapter.mudletApi(globals)
     local ok,found=pcall(fn,fromID,toID)
     if not ok then return nil,"Mudlet mapper API getPath failed: "..tostring(found) end
     if not found then return nil,"no map route from "..tostring(fromID).." to "..tostring(toID) end
+    if type(globals.speedWalkPath)~="table" then return nil,"Mudlet mapper API getPath did not provide speedWalkPath" end
     if type(globals.speedWalkDir)~="table" then return nil,"Mudlet mapper API getPath did not provide speedWalkDir" end
-    local steps={}
-    for index,direction in ipairs(globals.speedWalkDir) do steps[index]=direction end
-    return steps
+    local route={rooms={},commands={}}
+    for index,roomID in ipairs(globals.speedWalkPath) do route.rooms[index]=roomID end
+    for index,direction in ipairs(globals.speedWalkDir) do route.commands[index]=direction end
+    return route
   end
   api.roomExists=function(id)
     if type(globals.roomExists)=="function" then

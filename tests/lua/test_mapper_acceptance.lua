@@ -203,8 +203,8 @@ local function observeCommand(f,command)
   fire(f,"sysDataSendRequest",command)
 end
 
-test("HUD release defaults are ready for version 0.2.83",function()
-  eq(Defaults.version,"0.2.83"); eq(Defaults.mapper.enabled,true); eq(Defaults.mapper.walk_timeout,12)
+test("HUD release defaults are ready for version 0.2.84",function()
+  eq(Defaults.version,"0.2.84"); eq(Defaults.mapper.enabled,true); eq(Defaults.mapper.walk_timeout,12)
   eq(Defaults.time.speed,2); eq(Defaults.time.sunrise_hour,6); eq(Defaults.time.sunset_hour,18)
   eq(Defaults.mapper.minimum_height,90); eq(Defaults.mapper.schema,1)
 end)
@@ -227,8 +227,8 @@ test("special submaps persist canonical rooms zoom and mixed walking end to end"
   eq(world.rooms[901].partition,"special:900")
   eq(world.rooms[1200].partition,"special:1200")
   eq(count(world.special),3)
-  eq(world.special["100:900:Go Door"],true)
-  eq(world.special["901:1200:Go Arch"],true)
+  eq(world.special["100:900:go door"],true)
+  eq(world.special["901:1200:go arch"],true)
   eq(world.special["1200:901:leave"],true)
   eq(world.special["900:100:leave door"],nil)
 
@@ -246,15 +246,15 @@ test("special submaps persist canonical rooms zoom and mixed walking end to end"
   eq(invalid,nil); eq(invalidErr,"standard exit is not persisted from 901 to 100")
   local route,routeErr=hud.map:route(900,100); assert(route,routeErr)
   eq(table.concat(route.rooms,","),"900,901,1200,100")
-  eq(table.concat(route.commands,","),"n,Go Arch,out")
+  eq(table.concat(route.commands,","),"n,go arch,out")
   for index,command in ipairs(route.commands) do
     local valid,canonical=hud.map:validateRouteStep(route.rooms[index],route.rooms[index+1],command)
     assert(valid,canonical); eq(canonical,command)
   end
   local walk=assert(findAlias(f,"^walkto\\s+(\\d+)$")); local sentBefore=#world.sent
   assert(walk("100")); eq(#world.sent,sentBefore+1); eq(world.sent[#world.sent],"n")
-  observeCommand(f,"n"); arrive(f,901,{"south"}); eq(#world.sent,sentBefore+2); eq(world.sent[#world.sent],"Go Arch")
-  observeCommand(f,"Go Arch"); arrive(f,1200,{"out"}); eq(#world.sent,sentBefore+3); eq(world.sent[#world.sent],"out")
+  observeCommand(f,"n"); arrive(f,901,{"south"}); eq(#world.sent,sentBefore+2); eq(world.sent[#world.sent],"go arch")
+  observeCommand(f,"go arch"); arrive(f,1200,{"out"}); eq(#world.sent,sentBefore+3); eq(world.sent[#world.sent],"out")
   observeCommand(f,"out"); arrive(f,100,{"in"}); eq(hud.walker:active(),false); eq(#world.sent,sentBefore+3); eq(count(world.special),3)
 end)
 

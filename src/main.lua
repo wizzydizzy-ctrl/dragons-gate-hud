@@ -3,7 +3,7 @@ local State=require("state"); local Events=require("events"); local Layout=requi
 local Main={}; Main.__index=Main
 function Main.new(adapter,settings)
   local colorSettings=settings and settings.colorization
-  local self=setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={}},started=false,roundtime_display=nil,managed_rooms={},colorizer_enabled=not (type(colorSettings)=="table" and colorSettings.enabled==false)},Main)
+  local self=setmetatable({adapter=adapter,settings=settings,runtime={events={},aliases={},triggers={}},started=false,roundtime_display=nil,managed_rooms={},colorizer_enabled=not (type(colorSettings)=="table" and colorSettings.enabled==false)},Main)
   self.clock=Clock.new(settings and settings.time,function() return adapter:epoch() end)
   return self
 end
@@ -368,7 +368,14 @@ function Main:installMapClickHook()
   self.previous_speed_walk=rawget(_G,"doSpeedWalk")
   local controller=self
   self.speed_walk_hook=function()
-    local path=type(_G.speedWalkPath)=="table" and _G.speedWalkPath or nil
+    local sourcePath=type(_G.speedWalkPath)=="table" and _G.speedWalkPath or nil
+    local sourceCommands=type(_G.speedWalkDir)=="table" and _G.speedWalkDir or nil
+    local path,commands
+    if sourcePath and sourceCommands then
+      path={}; commands={}
+      for index,roomID in ipairs(sourcePath) do path[index]=roomID end
+      for index,command in ipairs(sourceCommands) do commands[index]=command end
+    end
     local destination=path and path[#path] or nil
     local owned=destination~=nil and controller.map and type(controller.map.isOwned)=="function"
     if owned then for _,roomID in ipairs(path) do if not controller.map:isOwned(tonumber(roomID)) then owned=false; break end end end
@@ -376,7 +383,7 @@ function Main:installMapClickHook()
       if type(controller.previous_speed_walk)=="function" then return controller.previous_speed_walk() end
       return nil,"clicked route is not owned by DragonsGateHUD"
     end
-    return controller:walkTo(destination,{rooms=path,commands=_G.speedWalkDir or {}})
+    return controller:walkTo(destination,{rooms=path,commands=commands})
   end
   _G.doSpeedWalk=self.speed_walk_hook
 end
@@ -406,7 +413,8 @@ function Main:start()
   if not automapperOk then self:shutdown(); return nil,automapper end
   if not automapper then self:shutdown(); return nil,automapperErr or "automapper construction failed" end
   self.automapper=automapper
-  self.special_transition=SpecialTransition.new(MapperModel,self.adapter,(self.settings.mapper and self.settings.mapper.special_timeout) or 3)
+  local mapperSettings=self.settings.mapper or {}
+  self.special_transition=SpecialTransition.new(MapperModel,self.adapter,mapperSettings.special_timeout or 12,nil,mapperSettings.special_patterns)
   local walkerAdapter={owner=self}
   function walkerAdapter:sendCommand(command)
     self.owner.generated_command=command
@@ -509,6 +517,7 @@ function Main:start()
   end)
   self.started=true; local data=self.adapter:getGMCP(); if self:mapperEnabled() and data and data.Room and data.Room.Info then local mapped=self.automapper:onRoom(data.Room.Info); if mapped and tonumber(data.Room.Info.num) then self.managed_rooms[tonumber(data.Room.Info.num)]=true end end; self:refresh(); self:scheduleRoundtimeTick(); self:scheduleClockTick()
   local chatStarted,chatErr=self:startChat(); if not chatStarted then error(chatErr,0) end
+  self.runtime.triggers[#self.runtime.triggers+1]=self.adapter:addLineTrigger(function(line) self:callSpecialTransition("onLine",line) end)
   end)
   if not startupOk then pcall(function() self:shutdown() end); return nil,startupErr end
   return true
@@ -526,8 +535,8 @@ function Main:shutdown()
   if self.special_transition then self:callSpecialTransition("shutdown"); self.special_transition=nil end
   self.cleanup=nil
   if self.automapper then self.automapper:shutdown(); self.automapper=nil end; self.map=nil
-  for _,id in ipairs(self.runtime.events) do self.adapter:killEvent(id) end; for _,id in ipairs(self.runtime.aliases) do self.adapter:killAlias(id) end
-  self.runtime={events={},aliases={}}; if self.view then self.view:delete(); self.view=nil end
+  for _,id in ipairs(self.runtime.events) do self.adapter:killEvent(id) end; for _,id in ipairs(self.runtime.aliases) do self.adapter:killAlias(id) end; for _,id in ipairs(self.runtime.triggers or {}) do self.adapter:killTrigger(id) end
+  self.runtime={events={},aliases={},triggers={}}; if self.view then self.view:delete(); self.view=nil end
   if self.original_borders then self.adapter:setBorders(self.original_borders[1],self.original_borders[2],self.original_borders[3],self.original_borders[4]); self.original_borders=nil end
   self.character_entry_started=false; self.character_entry_name=nil; self.started=false; return true
 end

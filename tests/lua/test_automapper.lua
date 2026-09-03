@@ -58,6 +58,7 @@ test("does not invent a link after a teleport",function()
   local map=fakeMap(); local statuses={}; local mapper=Automapper.new(Model,map,function(kind) statuses[#statuses+1]=kind end)
   assert(mapper:onRoom({num=100,name="A",area=1,exits={"north"}})); assert(mapper:onRoom({num=900,name="Elsewhere",area=2,exits={}}))
   eq(#map.links,0); eq(map.current,900); eq(statuses[#statuses],"teleport")
+  eq(map.roomByID[900].partition,"isolated:900")
 end)
 
 test("special movement creates a destination-rooted submap and exact one-way edge",function()
@@ -90,14 +91,42 @@ test("special entry reuses an existing canonical destination without changing it
   eq(map.roomByID[900].partition,"persisted:900"); eq(#map.rooms,2); eq(#map.special,1)
 end)
 
-test("directional exploration inherits a special partition until the game area changes",function()
+test("directional exploration remains in its origin partition when game area text changes",function()
   local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
   assert(mapper:onRoom(room(100,"Outside",1,{"north"})))
   assert(mapper:onSpecialTransition({from=100,to=900,command="go gate",kind="special"})); assert(mapper:onRoom(room(900,"Inside",1,{"north"})))
   mapper:onOutgoing("north"); assert(mapper:onRoom(room(901,"Hall",1,{"south","north"})))
   eq(map.roomByID[901].partition,"special:900"); eq(map.coordinatesByID[901].y,1)
   mapper:onOutgoing("north"); assert(mapper:onRoom(room(902,"Elsewhere",2,{"south"})))
-  eq(map.roomByID[902].partition,"2"); eq(map.coordinatesByID[902].y,2)
+  eq(map.roomByID[902].partition,"special:900"); eq(map.coordinatesByID[902].y,2)
+end)
+
+test("directional exploration remains in a normal origin partition when game area text changes",function()
+  local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
+  assert(mapper:onRoom(room(100,"Outside",1,{"north"})))
+  mapper:onOutgoing("north"); assert(mapper:onRoom(room(101,"Boundary",2,{"south"})))
+  eq(map.roomByID[101].partition,"1"); eq(map.coordinatesByID[101].y,1)
+end)
+
+test("initial rooms use their normal partition while later untracked discoveries are isolated",function()
+  local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
+  assert(mapper:onRoom(room(100,"Initial",7)))
+  eq(map.roomByID[100].partition,"7")
+  assert(mapper:onRoom(room(200,"Unexpected",7)))
+  eq(map.roomByID[200].partition,"isolated:200")
+  eq(map.coordinatesByID[200].x,0); eq(map.coordinatesByID[200].y,0); eq(map.coordinatesByID[200].z,0)
+end)
+
+test("untracked revisits preserve canonical room identity placement and partition",function()
+  local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
+  assert(mapper:onRoom(room(900,"Known",7)))
+  map.roomByID[900].partition="persisted:900"
+  map.roomByID[900].coordinates={x=4,y=5,z=1}; map.coordinatesByID[900]=map.roomByID[900].coordinates
+  assert(mapper:onRoom(room(100,"Other",1)))
+  assert(mapper:onRoom(room(900,"Known again",99)))
+  local request=map.ensureRequests[#map.ensureRequests]
+  eq(request.partition,"persisted:900"); eq(request.coordinates.x,4); eq(request.coordinates.y,5); eq(request.coordinates.z,1)
+  eq(#map.rooms,2)
 end)
 
 test("multiple origins reuse one destination-rooted submap without duplicating the room",function()
@@ -200,15 +229,16 @@ test("conflicting directional movement replaces pending movement",function()
   eq(mapper.pending.from,100); eq(mapper.pending.direction,"e")
 end)
 
-test("new teleported rooms receive deterministic nearest free coordinates",function()
+test("new teleported rooms receive destination-rooted isolated coordinates",function()
   local map=fakeMap(); map.occupied={ ["0,0,0"]={100}, ["0,1,0"]={200} }
-  function map:roomsAt(_,x,y,z) return self.occupied[x..","..y..","..z] or {} end
+  function map:roomsAt(partition,x,y,z)
+    if partition=="isolated:200" then return {} end
+    return self.occupied[x..","..y..","..z] or {}
+  end
   local mapper=Automapper.new(Model,map,function() end)
   assert(mapper:onRoom(room(100,"A",1))); assert(mapper:onRoom(room(200,"B",1)))
-  local placed=map.coordinatesByID[200]; eq(not (placed.x==0 and placed.y==0 and placed.z==0),true)
-  local map2=fakeMap(); map2.occupied=map.occupied; map2.roomsAt=map.roomsAt
-  local mapper2=Automapper.new(Model,map2,function() end); assert(mapper2:onRoom(room(200,"B",1)))
-  eq(map2.coordinatesByID[200].x,placed.x); eq(map2.coordinatesByID[200].y,placed.y); eq(map2.coordinatesByID[200].z,placed.z)
+  local placed=map.coordinatesByID[200]; eq(placed.x,0); eq(placed.y,0); eq(placed.z,0)
+  eq(map.roomByID[200].partition,"isolated:200")
 end)
 
 test("occupancy excludes the destination itself and propagates lookup failures",function()

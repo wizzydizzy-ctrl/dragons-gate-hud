@@ -203,8 +203,8 @@ local function observeCommand(f,command)
   fire(f,"sysDataSendRequest",command)
 end
 
-test("HUD release defaults are ready for version 0.2.90",function()
-  eq(Defaults.version,"0.2.90"); eq(Defaults.mapper.enabled,true); eq(Defaults.mapper.walk_timeout,12)
+test("HUD release defaults are ready for version 0.2.91",function()
+  eq(Defaults.version,"0.2.91"); eq(Defaults.mapper.enabled,true); eq(Defaults.mapper.walk_timeout,12)
   eq(Defaults.time.speed,2); eq(Defaults.time.sunrise_hour,6); eq(Defaults.time.sunset_hour,18)
   eq(Defaults.mapper.minimum_height,90); eq(Defaults.mapper.schema,1)
 end)

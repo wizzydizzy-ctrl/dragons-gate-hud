@@ -473,12 +473,13 @@ function View:applyLayout(layout)
     local inventory_h=rp*2+title_h+list_h+footer_h+8; local runes_h=rp*2+title_h+list_h+4; local skills_h=rp*2+title_h+list_h+4
     local required=inventory_h+12+runes_h+12+skills_h
     if rail_bottom-inventory_y>=required then
+      local skills_y=rail_bottom-skills_h
+      local runes_y=skills_y-12-runes_h
+      inventory_y=runes_y-12-inventory_h
       place(self.inventory,card_x,inventory_y,card_w,inventory_h)
       place(self.inventory_title,list_x,inventory_y+rp,list_w,title_h)
       place(self.inventory_output,list_x,inventory_y+rp+title_h,list_w,list_h)
       place(self.inventory_footer,list_x,inventory_y+rp+title_h+list_h+4,list_w,footer_h)
-      local skills_y=rail_bottom-skills_h
-      local runes_y=skills_y-12-runes_h
       place(self.runes,card_x,runes_y,card_w,runes_h); place(self.runes_title,list_x,runes_y+rp,list_w,title_h); place(self.runes_output,list_x,runes_y+rp+title_h,list_w,list_h)
       place(self.skills,card_x,skills_y,card_w,skills_h); place(self.skills_title,list_x,skills_y+rp,list_w,title_h); place(self.skills_output,list_x,skills_y+rp+title_h,list_w,list_h)
     else

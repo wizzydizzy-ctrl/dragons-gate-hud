@@ -375,6 +375,7 @@ test("right rail orders equipment combat inventory runes skills and vitals witho
     if view.inventory.visible and view.skills.visible then
       eq(view.runes.visible,true); eq(view.runes_output.visible,true)
       eq(view.details.visible,true); eq(view.details.y+view.details.height<=view.inventory.y,true); eq(view.inventory.y+view.inventory.height<=view.runes.y,true)
+      local inventory_runes_gap=view.runes.y-(view.inventory.y+view.inventory.height); eq(inventory_runes_gap>=0,true); eq(inventory_runes_gap<=12,true)
       eq(view.runes.y+view.runes.height<=view.skills.y,true)
       eq(view.skills.y+view.skills.height<=layout.window_height-view.vitals_right.height,true)
     else

@@ -109,6 +109,10 @@ test("combat card renders ready roundtime and position without a status heading"
   eq(html:find("COMBAT",1,true)~=nil,true); eq(html:find("STATUS",1,true),nil)
   eq(html:find("Roundtime",1,true)~=nil,true); eq(html:find("READY",1,true)~=nil,true); eq(html:find("Position",1,true)~=nil,true)
 end)
+test("combat keeps OR and DR right aligned without body armor",function()
+  local html=View.detailsContent({or_rating=25,dr=115,stance="Normal"},nil,{accent="#d8ae53"},{inventory_font=18},{roundtime=0,position=0})
+  eq(html:find("align='right'",1,true)~=nil,true); eq(html:find("OR <b>25</b>",1,true)~=nil,true); eq(html:find("DR <b>115</b>",1,true)~=nil,true)
+end)
 test("combat position displays posture with sitting taking defensive precedence",function()
   local theme={accent="#d8ae53"}; local layout={inventory_font=18}
   local standing=View.detailsContent({},nil,theme,layout,{roundtime=0,position=0,standing=true,sitting=false})

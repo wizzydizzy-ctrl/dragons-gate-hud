@@ -113,11 +113,11 @@ function View.skillLine(skill,nameWidth,gaps,levelWidth,useWidth)
   return string.format(skillFormat(nameWidth,gaps,levelWidth,useWidth),clipped(View.skillDisplayName(skill.name),nameWidth),tonumber(skill.level) or 0,tonumber(skill.remain) or 0)
 end
 function View.detailsContent(combat,attributes,t,layout,vitals)
-  combat=combat or {}; attributes=attributes or {}; local parts={}; local columns=layout.details_columns or 4
-  if combat.body_armor then
-    parts[#parts+1]="Armor <b>"..combat.body_armor.."%</b> &nbsp; OR <b>"..esc(combat.or_rating or "—").."</b> &nbsp; DR <b>"..esc(combat.dr or "—").."</b>"
-    if combat.stance then if columns<=2 then parts[#parts+1]="Stance <b>"..esc(combat.stance).."</b>" else parts[#parts]=parts[#parts].." &nbsp; <b>"..esc(combat.stance).."</b>" end end
-  elseif combat.stance then parts[#parts+1]="Stance <b>"..esc(combat.stance).."</b>" end
+  combat=combat or {}; attributes=attributes or {}; local parts={}
+  local left=combat.body_armor and "Armor <b>"..esc(combat.body_armor).."%</b>" or ""
+  local right={}; if combat.or_rating~=nil then right[#right+1]="OR <b>"..esc(combat.or_rating).."</b>" end; if combat.dr~=nil then right[#right+1]="DR <b>"..esc(combat.dr).."</b>" end
+  if left~="" or #right>0 then parts[#parts+1]="<table width='100%' cellspacing='0' cellpadding='0'><tr><td>"..left.."</td><td align='right'>"..table.concat(right," &nbsp; ").."</td></tr></table>" end
+  if combat.stance then parts[#parts+1]="Stance <b>"..esc(combat.stance).."</b>" end
   vitals=vitals or {}
   local roundtime=tonumber(vitals.roundtime) or 0
   parts[#parts+1]="Roundtime &nbsp; <b>"..(roundtime==0 and "READY" or esc(roundtime)).."</b>"

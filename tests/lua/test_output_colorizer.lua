@@ -101,10 +101,11 @@ test("feature toggles independently filter owned color ranges",function()
   c:shutdown()
 end)
 
-test("game highlights have one independent feature toggle",function()
+test("legacy highlight group and individual feature toggles coexist",function()
   local f=fake(); local c=Colorizer.new(f,true,{highlights_enabled=false}); assert(c:start())
   eq(c:onLine("Your head takes 8 points of impact damage!"),false)
-  assert(c:setFeature("highlights",true)); eq(c:onLine("Your head takes 8 points of impact damage!"),true); eq(c:status().highlights,true)
+  assert(c:setFeature("damage",true)); eq(c:onLine("Your head takes 8 points of impact damage!"),true); eq(c:status().highlights,false)
+  assert(c:setFeature("highlights",true)); eq(c:status().highlights,true)
   c:shutdown()
 end)
 

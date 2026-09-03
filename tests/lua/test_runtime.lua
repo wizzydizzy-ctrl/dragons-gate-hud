@@ -700,10 +700,10 @@ test("optional output colors toggle through one owned alias and public API",func
   local owned=f.colorizerTrigger; hud:reload(); eq(f.triggers[owned],nil); eq(hud.colorizer:status().enabled,true); eq(f.triggers[personal]~=nil,true)
   hud:shutdown(); eq(f:count(f.triggers),1); DGHUD=nil
 end)
-test("disabled game highlights persist into colorizer and view across reload",function()
+test("legacy disabled game highlights persist into every individual option across reload",function()
   local f=fake(); local hud=Main.new(f,{layout={},colorization={highlights_enabled=false}}); assert(hud:start())
-  eq(hud.colorizer:status().highlights,false); eq(f.viewColorOptions.highlights,false)
-  hud:reload(); eq(hud.colorizer:status().highlights,false); eq(f.viewColorOptions.highlights,false); hud:shutdown()
+  eq(hud.colorizer:status().highlights,false); eq(f.viewColorOptions.damage,false); eq(f.viewColorOptions.portal,false)
+  hud:reload(); eq(hud.colorizer:status().highlights,false); eq(f.viewColorOptions.damage,false); eq(f.viewColorOptions.portal,false); hud:shutdown()
 end)
 test("help alias opens the owned responsive guide",function()
   local f=fake(); local shown=0; local view=f:createView(); function view:showHelp() shown=shown+1; return true end; function f:createView() return view end

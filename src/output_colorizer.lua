@@ -88,7 +88,12 @@ end
 function Colorizer.new(adapter,enabled,settings)
   settings=type(settings)=="table" and settings or {}
   local colors={room=settings.room_color or defaultColors.room,label=settings.label_color or defaultColors.label,direction=settings.direction_color or defaultColors.direction,gold=settings.gold_color or defaultColors.gold,silver=settings.silver_color or defaultColors.silver,portal=settings.portal_color or defaultColors.portal,attack=settings.attack_color or defaultColors.attack,damage=settings.damage_color or defaultColors.damage,danger=settings.danger_color or defaultColors.danger,recovery=settings.recovery_color or defaultColors.recovery,upkeep=settings.upkeep_color or defaultColors.upkeep,spell=settings.spell_color or defaultColors.spell,discovery=settings.discovery_color or defaultColors.discovery}
-  local features={room=settings.room_enabled~=false,exits=settings.exits_enabled~=false,currency=settings.currency_enabled~=false,highlights=settings.highlights_enabled~=false}
+  local legacyHighlights=settings.highlights_enabled~=false
+  local features={room=settings.room_enabled~=false,exits=settings.exits_enabled~=false,currency=settings.currency_enabled~=false}
+  for _,kind in ipairs({"portal","attack","damage","danger","recovery","upkeep","spell","discovery"}) do
+    local configured=settings[kind.."_enabled"]
+    if configured==nil then features[kind]=legacyHighlights else features[kind]=configured~=false end
+  end
   return setmetatable({adapter=adapter,enabled=enabled==true,colors=colors,features=features,trigger=nil,started=false},Colorizer)
 end
 function Colorizer:start()
@@ -104,7 +109,10 @@ function Colorizer:onLine(line)
   if not segments then return false end
   local filtered={}
   for _,item in ipairs(segments) do
-    if (item.kind=="room" and self.features.room) or ((item.kind=="label" or item.kind=="direction") and self.features.exits) or ((item.kind=="gold" or item.kind=="silver") and self.features.currency) or ((item.kind=="portal" or item.kind=="attack" or item.kind=="damage" or item.kind=="danger" or item.kind=="recovery" or item.kind=="upkeep" or item.kind=="spell" or item.kind=="discovery") and self.features.highlights) then filtered[#filtered+1]=item end
+    local feature=item.kind
+    if item.kind=="label" or item.kind=="direction" then feature="exits"
+    elseif item.kind=="gold" or item.kind=="silver" then feature="currency" end
+    if self.features[feature] then filtered[#filtered+1]=item end
   end
   if #filtered==0 then return false end
   local ok,applied,err=pcall(self.adapter.applyLineColors,self.adapter,filtered)
@@ -114,11 +122,20 @@ function Colorizer:onLine(line)
 end
 function Colorizer:setEnabled(enabled) self.enabled=enabled==true; return self.enabled end
 function Colorizer:setFeature(name,enabled)
+  if name=="highlights" then
+    for _,kind in ipairs({"portal","attack","damage","danger","recovery","upkeep","spell","discovery"}) do self.features[kind]=enabled==true end
+    return enabled==true
+  end
   if self.features[name]==nil then return nil,"unknown color feature" end
   self.features[name]=enabled==true; return self.features[name]
 end
 function Colorizer:toggle() return self:setEnabled(not self.enabled) end
-function Colorizer:status() return {enabled=self.enabled,started=self.started,trigger=self.trigger,room=self.features.room,exits=self.features.exits,currency=self.features.currency,highlights=self.features.highlights} end
+function Colorizer:status()
+  local result={enabled=self.enabled,started=self.started,trigger=self.trigger}
+  for key,value in pairs(self.features) do result[key]=value end
+  result.highlights=result.portal and result.attack and result.damage and result.danger and result.recovery and result.upkeep and result.spell and result.discovery
+  return result
+end
 function Colorizer:shutdown()
   local id=self.trigger; self.trigger=nil; self.started=false
   if id then local ok,err=pcall(self.adapter.killTrigger,self.adapter,id); if not ok then return nil,tostring(err) end end

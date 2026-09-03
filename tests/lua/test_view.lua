@@ -183,28 +183,28 @@ test("header owns a responsive top-right color options button",function()
     local clock_x=layout.mode=="compact" and math.floor(size[1]*.5) or size[1]-layout.right
     eq(view.color_toggle.x+view.color_toggle.width<clock_x,true)
   end
-  eq(view.color_toggle.tooltip,"Open DGHUD color options")
+  eq(view.color_toggle.tooltip,"Open DGHUD options")
 end)
 
 test("color options button renders overall enabled and disabled states",function()
   local view=chatView(); view:applyLayout(require("layout").compute(1000,700))
-  view:setColorEnabled(true); eq(view.color_enabled,true); eq(view.color_toggle.message:find("COLORS",1,true)~=nil,true); eq(view.color_toggle.style:find("#79b386",1,true)~=nil,true)
-  view:setColorEnabled(false); eq(view.color_enabled,false); eq(view.color_toggle.message:find("COLORS",1,true)~=nil,true); eq(view.color_toggle.style:find("#75857c",1,true)~=nil,true)
+  view:setColorEnabled(true); eq(view.color_enabled,true); eq(view.color_toggle.message:find("OPTIONS",1,true)~=nil,true); eq(view.color_toggle.style:find("#79b386",1,true)~=nil,true)
+  view:setColorEnabled(false); eq(view.color_enabled,false); eq(view.color_toggle.message:find("OPTIONS",1,true)~=nil,true); eq(view.color_toggle.style:find("#75857c",1,true)~=nil,true)
 end)
 
 test("color options menu exposes current and future feature toggles",function()
   local view=chatView(); local calls={}
   view:setColorToggleCallback(function() calls[#calls+1]={key="enabled"}; return false end)
   view:setColorOptionsCallback(function(key,value) calls[#calls+1]={key=key,value=value}; return value end)
-  view:setColorOptions({enabled=true,room=true,exits=false,currency=true,highlights=true})
+  view:setColorOptions({enabled=true,room=true,exits=false,currency=true,portal=true,attack=true,damage=true,danger=true,recovery=true,upkeep=true,spell=true,discovery=true})
   view:applyLayout(require("layout").compute(1200,800)); view.color_toggle.click()
   eq(view.color_menu_visible,true); eq(view.color_menu.visible,true); eq(view.color_menu_scrim.visible,true)
-  for _,key in ipairs({"enabled","room","exits","currency","highlights"}) do eq(view.color_option_buttons[key].visible,true) end
+  for _,key in ipairs(view.color_option_order) do eq(view.color_option_buttons[key].visible,true) end
   eq(view.color_option_buttons.room.message:find("ROOM TITLES",1,true)~=nil,true)
   eq(view.color_option_buttons.exits.message:find("OFF",1,true)~=nil,true)
-  eq(view.color_option_buttons.highlights.message:find("GAME HIGHLIGHTS",1,true)~=nil,true)
+  eq(view.color_option_buttons.damage.message:find("DAMAGE TO YOU",1,true)~=nil,true)
   view.color_option_buttons.exits.click(); eq(calls[#calls].key,"exits"); eq(calls[#calls].value,true); eq(view.color_menu_visible,false)
-  view.color_toggle.click(); view.color_option_buttons.highlights.click(); eq(calls[#calls].key,"highlights"); eq(calls[#calls].value,false); eq(view.color_menu_visible,false)
+  view.color_toggle.click(); view.color_option_buttons.damage.click(); eq(calls[#calls].key,"damage"); eq(calls[#calls].value,false); eq(view.color_menu_visible,false)
   view.color_toggle.click(); view.color_option_buttons.enabled.click(); eq(calls[#calls].key,"enabled"); eq(view.color_enabled,false)
 end)
 
@@ -214,6 +214,7 @@ test("color options menu closes by button outside click and resize remains bound
     local layout=require("layout").compute(size[1],size[2]); view:applyLayout(layout); view.color_toggle.click()
     eq(view.color_menu.x>=0,true); eq(view.color_menu.x+view.color_menu.width<=size[1],true)
     eq(view.color_menu.y+view.color_menu.height<=size[2],true)
+    for _,key in ipairs(view.color_option_order) do local button=view.color_option_buttons[key]; eq(button.x>=0,true); eq(button.x+button.width<=view.color_menu.width,true); eq(button.y>=0,true); eq(button.y+button.height<=view.color_menu.height,true) end
     view.color_menu_scrim.click(); eq(view.color_menu_visible,false); eq(view.color_menu.visible,false)
     view.color_toggle.click(); view.color_toggle.click(); eq(view.color_menu_visible,false)
   end

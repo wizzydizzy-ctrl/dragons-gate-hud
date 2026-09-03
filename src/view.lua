@@ -150,7 +150,7 @@ local function place(item,x,y,w,h) item:move(x,y); item:resize(w,h); item:show()
 local help_entries={
   {command="dghud help",description="Open this command guide."},
   {command="dghud colors [on|off|toggle|status]",description="Control all optional DGHUD output colors."},
-  {command="dghud colors room|exits|currency|highlights on|off|toggle|status",description="Control one color category independently."},
+  {command="dghud colors <feature> on|off|toggle|status",description="Toggle room, exits, currency, travel, combat, spell, or discovery highlights."},
   {command="dghud check",description="Check GitHub for a newer HUD release."},
   {command="dghud update",description="Install the newest verified HUD release, then refresh character data."},
   {command="dghud reload",description="Reload the HUD using your saved preferences."},
@@ -197,16 +197,19 @@ function View.new(settings)
   self.root=Geyser.Container:new({name="DGHUD.Root",x=0,y=0,width="100%",height="100%"})
   self.header=label("DGHUD.Header",self.root,"background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px 18px;")
   self.color_toggle=label("DGHUD.Header.ColorToggle",self.root,"background:#17231c;border:1px solid "..t.jade..";border-radius:4px;color:"..t.jade..";font-weight:700;")
-  if self.color_toggle.setToolTip then pcall(self.color_toggle.setToolTip,self.color_toggle,"Open DGHUD color options") end
+  if self.color_toggle.setToolTip then pcall(self.color_toggle.setToolTip,self.color_toggle,"Open DGHUD options") end
   self.color_menu_scrim=label("DGHUD.Header.ColorMenuScrim",self.root,"background:transparent;")
   self.color_menu=Geyser.Container:new({name="DGHUD.Header.ColorMenu",x=0,y=0,width=220,height=164},self.root)
   self.color_menu_bg=label("DGHUD.Header.ColorMenu.Background",self.color_menu,"background:"..t.panel..";border:1px solid "..t.border..";border-radius:6px;")
   self.color_option_buttons={}
-  for _,option in ipairs({{"enabled","OUTPUT COLORS"},{"room","ROOM TITLES"},{"exits","EXITS / DIRECTIONS"},{"currency","CURRENCY"},{"highlights","GAME HIGHLIGHTS"}}) do
+  self.color_option_order={"enabled","room","exits","currency","portal","attack","damage","danger","recovery","upkeep","spell","discovery"}
+  local optionLabels={enabled="ALL HIGHLIGHTS",room="ROOM TITLES",exits="EXITS / DIRECTIONS",currency="CURRENCY",portal="TRAVEL OBJECTS",attack="ATTACKS ON YOU",damage="DAMAGE TO YOU",danger="DANGER / BLOCKS",recovery="RECOVERY",upkeep="ONGOING COSTS",spell="SPELL THREATS",discovery="DISCOVERY / LOOT"}
+  for _,key in ipairs(self.color_option_order) do
+    local option={key,optionLabels[key]}
     local key,text=option[1],option[2]; local button=label("DGHUD.Header.ColorMenu."..key,self.color_menu)
     button:setClickCallback(function() return self:selectColorOption(key) end); button.option_text=text; self.color_option_buttons[key]=button
   end
-  self.color_options={enabled=true,room=true,exits=true,currency=true,highlights=true}; self.color_menu_visible=false
+  self.color_options={}; for _,key in ipairs(self.color_option_order) do self.color_options[key]=true end; self.color_menu_visible=false
   self.color_toggle:setClickCallback(function() return self:setColorMenuVisible(not self.color_menu_visible) end)
   self.color_menu_scrim:setClickCallback(function() return self:setColorMenuVisible(false) end)
   for _,widget in ipairs({self.color_menu_scrim,self.color_menu,self.color_menu_bg}) do widget:hide() end
@@ -543,13 +546,15 @@ function View:layoutColorMenu(layout)
     self.color_menu_scrim:hide(); self.color_menu:hide(); self.color_menu_bg:hide(); for _,button in pairs(self.color_option_buttons) do button:hide() end; return true
   end
   local width=math.max(1,tonumber(layout.window_width) or 1200); local height=math.max(1,tonumber(layout.window_height) or 800)
-  local menuWidth=math.min(230,math.max(170,width-16)); local rowHeight=math.max(18,math.min(math.max(25,(layout.color_toggle_font or 11)+14),math.floor(math.max(90,height-8)/5))); local menuHeight=math.min(height-8,rowHeight*5+8)
+  local columns=(width>=620 or height<220) and 2 or 1; local rows=math.ceil(#self.color_option_order/columns)
+  local menuWidth=math.min(columns==2 and 460 or 230,math.max(1,width-8)); local availableHeight=math.max(1,height-8); local rowHeight=math.max(1,math.min(math.max(25,(layout.color_toggle_font or 11)+14),math.floor(math.max(1,availableHeight-8)/rows))); local menuHeight=math.min(availableHeight,rowHeight*rows+8)
   local x=math.max(4,math.min(width-menuWidth-4,(tonumber(self.color_toggle.x) or 0)+(tonumber(self.color_toggle.width) or 0)-menuWidth))
   local y=math.min(math.max(0,height-menuHeight-4),(tonumber(self.color_toggle.y) or 0)+(tonumber(self.color_toggle.height) or 0)+4)
   place(self.color_menu_scrim,0,0,"100%","100%"); place(self.color_menu,x,y,menuWidth,menuHeight); place(self.color_menu_bg,0,0,"100%","100%")
-  for index,key in ipairs({"enabled","room","exits","currency","highlights"}) do place(self.color_option_buttons[key],4,4+(index-1)*rowHeight,menuWidth-8,rowHeight) end
+  local columnWidth=(menuWidth-8)/columns
+  for index,key in ipairs(self.color_option_order) do local column=math.floor((index-1)/rows); local row=(index-1)%rows; place(self.color_option_buttons[key],4+column*columnWidth,4+row*rowHeight,columnWidth,rowHeight) end
   self:renderColorOptions()
-  View.raiseCards({self.color_menu_scrim,self.color_toggle,self.color_menu,self.color_menu_bg,self.color_option_buttons.enabled,self.color_option_buttons.room,self.color_option_buttons.exits,self.color_option_buttons.currency,self.color_option_buttons.highlights})
+  local raised={self.color_menu_scrim,self.color_menu,self.color_menu_bg}; for _,key in ipairs(self.color_option_order) do raised[#raised+1]=self.color_option_buttons[key] end; raised[#raised+1]=self.color_toggle; View.raiseCards(raised)
   return true
 end
 function View:layoutHelp(layout)
@@ -607,7 +612,7 @@ function View:renderColorOptions()
 end
 function View:setColorOptions(options)
   options=type(options)=="table" and options or {}
-  for _,key in ipairs({"enabled","room","exits","currency","highlights"}) do if options[key]~=nil then self.color_options[key]=options[key]~=false end end
+  for _,key in ipairs(self.color_option_order) do if options[key]~=nil then self.color_options[key]=options[key]~=false end end
   self.color_enabled=self.color_options.enabled~=false; self:setColorEnabled(self.color_enabled); self:renderColorOptions(); return true
 end
 function View:selectColorOption(key)
@@ -625,7 +630,7 @@ function View:setColorEnabled(enabled)
   local t=self.settings.theme; local color=self.color_enabled and t.jade or t.muted
   self.color_toggle:setStyleSheet("background:"..(self.color_enabled and "#17231c" or "#111512")..";border:1px solid "..color..";border-radius:4px;color:"..color..";font-weight:700;")
   local font=self.layout and self.layout.color_toggle_font or 11
-  self.color_toggle:echo(View.withFont("<center><b>COLORS ▾</b></center>",font)); self:renderColorOptions()
+  self.color_toggle:echo(View.withFont("<center><b>OPTIONS ▾</b></center>",font)); self:renderColorOptions()
   return true
 end
 function View:setMapZoomCallback(callback) self.map_zoom_callback=type(callback)=="function" and callback or nil; return true end

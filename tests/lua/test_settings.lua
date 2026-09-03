@@ -46,6 +46,14 @@ test("colorization defaults enabled and preserves unrelated overrides",function(
   eq(migrated.personal,"untouched"); eq(migrated.colorization.personal_option,"keep")
 end)
 
+test("legacy highlight preference migrates to every individual category",function()
+  local resolved,migrated,changed=Settings.resolve(defaults,{colorization={highlights_enabled=false}})
+  eq(changed,true)
+  for _,name in ipairs({"portal","attack","damage","danger","recovery","upkeep","spell","discovery"}) do
+    eq(migrated.colorization[name.."_enabled"],false); eq(resolved.colorization[name.."_enabled"],false)
+  end
+end)
+
 test("colorization persistence helper changes only its enabled override",function()
   local user={personal="untouched",colorization={personal_option="keep"}}
   local result=Settings.setColorEnabled(user,false)

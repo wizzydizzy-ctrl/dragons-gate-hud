@@ -11,6 +11,12 @@ function Settings.merge(defaults,overrides) local result=copy(defaults or {}); o
 function Settings.migrate(input)
   local result=copy(input or {}); local changed=false; local schema=tonumber(result.schema) or 0
   if schema<1 then result.update=result.update or {}; result.update.auto_apply=false; result.auto_update=nil; result.schema=1; changed=true end
+  local colors=type(result.colorization)=="table" and result.colorization or nil
+  if colors and colors.highlights_enabled~=nil then
+    for _,name in ipairs({"portal","attack","damage","danger","recovery","upkeep","spell","discovery"}) do
+      local key=name.."_enabled"; if colors[key]==nil then colors[key]=colors.highlights_enabled~=false; changed=true end
+    end
+  end
   return result,changed
 end
 function Settings.resolve(defaults,input)

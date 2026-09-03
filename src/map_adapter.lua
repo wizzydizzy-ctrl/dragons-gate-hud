@@ -607,6 +607,72 @@ function MapAdapter:roomsAt(areaKey,x,y,z)
   return rooms
 end
 
+local function coordinateKey(x,y,z)
+  return tostring(x)..","..tostring(y)..","..tostring(z)
+end
+
+function MapAdapter:reserveDirectionalCoordinate(areaKey,desired,direction,protectedRoomID)
+  local vector=MapperModel.destination({x=0,y=0,z=0},direction)
+  if not vector or vector.x==0 and vector.y==0 and vector.z==0 then return nil,"direction cannot expand mapper coordinates" end
+  local ready,readyErr=requireCapabilities(self.api,{"getAreaRooms1","getRoomUserData","getRoomCoordinates","setRoomCoordinates"})
+  if not ready then return nil,readyErr end
+  local area,areaErr=self:ensureArea(areaKey); if area==nil then return nil,areaErr end
+  local roomIDs,roomsErr=self:roomsInArea(area); if roomIDs==nil then return nil,roomsErr end
+  local records,occupied={},{}
+  local blocked=false
+  for _,roomID in ipairs(roomIDs) do
+    local owner,ownerErr=read(self.api,"getRoomUserData",roomID,"dghud.owner")
+    if owner==nil and ownerErr~=nil then return nil,ownerErr end
+    local x,y,z=invoke(self.api,"getRoomCoordinates",roomID); if x==nil then return nil,y end
+    local record={id=roomID,x=x,y=y,z=z,owned=owner==self.owner}; records[#records+1]=record
+    occupied[coordinateKey(x,y,z)]=record
+    if x==desired.x and y==desired.y and z==desired.z then blocked=true end
+  end
+  if not blocked then return {x=desired.x,y=desired.y,z=desired.z} end
+  local function outward(record)
+    local xOut=vector.x<0 and record.x<=desired.x or vector.x>0 and record.x>=desired.x or false
+    local yOut=vector.y<0 and record.y<=desired.y or vector.y>0 and record.y>=desired.y or false
+    local zOut=vector.z<0 and record.z<=desired.z or vector.z>0 and record.z>=desired.z or false
+    return xOut or yOut or zOut
+  end
+  local moving={}
+  for _,record in ipairs(records) do
+    if outward(record) then
+      if record.id==tonumber(protectedRoomID) then return nil,"mapper expansion would move its origin room" end
+      if not record.owned then return nil,"mapper expansion encountered unowned room "..tostring(record.id) end
+      moving[record.id]=record
+    end
+  end
+  for _,record in pairs(moving) do
+    local targetKey=coordinateKey(record.x+vector.x,record.y+vector.y,record.z+vector.z)
+    local collision=occupied[targetKey]
+    if collision and not moving[collision.id] then return nil,"mapper expansion would overlap room "..tostring(collision.id) end
+  end
+  local ordered={}; for _,record in pairs(moving) do ordered[#ordered+1]=record end
+  table.sort(ordered,function(a,b)
+    local aProjection=a.x*vector.x+a.y*vector.y+a.z*vector.z
+    local bProjection=b.x*vector.x+b.y*vector.y+b.z*vector.z
+    if aProjection~=bProjection then return aProjection>bProjection end
+    return a.id<b.id
+  end)
+  local moved={}
+  for _,record in ipairs(ordered) do
+    local ok,err=invoke(self.api,"setRoomCoordinates",record.id,record.x+vector.x,record.y+vector.y,record.z+vector.z)
+    if ok==nil then
+      local rollbackError
+      for index=#moved,1,-1 do
+        local prior=moved[index]
+        local restored,restoreErr=invoke(self.api,"setRoomCoordinates",prior.id,prior.x,prior.y,prior.z)
+        if restored==nil and not rollbackError then rollbackError=restoreErr end
+      end
+      if rollbackError then return nil,tostring(err).."; coordinate rollback failed: "..tostring(rollbackError) end
+      return nil,err
+    end
+    moved[#moved+1]=record
+  end
+  return {x=desired.x,y=desired.y,z=desired.z},#moved
+end
+
 function MapAdapter:route(fromID,toID)
   local route,err=invoke(self.api,"getPath",fromID,toID)
   if route==nil then return nil,err end

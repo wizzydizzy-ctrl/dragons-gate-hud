@@ -100,6 +100,11 @@ function Automapper:coordinatesFor(room,partition,record)
     local origin=self.map:coordinates(self.pending.from)
     desired=origin and self.model.destination(origin,self.pending.direction) or desired
   end
+  if self.pending and self.pending.direction and type(self.map.reserveDirectionalCoordinate)=="function" then
+    local reserved,reserveErr=self.map:reserveDirectionalCoordinate(partition,desired,self.pending.direction,self.pending.from)
+    if reserved then return reserved end
+    if reserveErr then return nil,reserveErr end
+  end
   local occupancyErr
   local coordinates=self.model.nearestFree(desired,function(x,y,z)
     local occupied,err=self.map:roomsAt(partition,x,y,z)

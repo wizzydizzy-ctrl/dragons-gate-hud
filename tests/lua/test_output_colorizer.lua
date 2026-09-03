@@ -119,3 +119,12 @@ test("Mudlet adapter changes only selected foreground ranges",function()
   local segments=assert(Colorizer.parse("Obvious paths: north east west."))
   assert(MudletAdapter.new():applyLineColors(segments,api)); eq(#selected,4); eq(selected[1][1],0); eq(selected[1][2],14); eq(selected[2][1],15); eq(selected[2][2],5); eq(#colors,4); eq(deselected,1)
 end)
+
+test("Mudlet colorizer registration forwards every line to the conservative parser",function()
+  local previousTrigger,previousLine=tempRegexTrigger,line; local pattern,callback
+  tempRegexTrigger=function(value,fn) pattern=value; callback=fn; return 77 end
+  local received={}; local adapter=MudletAdapter.new(); eq(adapter:addColorizerTrigger(function(value) received[#received+1]=value end),77); eq(pattern,"^.*$")
+  for _,sample in ipairs({"An open grey iron gate is here.","The hound claws at you!","Your head takes 8 points of impact damage!"," ** You are fully rested."}) do line=sample; callback() end
+  eq(#received,4); eq(received[1],"An open grey iron gate is here."); eq(received[4]," ** You are fully rested.")
+  tempRegexTrigger,line=previousTrigger,previousLine
+end)

@@ -50,7 +50,10 @@ function Adapter:addAlias(pattern,fn) return tempAlias(pattern,fn) end
 function Adapter:killAlias(id) return killAlias(id) end
 function Adapter:addLineTrigger(fn) return tempRegexTrigger("^.*$",function() fn(line or "") end) end
 function Adapter:addColorizerTrigger(fn)
-  return tempRegexTrigger([=[(?i)^(?:\s*(?:\[[^\r\n\[\]]+\]|Obvious\s+(?:exits|paths)\s*:[^\r\n]*)\s*|.*\b(?:gold|silver|gp|sp)\b.*)$]=],function()
+  -- Keep recognition in output_colorizer.lua. A broad owned trigger prevents
+  -- new independently configurable categories from being silently excluded
+  -- by an older registration prefilter.
+  return tempRegexTrigger("^.*$",function()
     fn(line or (type(getCurrentLine)=="function" and getCurrentLine() or ""))
   end)
 end

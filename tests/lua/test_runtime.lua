@@ -291,6 +291,18 @@ test("cleanup safety rejects partial sparse and inconsistent native speedwalk st
   _G.speedWalkPath,_G.speedWalkDir=oldPath,oldDir
 end)
 
+test("cleanup safety accepts Mudlet idle empty speedwalk globals",function()
+  local oldPath,oldDir=_G.speedWalkPath,_G.speedWalkDir
+  local states={{{},nil},{nil,{}},{{},{}},{nil,nil}}
+  for _,state in ipairs(states) do
+    _G.speedWalkPath,_G.speedWalkDir=state[1],state[2]
+    local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
+    assert(aliasCallback(f,"^dghud map delete room (\\d+)$")({"","100"})); assert(hud.cleanup:pending())
+    hud:shutdown()
+  end
+  _G.speedWalkPath,_G.speedWalkDir=oldPath,oldDir
+end)
+
 test("cleanup safety rejects inconsistent walker route destination and index state",function()
   local f=fake(); f.gmcp=gmcpRoom(1); local hud=Main.new(f,{layout={}}); assert(hud:start()); addCleanupRoom(f,100,7,"zone")
   local room=aliasCallback(f,"^dghud map delete room (\\d+)$")

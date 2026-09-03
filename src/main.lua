@@ -247,7 +247,10 @@ function Main:safetySnapshot()
   elseif self.generated_command~=nil then return nil,"cleanup safety state is unavailable" end
   local globalPath=rawget(_G,"speedWalkPath")
   local globalDirections=rawget(_G,"speedWalkDir")
-  local nativeActive=globalPath~=nil or globalDirections~=nil
+  local function emptyNativeRoutePart(value)
+    return value==nil or type(value)=="table" and next(value)==nil
+  end
+  local nativeActive=not (emptyNativeRoutePart(globalPath) and emptyNativeRoutePart(globalDirections))
   if nativeActive then
     local pathCount=denseArray(globalPath,validRoomID,false)
     local directionCount=denseArray(globalDirections,validCommand,false)

@@ -369,12 +369,12 @@ test("unchanged HUD refreshes preserve inventory and skill scroll positions",fun
   state.skills.items={{name="Clawing",level=5,remain=2}}; view:update(state); eq(view.skills_content.message:find("Clawing",1,true)~=nil,true)
 end)
 
-test("right rail orders inventory combat runes skills and vitals without overlap",function()
+test("right rail orders equipment combat inventory runes skills and vitals without overlap",function()
   for _,size in ipairs({{1920,1080},{1200,800},{1200,650}}) do
     local layout=require("layout").compute(size[1],size[2]); local view=chatView(); view.last_state={vitals={psi={visible=false},web={visible=false}},equipment={items={}}}; view:applyLayout(layout)
     if view.inventory.visible and view.skills.visible then
       eq(view.runes.visible,true); eq(view.runes_output.visible,true)
-      if view.details.visible then eq(view.inventory.y+view.inventory.height<=view.details.y,true); eq(view.details.y+view.details.height<=view.runes.y,true) else eq(view.inventory.y+view.inventory.height<=view.runes.y,true) end
+      eq(view.details.visible,true); eq(view.details.y+view.details.height<=view.inventory.y,true); eq(view.inventory.y+view.inventory.height<=view.runes.y,true)
       eq(view.runes.y+view.runes.height<=view.skills.y,true)
       eq(view.skills.y+view.skills.height<=layout.window_height-view.vitals_right.height,true)
     else
@@ -458,13 +458,13 @@ test("short layouts keep right-side vitals separate from the mapper",function()
   if view.room.visible then eq(view.room.y+view.room.height<=view.mapper_frame.y,true) end
 end)
 
-test("right-side vitals preserve scrollable lists before optional combat details",function()
+test("right-side vitals preserve required combat and scrollable lists",function()
   local layout=require("layout").compute(1200,600); local view=chatView()
   view.last_state={vitals={psi={visible=false},web={visible=false}},equipment={items={}}}
   view:applyLayout(layout)
   eq(view.inventory.visible,true)
+  eq(view.details.visible,true); eq(view.details.y+view.details.height<=view.inventory.y,true)
   eq(view.skills.visible,true); eq(view.skills_output.visible,true)
-  eq(view.details.visible,false)
   eq(view.inventory.y+view.inventory.height<=layout.window_height-view.vitals_right.height-12,true)
 end)
 test("short desktop windows retain both inventory and skills as scrollable cards",function()
@@ -487,18 +487,21 @@ test("crossing responsive breakpoints repeatedly restores every desktop card",fu
   for _,size in ipairs({{1400,800},{1399,800},{1000,800},{999,800},{760,800},{999,800},{1400,800}}) do
     local layout=Layout.compute(size[1],size[2]); view:applyLayout(layout)
     if layout.mode=="compact" then eq(view.compact.visible,true) else
-      for _,widget in ipairs({view.identity,view.equipment,view.inventory,view.inventory_title,view.inventory_output,view.inventory_content,view.runes,view.runes_title,view.runes_output,view.runes_content,view.skills,view.skills_title,view.skills_output,view.skills_content,view.right}) do eq(widget.visible,true) end
+      for _,widget in ipairs({view.identity,view.details,view.inventory,view.inventory_title,view.inventory_output,view.inventory_content,view.runes,view.runes_title,view.runes_output,view.runes_content,view.skills,view.skills_title,view.skills_output,view.skills_content,view.right}) do eq(widget.visible,true) end
     end
   end
 end)
 
-test("wide short windows keep compact equipment clear of required gauges",function()
+test("equipment is optional below identity while combat remains required",function()
   for _,size in ipairs({{1920,420},{2560,420}}) do
     local layout=require("layout").compute(size[1],size[2]); local view=chatView()
     view.last_state={vitals={psi={visible=true},web={visible=true}},equipment={items={}}}
     view:applyLayout(layout)
-    local vitals_top=layout.window_height-view.vitals_right.height
-    eq(view.equipment.y+view.equipment.height+12<=vitals_top,true)
+    if view.equipment.visible then
+      eq(view.equipment.x,layout.panel_padding); eq(view.equipment.y>=view.identity.y+view.identity.height,true)
+      eq(view.equipment.y+view.equipment.height<=layout.window_height-view.right.height,true)
+    end
+    eq(view.details.visible,true)
     eq(view.hp.visible,true); eq(view.fatigue.visible,true); eq(view.carry.visible,true)
   end
 end)
@@ -564,7 +567,8 @@ test("chat panel occupies the center while side cards stay at the header",functi
   eq(view.header.height,layout.header_height)
   eq(view.chat_container.x,layout.chat_x); eq(view.chat_container.y,layout.header_height)
   eq(view.chat_container.width,layout.chat_width); eq(view.chat_container.height,layout.chat_height)
-  eq(view.identity.y,layout.header_height); eq(view.left.y,layout.header_height); eq(view.equipment.y,layout.header_height+layout.panel_padding)
+  eq(view.identity.y,layout.header_height); eq(view.left.y,layout.header_height)
+  if view.equipment.visible then eq(view.equipment.y,view.identity.y+view.identity.height+10) end
 end)
 test("clock occupies the top-right header rail across responsive modes",function()
   local wide=require("layout").compute(1920,1080); local view=chatView(); view:applyLayout(wide)

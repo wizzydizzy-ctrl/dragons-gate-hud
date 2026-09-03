@@ -16,7 +16,7 @@ local function positiveInteger(value)
 end
 
 function Automapper.new(model,map,onStatus)
-  return setmetatable({model=model,map=map,onStatus=onStatus or function() end,current_id=nil,pending=nil},Automapper)
+  return setmetatable({model=model,map=map,onStatus=onStatus or function() end,current_id=nil,pending=nil,direction_queue={}},Automapper)
 end
 
 function Automapper:status(kind,message)
@@ -28,14 +28,21 @@ function Automapper:onOutgoing(command)
   local classified=value:lower()
   local direction=self.model.direction(classified)
   if direction and self.current_id then
-    self.pending={from=self.current_id,direction=direction}
+    if self.pending and self.pending.direction then
+      self.direction_queue[#self.direction_queue+1]=direction
+    else
+      self.direction_queue={}
+      self.pending={from=self.current_id,direction=direction}
+    end
   else
+    self.direction_queue={}
     self.pending=nil
   end
   return direction
 end
 
 function Automapper:onSpecialTransition(transition)
+  self.direction_queue={}
   local from=type(transition)=="table" and positiveInteger(transition.from) or nil
   local to=type(transition)=="table" and positiveInteger(transition.to) or nil
   local command=type(transition)=="table" and trim(transition.command) or ""
@@ -121,7 +128,7 @@ local function hasObservedPlacementIntent(self,room)
 end
 
 local function failUnensuredRoom(self,room,sameOrigin,kind,err)
-  if not sameOrigin then self.pending=nil end
+  if not sameOrigin then self.pending=nil; self.direction_queue={} end
   if not room or (self.current_id and self.current_id~=room.id) then self.current_id=nil end
   self:status(kind,err)
   return nil,err
@@ -129,7 +136,7 @@ end
 
 local function failEnsuredRoom(self,roomID,sameOrigin,kind,err)
   if not sameOrigin then
-    self.pending=nil
+    self.pending=nil; self.direction_queue={}
     self.current_id=roomID
     local current,currentErr=self.map:setCurrent(roomID)
     if not current then
@@ -189,8 +196,17 @@ function Automapper:onRoom(raw)
     end
     if not connected then return failEnsuredRoom(self,room.id,sameOrigin,"invalid_room",connectErr) end
   end
-  local hadPending=self.pending~=nil
-  if not sameOrigin then self.pending=nil end; self.current_id=room.id
+  local completedPending=self.pending
+  local hadPending=completedPending~=nil
+  if not sameOrigin then
+    self.pending=nil
+    if completedPending and completedPending.direction and #self.direction_queue>0 then
+      self.pending={from=room.id,direction=table.remove(self.direction_queue,1)}
+    else
+      self.direction_queue={}
+    end
+  end
+  self.current_id=room.id
   local current,currentErr=self.map:setCurrent(room.id)
   if not current then self.current_id=nil; self:status("invalid_room",currentErr); return nil,currentErr end
   if previous and previous~=room.id and not hadPending then
@@ -203,9 +219,13 @@ function Automapper:onRoom(raw)
   return true
 end
 
-function Automapper:onWrongDirection() self.pending=nil; return true end
-function Automapper:onDisconnect() self.pending=nil; return true end
+function Automapper:onWrongDirection()
+  self.pending=nil
+  if #self.direction_queue>0 and self.current_id then self.pending={from=self.current_id,direction=table.remove(self.direction_queue,1)} else self.direction_queue={} end
+  return true
+end
+function Automapper:onDisconnect() self.pending=nil; self.direction_queue={}; return true end
 function Automapper:currentRoom() return self.current_id end
-function Automapper:shutdown() self.pending=nil; self.current_id=nil; return true end
+function Automapper:shutdown() self.pending=nil; self.direction_queue={}; self.current_id=nil; return true end
 
 return Automapper

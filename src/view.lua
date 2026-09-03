@@ -121,7 +121,8 @@ function View.detailsContent(combat,attributes,t,layout,vitals)
   vitals=vitals or {}
   local roundtime=tonumber(vitals.roundtime) or 0
   parts[#parts+1]="Roundtime &nbsp; <b>"..(roundtime==0 and "READY" or esc(roundtime)).."</b>"
-  parts[#parts+1]="Position &nbsp; <b>"..esc(vitals.position or "—").."</b>"
+  local posture=vitals.sitting and "Sitting" or (vitals.standing and "Standing" or nil)
+  parts[#parts+1]="Position &nbsp; <b>"..esc(vitals.position or "—").."</b>"..(posture and " &nbsp; · &nbsp; <b>"..posture.."</b>" or "")
   return View.withFont("<span style='color:"..t.accent.."'><b>COMBAT</b></span><br>"..table.concat(parts,"<br>"),layout.combat_font or layout.equipment_font or layout.inventory_font or layout.body_font)
 end
 function View.attributeStripContent(attributes,t,layout)

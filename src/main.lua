@@ -92,7 +92,11 @@ function Main:refreshClock()
   if self.view and type(self.view.updateClock)=="function" then self.view:updateClock(clock) end
   return clock
 end
-function Main:refresh() local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {}); if self.roundtime_display~=nil then normalized.vitals.roundtime=self.roundtime_display end; normalized.clock=self:clockDisplay(); self.view:update(normalized); self.last_state=normalized; Main.syncRunesApi(normalized); if self.chat then self.chat:syncCharacter() end; return true end
+function Main:refresh()
+  local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {})
+  if self.adapter.getPostureVariables then local ok,posture=pcall(self.adapter.getPostureVariables,self.adapter); if ok and type(posture)=="table" then normalized.vitals.standing=posture.standing==true; normalized.vitals.sitting=posture.sitting==true end end
+  if self.roundtime_display~=nil then normalized.vitals.roundtime=self.roundtime_display end; normalized.clock=self:clockDisplay(); self.view:update(normalized); self.last_state=normalized; Main.syncRunesApi(normalized); if self.chat then self.chat:syncCharacter() end; return true
+end
 function Main:onClockSync(value) local ok,err=self.clock:sync(value,self.adapter:epoch()); if not ok then return nil,err end; self:refreshClock(); return true end
 function Main:scheduleClockTick()
   if self.clock_timer then return true end

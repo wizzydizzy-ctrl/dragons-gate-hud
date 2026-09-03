@@ -109,6 +109,13 @@ test("combat card renders ready roundtime and position without a status heading"
   eq(html:find("COMBAT",1,true)~=nil,true); eq(html:find("STATUS",1,true),nil)
   eq(html:find("Roundtime",1,true)~=nil,true); eq(html:find("READY",1,true)~=nil,true); eq(html:find("Position",1,true)~=nil,true)
 end)
+test("combat position displays posture with sitting taking defensive precedence",function()
+  local theme={accent="#d8ae53"}; local layout={inventory_font=18}
+  local standing=View.detailsContent({},nil,theme,layout,{roundtime=0,position=0,standing=true,sitting=false})
+  local sitting=View.detailsContent({},nil,theme,layout,{roundtime=0,position=-1,standing=true,sitting=true})
+  eq(standing:find("Position",1,true)~=nil,true); eq(standing:find("Standing",1,true)~=nil,true)
+  eq(sitting:find("Sitting",1,true)~=nil,true); eq(sitting:find("Standing",1,true),nil)
+end)
 
 local function fakeGeyser(glyphWidth,scrollbarWidth,measureFails)
   glyphWidth=tonumber(glyphWidth) or 6

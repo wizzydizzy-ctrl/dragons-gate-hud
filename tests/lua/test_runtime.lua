@@ -693,11 +693,17 @@ test("optional output colors toggle through one owned alias and public API",func
   DGHUD={controller=hud}; Main.installChatApi(DGHUD)
   local colors=assert(aliasCallback(f,"^dghud colors(?: (.*))?$")); eq(DGHUD.colors.status().enabled,true); eq(colors({"","off"}),false); eq(f.reportedColorizer.enabled,false)
   eq(colors({"","on"}),true); eq(colors({"","exits off"}),false); eq(DGHUD.colors.status().exits,false); eq(colors({"","exits on"}),true)
+  eq(colors({"","highlights off"}),false); eq(DGHUD.colors.status().highlights,false); eq(DGHUD.user_settings.colorization.highlights_enabled,false); eq(DGHUD.colors.setFeature("highlights",true),true); eq(colors({"","highlights on"}),true)
   local trigger=assert(f.triggers[f.colorizerTrigger]); trigger("Obvious paths: north east west."); eq(#f.coloredSegments,4)
   eq(DGHUD.colors.toggle(),false); eq(DGHUD.user_settings.colorization.enabled,false); eq(DGHUD.colors.setEnabled(true),true); eq(DGHUD.colors.status().started,true); eq(hud.colorizer_enabled,true); eq(f.viewColorEnabled,true)
   eq(f.colorToggleCallback(),false); eq(DGHUD.user_settings.colorization.enabled,false); eq(f.colorToggleCallback(),true)
   local owned=f.colorizerTrigger; hud:reload(); eq(f.triggers[owned],nil); eq(hud.colorizer:status().enabled,true); eq(f.triggers[personal]~=nil,true)
   hud:shutdown(); eq(f:count(f.triggers),1); DGHUD=nil
+end)
+test("disabled game highlights persist into colorizer and view across reload",function()
+  local f=fake(); local hud=Main.new(f,{layout={},colorization={highlights_enabled=false}}); assert(hud:start())
+  eq(hud.colorizer:status().highlights,false); eq(f.viewColorOptions.highlights,false)
+  hud:reload(); eq(hud.colorizer:status().highlights,false); eq(f.viewColorOptions.highlights,false); hud:shutdown()
 end)
 test("help alias opens the owned responsive guide",function()
   local f=fake(); local shown=0; local view=f:createView(); function view:showHelp() shown=shown+1; return true end; function f:createView() return view end

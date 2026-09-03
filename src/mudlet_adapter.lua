@@ -110,7 +110,7 @@ end
 function Adapter:reportColorizerStatus(status)
   if type(status)~="table" then status={enabled=status==true} end
   local function word(value) return value and "ON" or "OFF" end
-  cecho("\n<gold>[DGHUD Colors]<reset> All "..word(status.enabled).."  Room "..word(status.room).."  Exits "..word(status.exits).."  Currency "..word(status.currency).."\n")
+  cecho("\n<gold>[DGHUD Colors]<reset> All "..word(status.enabled).."  Room "..word(status.room).."  Exits "..word(status.exits).."  Currency "..word(status.currency).."  Highlights "..word(status.highlights).."\n")
   return true
 end
 function Adapter:schedule(seconds,fn) return tempTimer(seconds,fn) end

@@ -47,6 +47,7 @@ function Main.installColorizerApi(namespace)
   local function active() local root=rawget(_G,"DGHUD"); local controller=root and root.controller; return controller,controller and controller.colorizer end
   api.setEnabled=function(value) local controller,colorizer=active(); if not colorizer then return nil,"colorizer is not running" end; return controller:setColorizerEnabled(value==true) end
   api.toggle=function() local controller,colorizer=active(); if not colorizer then return nil,"colorizer is not running" end; return controller:setColorizerEnabled(not colorizer.enabled) end
+  api.setFeature=function(name,value) local controller,colorizer=active(); if not colorizer then return nil,"colorizer is not running" end; return controller:setColorFeature(tostring(name or ""):lower(),value==true) end
   api.status=function() local _,colorizer=active(); if not colorizer then return nil,"colorizer is not running" end; return colorizer:status() end
   return api
 end
@@ -65,7 +66,7 @@ function Main:setColorFeature(name,enabled)
   local key=name.."_enabled"; self.settings.colorization=type(self.settings.colorization)=="table" and self.settings.colorization or {}; self.settings.colorization[key]=result
   local root=rawget(_G,"DGHUD")
   if root then root.user_settings=type(root.user_settings)=="table" and root.user_settings or {}; root.user_settings.colorization=type(root.user_settings.colorization)=="table" and root.user_settings.colorization or {}; root.user_settings.colorization[key]=result end
-  if self.view and self.view.setColorOptions then local status=self.colorizer:status(); self.view:setColorOptions({enabled=status.enabled,room_titles=status.room,exits=status.exits,currency=status.currency}) end
+  if self.view and self.view.setColorOptions then local status=self.colorizer:status(); self.view:setColorOptions({enabled=status.enabled,room=status.room,exits=status.exits,currency=status.currency,highlights=status.highlights}) end
   return result
 end
 function Main:clockDisplay()
@@ -449,7 +450,7 @@ function Main:start()
   if self.view.setColorToggleCallback then self.view:setColorToggleCallback(function(wanted) local enabled=self:setColorizerEnabled(type(wanted)=="boolean" and wanted or not self.colorizer_enabled); if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(self.colorizer:status()) end; return enabled end) end
   if self.view.setColorOptionsCallback then self.view:setColorOptionsCallback(function(name,wanted) local feature=name=="room_titles" and "room" or name; local enabled,err=self:setColorFeature(feature,wanted); if enabled==nil then return nil,err end; if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(self.colorizer:status()) end; return enabled end) end
   local colorSettings=type(self.settings.colorization)=="table" and self.settings.colorization or {}
-  if self.view.setColorOptions then self.view:setColorOptions({enabled=self.colorizer_enabled,room_titles=colorSettings.room_enabled~=false,exits=colorSettings.exits_enabled~=false,currency=colorSettings.currency_enabled~=false}) elseif self.view.setColorEnabled then self.view:setColorEnabled(self.colorizer_enabled) end
+  if self.view.setColorOptions then self.view:setColorOptions({enabled=self.colorizer_enabled,room=colorSettings.room_enabled~=false,exits=colorSettings.exits_enabled~=false,currency=colorSettings.currency_enabled~=false,highlights=colorSettings.highlights_enabled~=false}) elseif self.view.setColorEnabled then self.view:setColorEnabled(self.colorizer_enabled) end
   if self.view.setHelpCloseCallback then self.view:setHelpCloseCallback(function() return true end) end
   if self.view.setMapZoomCallback then self.view:setMapZoomCallback(function(action) return self:mapToolbarAction(action) end) end
   if self.view.setMapClearAllCallback then self.view:setMapClearAllCallback(function() return self:clearAllMapsAction() end) end
@@ -507,7 +508,7 @@ function Main:start()
   self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias("^dghud colors(?: (.*))?$",function(value)
     local action=tostring(aliasArgument(value) or "toggle"):lower():match("^%s*(.-)%s*$"); local enabled,err
     local feature,featureAction=action:match("^(%a+)%s+(%a+)$")
-    local validFeature=feature=="room" or feature=="exits" or feature=="currency"
+    local validFeature=feature=="room" or feature=="exits" or feature=="currency" or feature=="highlights"
     local validFeatureAction=featureAction=="on" or featureAction=="off" or featureAction=="toggle" or featureAction=="status"
     if validFeature and validFeatureAction then
       local current=self.colorizer:status()[feature]
@@ -516,7 +517,7 @@ function Main:start()
     elseif action=="off" then enabled=self:setColorizerEnabled(false)
     elseif action=="toggle" or action=="" then enabled=self:setColorizerEnabled(not self.colorizer_enabled)
     elseif action=="status" then enabled=self.colorizer:status().enabled
-    else return nil,"usage: dghud colors [on|off|toggle|status|room|exits|currency]" end
+    else return nil,"usage: dghud colors [on|off|toggle|status|room|exits|currency|highlights]" end
     if enabled==nil then return nil,err end
     if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(self.colorizer:status()) end; return enabled
   end)

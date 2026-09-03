@@ -196,19 +196,21 @@ test("color options menu exposes current and future feature toggles",function()
   local view=chatView(); local calls={}
   view:setColorToggleCallback(function() calls[#calls+1]={key="enabled"}; return false end)
   view:setColorOptionsCallback(function(key,value) calls[#calls+1]={key=key,value=value}; return value end)
-  view:setColorOptions({enabled=true,room=true,exits=false,currency=true})
+  view:setColorOptions({enabled=true,room=true,exits=false,currency=true,highlights=true})
   view:applyLayout(require("layout").compute(1200,800)); view.color_toggle.click()
   eq(view.color_menu_visible,true); eq(view.color_menu.visible,true); eq(view.color_menu_scrim.visible,true)
-  for _,key in ipairs({"enabled","room","exits","currency"}) do eq(view.color_option_buttons[key].visible,true) end
+  for _,key in ipairs({"enabled","room","exits","currency","highlights"}) do eq(view.color_option_buttons[key].visible,true) end
   eq(view.color_option_buttons.room.message:find("ROOM TITLES",1,true)~=nil,true)
   eq(view.color_option_buttons.exits.message:find("OFF",1,true)~=nil,true)
+  eq(view.color_option_buttons.highlights.message:find("GAME HIGHLIGHTS",1,true)~=nil,true)
   view.color_option_buttons.exits.click(); eq(calls[#calls].key,"exits"); eq(calls[#calls].value,true); eq(view.color_menu_visible,false)
+  view.color_toggle.click(); view.color_option_buttons.highlights.click(); eq(calls[#calls].key,"highlights"); eq(calls[#calls].value,false); eq(view.color_menu_visible,false)
   view.color_toggle.click(); view.color_option_buttons.enabled.click(); eq(calls[#calls].key,"enabled"); eq(view.color_enabled,false)
 end)
 
 test("color options menu closes by button outside click and resize remains bounded",function()
   local view=chatView()
-  for _,size in ipairs({{420,500},{760,700},{800,650},{1200,800},{1920,1080}}) do
+  for _,size in ipairs({{220,120},{420,500},{760,700},{800,650},{1200,800},{1920,1080}}) do
     local layout=require("layout").compute(size[1],size[2]); view:applyLayout(layout); view.color_toggle.click()
     eq(view.color_menu.x>=0,true); eq(view.color_menu.x+view.color_menu.width<=size[1],true)
     eq(view.color_menu.y+view.color_menu.height<=size[2],true)

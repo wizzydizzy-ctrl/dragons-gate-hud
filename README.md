@@ -4,13 +4,14 @@ An original bronze-and-jade Mudlet 5 HUD for Dragons Gate. It displays confirmed
 
 The header shows the player's local computer time and a synchronized Dragons Gate clock. Game time advances at the configurable 2× default, labels 6:00 AM–5:59 PM as `Daytime` and 6:00 PM–5:59 AM as `Night`, and resynchronizes from startup or manually entered `time` output.
 
-The compact `COLORS ▾` control immediately left of Real Time opens a responsive options menu. It independently controls room-title, exits/directions, and currency colors and is ready for additional color features. Room titles use gold, `Obvious exits:`/`Obvious paths:` use dark red, directions use dark orange, and exact `gold`/`gp` and `silver`/`sp` words use matching currency colors. Preferences survive HUD reloads and updates without changing personal Mudlet triggers or colors.
+The compact `COLORS ▾` control immediately left of Real Time opens a responsive options menu. It independently controls room-title, exits/directions, currency, and game-highlight colors. Room titles use gold, `Obvious exits:`/`Obvious paths:` use dark red, directions use dark orange, and exact `gold`/`gp` and `silver`/`sp` words use matching currency colors. Game highlights conservatively color travel objects, attacks and damage aimed at you, hard movement failures, full recovery, fatigue upkeep, targeted or room-wide spell threats, and discoveries. Normal room prose and chat remain unchanged. Preferences survive HUD reloads and updates without changing personal Mudlet triggers or colors.
 
 ```text
 dghud colors
 dghud colors room off
 dghud colors exits on
 dghud colors currency toggle
+dghud colors highlights toggle
 ```
 
 The setting is stored as `DGHUD.user_settings.colorization.enabled`. Integrations can read it with `Settings.colorEnabled(settings)` and update only that override with `Settings.setColorEnabled(DGHUD.user_settings, enabled)`.

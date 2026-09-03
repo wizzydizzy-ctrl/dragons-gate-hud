@@ -42,6 +42,47 @@ test("colors exact gold silver gp and sp words",function()
   eq(parts[1].kind,"gold"); eq(parts[2].kind,"gold"); eq(parts[3].kind,"silver"); eq(parts[4].kind,"silver")
 end)
 
+test("colors only travel-object clauses at the end of room prose",function()
+  local line="The wall is cracked. An open sinister black iron gate is here."
+  local parts=assert(Colorizer.parse(line)); eq(#parts,1); eq(parts[1].kind,"portal")
+  eq(line:sub(parts[1].start,parts[1].start+parts[1].length-1),"An open sinister black iron gate is here.")
+  local plural=assert(Colorizer.parse("An arch and a portal to the temples are here.")); eq(plural[1].kind,"portal")
+  local padded=assert(Colorizer.parse("  An open gate is here.   ")); eq(padded[1].start,3); eq(padded[1].length,21)
+  eq(Colorizer.parse("A battered wooden chest is here."),nil)
+  eq(Colorizer.parse("The door is old and covered in rust."),nil)
+  eq(Colorizer.parse("A merchant blocking the gate is here."),nil)
+end)
+
+test("classifies restrained combat danger recovery upkeep spell and discovery lines",function()
+  local samples={
+    {"The unholy acolyte kicks at you!","attack"},
+    {"The dark hound claws towards you!","attack"},
+    {"The dark hound bites you!","attack"},
+    {"Your head takes 8 points of impact damage!","damage"},
+    {"The 2nd fighting puppet blocks you from leaving!","danger"},
+    {"You cannot move in that direction.","danger"},
+    {"You cannot move more than 6 UDs per turn!","danger"},
+    {" ** You are fully rested.","recovery"},
+    {"** You are fully healed.","recovery"},
+    {"You expend 1 fatigue keeping up the dragon dart on the ork.","upkeep"},
+    {"The novice hithual cleric quickly casts his gaze across the room.","spell"},
+    {"The novice hithual cleric casts a curse at you!","spell"},
+    {"You have discovered a secret path!","discovery"},
+  }
+  for _,sample in ipairs(samples) do local parts=assert(Colorizer.parse(sample[1])); eq(#parts,1); eq(parts[1].kind,sample[2]); eq(sample[1]:sub(parts[1].start,parts[1].start+parts[1].length-1),sample[1]:match("^%s*(.-)%s*$")) end
+  eq(Colorizer.parse("The dark hound claws at Gia!"),nil)
+  eq(Colorizer.parse("The mural depicts attacks at you!"),nil)
+  eq(Colorizer.parse("The fisherman casts his net across the room."),nil)
+  eq(Colorizer.parse("The novice hithual cleric casts a curse at Gia!"),nil)
+  eq(Colorizer.parse("The teller whispers to you about a gate."),nil)
+end)
+
+test("special lines retain independently filterable currency segments",function()
+  local parts=assert(Colorizer.parse("You have discovered 10 gold!")); eq(#parts,2); eq(parts[1].kind,"discovery"); eq(parts[2].kind,"gold")
+  local f=fake(); local c=Colorizer.new(f,true,{highlights_enabled=false,currency_enabled=true}); assert(c:start())
+  assert(c:onLine("You have discovered 10 gold!")); eq(#f.applied[1],1); eq(f.applied[1][1].kind,"gold"); c:shutdown()
+end)
+
 test("optional controller owns one trigger and cleans it up",function()
   local f=fake(); local c=Colorizer.new(f,false); assert(c:start()); eq(c:onLine("[Old Cemetery.]"),false); eq(#f.applied,0)
   eq(c:toggle(),true); eq(c:onLine("[Old Cemetery.]"),true); eq(#f.applied,1); eq(c:status().enabled,true)
@@ -57,6 +98,13 @@ test("feature toggles independently filter owned color ranges",function()
   local f=fake(); local c=Colorizer.new(f,true,{room_enabled=false,exits_enabled=true,currency_enabled=false}); assert(c:start())
   eq(c:onLine("[Old Cemetery.]"),false); eq(c:onLine("Gold 2gp"),false); eq(c:onLine("Obvious exits: north west."),true)
   assert(c:setFeature("currency",true)); eq(c:onLine("Gold 2gp"),true); local result,err=c:setFeature("unknown",true); eq(result,nil); eq(err,"unknown color feature")
+  c:shutdown()
+end)
+
+test("game highlights have one independent feature toggle",function()
+  local f=fake(); local c=Colorizer.new(f,true,{highlights_enabled=false}); assert(c:start())
+  eq(c:onLine("Your head takes 8 points of impact damage!"),false)
+  assert(c:setFeature("highlights",true)); eq(c:onLine("Your head takes 8 points of impact damage!"),true); eq(c:status().highlights,true)
   c:shutdown()
 end)
 

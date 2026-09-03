@@ -83,7 +83,18 @@ function Automapper:partitionFor(room,record)
     end
   end
   if self.current_id and self.current_id~=room.id and not self.pending then
-    return "isolated:"..tostring(room.id)
+    local origin,originErr=self:roomRecord(self.current_id)
+    if origin==nil then return nil,originErr end
+    if origin.exists and origin.owned then
+      if origin.game_area==room.area_key then
+        local originPartition=origin.partition
+        if not originPartition then originPartition,originErr=self.map:effectivePartition(self.current_id) end
+        if originPartition==nil and originErr then return nil,originErr end
+        if originPartition~=nil then return originPartition end
+      end
+      return "isolated:"..tostring(room.id)
+    end
+    return room.area_key
   end
   return room.area_key
 end

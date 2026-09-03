@@ -108,13 +108,27 @@ test("directional exploration remains in a normal origin partition when game are
   eq(map.roomByID[101].partition,"1"); eq(map.coordinatesByID[101].y,1)
 end)
 
-test("initial rooms use their normal partition while later untracked discoveries are isolated",function()
+test("initial rooms and untracked same-area discoveries share their normal partition",function()
   local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
   assert(mapper:onRoom(room(100,"Initial",7)))
   eq(map.roomByID[100].partition,"7")
   assert(mapper:onRoom(room(200,"Unexpected",7)))
-  eq(map.roomByID[200].partition,"isolated:200")
+  eq(map.roomByID[200].partition,"7")
   eq(map.coordinatesByID[200].x,0); eq(map.coordinatesByID[200].y,0); eq(map.coordinatesByID[200].z,0)
+end)
+
+test("untracked cross-area discoveries remain isolated without inventing links",function()
+  local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
+  assert(mapper:onRoom(room(100,"Initial",7)))
+  assert(mapper:onRoom(room(200,"Unexpected",8)))
+  eq(map.roomByID[200].partition,"isolated:200"); eq(#map.links,0)
+end)
+
+test("a stale missing current room after cleanup cannot force an isolated partition",function()
+  local map=fakeMap(); local mapper=Automapper.new(Model,map,function() end)
+  mapper.current_id=999
+  assert(mapper:onRoom(room(200,"Fresh current room",7)))
+  eq(map.roomByID[200].partition,"7")
 end)
 
 test("untracked revisits preserve canonical room identity placement and partition",function()
@@ -253,14 +267,14 @@ test("wrong direction consumes only the failed queued movement",function()
   eq(mapper.pending,nil); eq(#map.links,1); eq(map.links[1].direction,"w"); eq(map.roomByID[101].partition,"1")
 end)
 
-test("new teleported rooms receive destination-rooted isolated coordinates",function()
+test("new cross-area teleported rooms receive destination-rooted isolated coordinates",function()
   local map=fakeMap(); map.occupied={ ["0,0,0"]={100}, ["0,1,0"]={200} }
   function map:roomsAt(partition,x,y,z)
     if partition=="isolated:200" then return {} end
     return self.occupied[x..","..y..","..z] or {}
   end
   local mapper=Automapper.new(Model,map,function() end)
-  assert(mapper:onRoom(room(100,"A",1))); assert(mapper:onRoom(room(200,"B",1)))
+  assert(mapper:onRoom(room(100,"A",1))); assert(mapper:onRoom(room(200,"B",2)))
   local placed=map.coordinatesByID[200]; eq(placed.x,0); eq(placed.y,0); eq(placed.z,0)
   eq(map.roomByID[200].partition,"isolated:200")
 end)

@@ -13,7 +13,7 @@ local function safeText(v) return esc(tostring(v or ""):gsub("%c"," ")) end
 local function safeChatText(v) return tostring(v or ""):gsub("%c"," ") end
 local function alignmentLabel(value)
   local raw=tostring(value or ""); local key=raw:lower()
-  if key=="order" then return "Orderly" elseif key=="entropy" then return "Entropic" end
+  if key=="order" then return "Orderly" elseif key=="entropy" then return "Entropic" elseif key=="chaos" then return "Chaotic" end
   return raw
 end
 local chat_colors={ROOM="text",OWN="jade",WHISPER="#d49bc8",ESP="#a6a3e8",DRAGON="#d9a869",CONTACT="#8bc6b0",STAFF="#e09672"}

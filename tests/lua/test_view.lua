@@ -23,6 +23,13 @@ test("identity places orderly beside religious balance",function()
   local identity=View.identityContent({full_name="Muthulas Vaelith",race="Leuian",class="Cleric",alignment="order",religious_balance="Balanced"},theme,layout)
   eq(identity:find("Balanced · Orderly",1,true)~=nil,true); eq(identity:find(">order</span>",1,true),nil)
 end)
+test("identity displays normalized alignment names",function()
+  local theme={accent="#d8ae53",jade="#72bd82",muted="#91a098"}; local layout={body_font=20,heading_font=25}
+  for raw,display in pairs({order="Orderly",entropy="Entropic",chaos="Chaotic"}) do
+    local identity=View.identityContent({full_name="Test",race="Human",class="Fighter",alignment=raw,religious_balance="Balanced"},theme,layout)
+    eq(identity:find("Balanced · "..display,1,true)~=nil,true)
+  end
+end)
 test("equipment uses its smaller dedicated font",function()
   local html=View.equipmentContent({weapon_readied=true,shield_readied=false},{},{accent="#da5",jade="#7b8"},{body_font=20,equipment_font=15})
   eq(html:find("font%-size:15px")~=nil,true)

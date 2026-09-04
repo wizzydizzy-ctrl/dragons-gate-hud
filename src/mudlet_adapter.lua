@@ -161,7 +161,11 @@ function Adapter:setPostureVariables(state)
   state=type(state)=="table" and state or {}; rawset(_G,"standing",state.standing); rawset(_G,"sitting",state.sitting); rawset(_G,"unconscious",state.unconscious); return true
 end
 function Adapter.characterPrompt(value) return tostring(value or ""):match("^>")~=nil end
-function Adapter:isCharacterActive() return Adapter.characterPrompt(getCurrentLine and getCurrentLine() or "") end
+function Adapter:isCharacterActive()
+  if Adapter.characterPrompt(getCurrentLine and getCurrentLine() or "") then return true end
+  local controller=DGHUD and DGHUD.controller
+  return controller and controller.character_entry_started==true or false
+end
 function Adapter:mudletVersion()
   if type(getMudletVersion)~="function" then return nil end
   local ok,major,minor,revision=pcall(getMudletVersion,"table"); if not ok then return nil end

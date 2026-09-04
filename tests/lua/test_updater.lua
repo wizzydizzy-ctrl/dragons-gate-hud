@@ -64,6 +64,10 @@ test("post-install refresh joins the new controller startup sequence",function()
   _G.DGHUD=prior; if not ok then error(err,0) end
   eq(entries,1); eq(forced,0)
 end)
+test("Mudlet activity detection survives asynchronous non-prompt output",function()
+  local oldDGHUD,oldCurrent=DGHUD,getCurrentLine; DGHUD={controller={character_entry_started=true}}; getCurrentLine=function() return "The dark hound claws at you!" end
+  local ok,err=pcall(function() eq(Adapter.new():isCharacterActive(),true) end); DGHUD,getCurrentLine=oldDGHUD,oldCurrent; if not ok then error(err,0) end
+end)
 test("Mudlet version adapter captures the API numeric tuple",function()
   local prior=_G.getMudletVersion; _G.getMudletVersion=function(mode) eq(mode,"table"); return 5,0,1 end
   local value=Adapter.new():mudletVersion(); _G.getMudletVersion=prior

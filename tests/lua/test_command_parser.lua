@@ -27,6 +27,17 @@ test("info tolerates condition text appended to the physical sentence",function(
   with_conditions[1]=with_conditions[1].." You are hungry. You are thirsty."
   local r=assert(Parser.parseInfo(with_conditions)); eq(r.physical.weight,309); eq(r.attributes.APP,"Fair")
 end)
+test("info parses multiword Dragon stage and all attributes",function()
+  local lines={"You are Deklan Marrowen, a average boned and wiry-tough bodied 21 year old Entropic Male 1st stage Dragon.  You are 7'1\" and weigh 312 lbs."," Str Int Wis Dex Agi Con Cha Wil Voi Per App","Good Good Great Good Good Good Good Good Good Great Good",">"}
+  local r=assert(Parser.parseInfo(lines)); eq(r.character.race,"Dragon"); eq(r.physical.life_stage,"1st stage"); eq(r.attributes.APP,"Good")
+end)
+test("info locates a valid rank row through harmless interleaved lines",function()
+  local lines={" Str Int Wis Dex Agi Con Cha Wil Voi Per App","",">","info","great GOOD fair Aver low Poor awful Good Fair Aver Great",">"}
+  local r=assert(Parser.parseInfo(lines)); eq(r.attributes.STR,"Great"); eq(r.attributes.APP,"Great"); eq(Parser.isComplete("info",lines),true)
+end)
+test("info accepts attributes independently of physical details",function()
+  local lines={"Str Int Wis Dex Agi Con Cha Wil Voi Per App","Good Good Good Good Good Good Good Good Good Good Good",">"}; local r=assert(Parser.parseInfo(lines)); eq(r.attributes.STR,"Good"); eq(r.physical.age,nil)
+end)
 test("detects completed command responses",function() eq(Parser.isComplete("inventory",inventory),true); eq(Parser.isComplete("inventory",{"Items carried:","Your inventory totals 0 lbs."}),false); eq(Parser.isComplete("stat",stat),true); eq(Parser.isComplete("info",info),true); eq(Parser.isComplete("info",{"You are Test"}),false) end)
 test("parses info religion rank deity balance and alignment",function()
   local r=assert(Parser.parseReligion(religion)); eq(r.rank,"Novitiate"); eq(r.deity,"Unknown"); eq(r.balance,"Balanced"); eq(r.alignment,"Entropic"); eq(Parser.isComplete("info religion",religion),true)

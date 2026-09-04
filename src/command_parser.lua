@@ -1,5 +1,6 @@
 local Parser={}
 local ATTRS={"STR","INT","WIS","DEX","AGI","CON","CHA","WIL","VOI","PER","APP"}
+local RANKS={awful="Awful",poor="Poor",low="Low",aver="Aver",fair="Fair",good="Good",great="Great"}
 local function clean(value)
   return tostring(value or ""):gsub("\27%[[%d;]*m",""):gsub("\27%[[%d;]*[A-Za-z]",""):gsub("%s+$","")
 end
@@ -37,14 +38,20 @@ function Parser.parseInfo(lines)
   local result={physical={},attributes={}}
   for i,raw in ipairs(lines or {}) do
     local line=clean(raw)
-    local full,description,age,alignment,sex,stage,race,height,weight=line:match("^You are (.-), (.-) (%d+) year old (%S+) (%S+) (%S+) (%S+)%.%s+You are (.-) and weigh (%d+) lbs%.")
-    if full then result.character={full_name=full,alignment=alignment,race=race}; result.physical={description=description,age=tonumber(age),sex=sex,life_stage=stage,height=height,weight=tonumber(weight)} end
+    local full,description,age,alignment,sex,stageAndRace,height,weight=line:match("^You are (.-), (.-) (%d+) year old (%S+) (%S+) (.-)%.%s+You are (.-) and weigh (%d+) lbs%.")
+    if full then
+      local stage,race=stageAndRace:match("^(.-)%s+(%S+)$")
+      if stage and race then result.character={full_name=full,alignment=alignment,race=race}; result.physical={description=description,age=tonumber(age),sex=sex,life_stage=stage,height=height,weight=tonumber(weight)} end
+    end
     if line:match("^%s*Str%s+Int%s+Wis%s+Dex%s+Agi%s+Con%s+Cha%s+Wil%s+Voi%s+Per%s+App%s*$") then
-      local values={}; for value in clean(lines[i+1] or ""):gmatch("%S+") do values[#values+1]=value end
-      if #values==11 then for n,key in ipairs(ATTRS) do result.attributes[key]=values[n] end end
+      for offset=1,8 do
+        local values={}; local valid=true
+        for value in clean(lines[i+offset] or ""):gmatch("[%a]+") do local rank=RANKS[value:lower()]; if not rank then valid=false; break end; values[#values+1]=rank end
+        if valid and #values==11 then for n,key in ipairs(ATTRS) do result.attributes[key]=values[n] end; break end
+      end
     end
   end
-  if not result.physical.age or not result.attributes.STR then return nil,"unrecognized info response" end
+  if not result.physical.age and not result.attributes.STR then return nil,"unrecognized info response" end
   return result
 end
 

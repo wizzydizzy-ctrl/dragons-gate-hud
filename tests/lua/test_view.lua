@@ -49,11 +49,11 @@ test("inventory truncates without splitting rows",function()
   local rows=View.inventoryRows({{name="One",weight=1},{name="Two",weight=2},{name="Three",weight=3}},2)
   eq(#rows,2); eq(rows[1].name,"One"); eq(rows[2].label,"+2 more"); eq(rows[2].overflow,2)
 end)
-test("inventory footer omits redundant total weight and renders colored currency",function()
+test("inventory footer renders currency and carry capacity without redundant total",function()
   local theme={accent="#d8ae53",muted="#91a098",gold="#e0b84f",silver="#c0c0c0"}
-  local html=View.inventoryContent({items={},total_weight=0},{gold=12,silver=34},theme,{inventory_font=18},4)
+  local html=View.inventoryContent({items={},total_weight=0},{gold=12,silver=34,carry={current=25.7,maximum=255,percent=10.1}},theme,{inventory_font=18},4)
   eq(html:find("WEALTH",1,true),nil)
-  eq(html:find("Total",1,true),nil); eq(html:find(" lb",1,true),nil)
+  eq(html:find("Total",1,true),nil); eq(html:find("Carry <b>25.7 / 255 / </b>",1,true)~=nil,true); eq(html:find("10.1%",1,true)~=nil,true)
   eq(html:find("12gp",1,true)~=nil,true); eq(html:find("34sp",1,true)~=nil,true)
   eq(html:find("color:#e0b84f",1,true)~=nil,true); eq(html:find("color:#c0c0c0",1,true)~=nil,true)
   eq(html:find("12gp",1,true)<html:find("34sp",1,true),true)
@@ -426,7 +426,7 @@ test("unchanged HUD refreshes preserve inventory and skill scroll positions",fun
   state.skills.items={{name="Clawing",level=5,remain=2}}; view:update(state); eq(view.skills_content.message:find("Clawing",1,true)~=nil,true)
 end)
 
-test("right rail orders equipment combat inventory runes skills and vitals without overlap",function()
+test("right rail orders combat inventory runes and skills without overlap",function()
   for _,size in ipairs({{1920,1080},{1200,800},{1200,650}}) do
     local layout=require("layout").compute(size[1],size[2]); local view=chatView(); view.last_state={vitals={psi={visible=false},web={visible=false}},equipment={items={}}}; view:applyLayout(layout)
     if view.inventory.visible and view.skills.visible then
@@ -434,10 +434,10 @@ test("right rail orders equipment combat inventory runes skills and vitals witho
       eq(view.details.visible,true); eq(view.details.y+view.details.height<=view.inventory.y,true); eq(view.inventory.y+view.inventory.height<=view.runes.y,true)
       local inventory_runes_gap=view.runes.y-(view.inventory.y+view.inventory.height); eq(inventory_runes_gap>=0,true); eq(inventory_runes_gap<=12,true)
       eq(view.runes.y+view.runes.height<=view.skills.y,true)
-      eq(view.skills.y+view.skills.height<=layout.window_height-view.vitals_right.height,true)
+      eq(view.skills.y+view.skills.height<=layout.window_height-12,true)
     else
       eq(view.skills.visible,false)
-      if view.inventory.visible then eq(view.inventory.y+view.inventory.height<=layout.window_height-view.vitals_right.height,true) end
+      if view.inventory.visible then eq(view.inventory.y+view.inventory.height<=layout.window_height-12,true) end
     end
   end
 end)
@@ -450,14 +450,14 @@ test("native mapper is embedded immediately above the compass",function()
   eq(view.mapper.raised,true); eq(view.compass_area.raised,true)
 end)
 
-test("vitals render at the bottom of the right rail and stay out of navigation",function()
+test("vitals span the center bottom and carry is not a gauge",function()
   local layout=require("layout").compute(1920,1080); local view=chatView()
   view.last_state={vitals={psi={visible=true},web={visible=false}},equipment={items={}}}
   view:applyLayout(layout)
   eq(view.vitals_right~=nil,true)
-  eq(view.hp.parent,view.vitals_right); eq(view.fatigue.parent,view.vitals_right); eq(view.carry.parent,view.vitals_right)
-  eq(view.vitals_right.x,"100%-"..layout.right)
-  eq(type(view.vitals_right.y),"string"); eq(view.vitals_right.y:find("100%-",1,true)==1,true)
+  eq(view.hp.parent,view.vitals_right); eq(view.fatigue.parent,view.vitals_right); eq(view.psi.parent,view.vitals_right)
+  eq(view.vitals_right.x,layout.console_left); eq(view.vitals_right.width,layout.console_width)
+  eq(view.vitals_right.y,"100%-"..layout.bottom); eq(view.vitals_right.height,layout.bottom); eq(view.carry.visible,false)
   eq(view.mapper_frame.height>=300,true)
   eq(view.room.y,layout.lower_panel_padding)
 end)
@@ -508,12 +508,22 @@ test("responsive mapper survives short layouts and hides cleanly in compact mode
   eq(view.map_zoom_out.visible,false); eq(view.map_center.visible,false); eq(view.map_zoom_in.visible,false)
 end)
 
-test("short layouts keep right-side vitals separate from the mapper",function()
+test("short layouts keep center vitals separate from the mapper",function()
   local layout=require("layout").compute(1200,650); local view=chatView()
   view.last_state={vitals={psi={visible=true},web={visible=true}},equipment={items={}}}
   view:applyLayout(layout)
-  eq(view.hp.parent,view.vitals_right); eq(view.vitals_right.x,"100%-"..layout.right)
+  eq(view.hp.parent,view.vitals_right); eq(view.vitals_right.x,layout.console_left); eq(view.vitals_right.width,layout.console_width)
   if view.room.visible then eq(view.room.y+view.room.height<=view.mapper_frame.y,true) end
+end)
+
+test("compact PSI and Web use two readable rows while ordinary vitals use one",function()
+  local Layout=require("layout")
+  local ordinary=Layout.compute(600,700,nil,nil,{psi={visible=false},web={visible=false}})
+  local both=Layout.compute(600,700,nil,nil,{psi={visible=true},web={visible=true}})
+  eq(ordinary.vitals_strip_rows,1); eq(both.vitals_strip_rows,2); eq(both.bottom>ordinary.bottom,true)
+  local view=chatView(); view.last_state={vitals={psi={visible=true},web={visible=true}},equipment={items={}}}; view:applyLayout(both)
+  eq(view.hp.y,view.fatigue.y); eq(view.psi.y,view.web.y); eq(view.psi.y>view.hp.y,true)
+  eq(view.web.x+view.web.width<=view.vitals_right.width,true)
 end)
 
 test("right-side vitals preserve required combat and scrollable lists",function()
@@ -523,7 +533,7 @@ test("right-side vitals preserve required combat and scrollable lists",function(
   eq(view.inventory.visible,true)
   eq(view.details.visible,true); eq(view.details.y+view.details.height<=view.inventory.y,true)
   eq(view.skills.visible,true); eq(view.skills_output.visible,true)
-  eq(view.inventory.y+view.inventory.height<=layout.window_height-view.vitals_right.height-12,true)
+  eq(view.inventory.y+view.inventory.height<=layout.window_height-12,true)
 end)
 test("short desktop windows retain both inventory and skills as scrollable cards",function()
   for _,size in ipairs({{1000,600},{1200,600},{1400,600}}) do
@@ -535,7 +545,7 @@ test("short desktop windows retain both inventory and skills as scrollable cards
     eq(view.skills.visible,true); eq(view.skills_output.visible,true)
     eq(view.inventory.y+view.inventory.height<=view.runes.y,true); eq(view.runes.y+view.runes.height<=view.skills.y,true)
     eq(view.runes_output.height<=layout.list_row_height*5+(layout.list_horizontal_scrollbar_height or 0),true)
-    eq(view.skills.y+view.skills.height<=layout.window_height-view.vitals_right.height-12,true)
+    eq(view.skills.y+view.skills.height<=layout.window_height-12,true)
   end
 end)
 
@@ -560,7 +570,7 @@ test("equipment is optional below identity while combat remains required",functi
       eq(view.equipment.y+view.equipment.height<=layout.window_height-view.right.height,true)
     end
     eq(view.details.visible,true)
-    eq(view.hp.visible,true); eq(view.fatigue.visible,true); eq(view.carry.visible,true)
+    eq(view.hp.visible,true); eq(view.fatigue.visible,true); eq(view.carry.visible,false); eq(view.psi.visible,true); eq(view.web.visible,true)
   end
 end)
 
@@ -584,9 +594,10 @@ test("mapper stack has exact non-overlapping bounds across resolutions and vital
     end
     eq(view.compass_area.y+view.compass_area.height<=view.utility_area.y,true)
     eq(view.utility_area.y+view.utility_area.height<=panel,true)
-    for _,widget in ipairs({view.hp,view.fatigue,view.carry,view.room,view.compass_area,view.utility_area}) do
+    for _,widget in ipairs({view.room,view.compass_area,view.utility_area}) do
       if widget.visible then eq(widget.y>=0 and widget.y+widget.height<=panel,true) end
     end
+    for _,widget in ipairs({view.hp,view.fatigue,view.psi,view.web}) do if widget.visible then eq(widget.y>=0 and widget.y+widget.height<=layout.bottom,true) end end
   end end
 end)
 

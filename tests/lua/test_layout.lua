@@ -1,6 +1,6 @@
 local Layout=require("layout")
 test("wide screens reserve seventeen percent for each HUD rail",function()
-  local r=Layout.compute(1920,1080); eq(r.mode,"wide"); eq(r.left,326); eq(r.right,326); eq(r.console_gutter,10); eq(r.console_left,336); eq(r.console_width,1248); eq(r.header_height,74); eq(r.show_character_rail,true); eq(r.vitals_side,"right")
+  local r=Layout.compute(1920,1080); eq(r.mode,"wide"); eq(r.left,326); eq(r.right,326); eq(r.console_gutter,10); eq(r.console_left,336); eq(r.console_width,1248); eq(r.header_height,74); eq(r.show_character_rail,true); eq(r.vitals_side,"center")
 end)
 test("chatbox aligns exactly with center console",function()
   local r=Layout.compute(1920,1080)
@@ -13,7 +13,7 @@ test("chat height scales and clamps",function()
 end)
 test("chat allocation preserves a usable console remainder at medium and compact thresholds",function()
   for _,case in ipairs({{width=1200,header=66},{width=760,header=116}}) do
-    local threshold=case.header+160+120
+    local sample=Layout.compute(case.width,700); local threshold=case.header+sample.bottom+160+120
     local above=Layout.compute(case.width,threshold+1); local at=Layout.compute(case.width,threshold); local below=Layout.compute(case.width,threshold-1)
     eq(at.minimum_console_remainder,120)
     eq(above.chat_height,160); eq(above.console_remainder,121)
@@ -24,14 +24,14 @@ test("chat allocation preserves a usable console remainder at medium and compact
 end)
 test("short medium and compact layouts keep chat visible above the console remainder",function()
   local medium=Layout.compute(1200,200); local compact=Layout.compute(760,240)
-  eq(medium.chat_height,60); eq(medium.chat_output_height,16); eq(medium.console_remainder,74)
-  eq(compact.chat_height,60); eq(compact.chat_output_height,16); eq(compact.console_remainder,64)
+  eq(medium.chat_height,60); eq(medium.chat_output_height,16); eq(medium.console_remainder,medium.window_height-medium.bottom-medium.console_top)
+  eq(compact.chat_height,60); eq(compact.chat_output_height,16); eq(compact.console_remainder,compact.window_height-compact.bottom-compact.console_top)
   eq(medium.console_remainder>0,true); eq(compact.console_remainder>0,true)
   eq(medium.console_top<=medium.window_height,true); eq(compact.console_top<=compact.window_height,true)
 end)
 test("functional chat chrome floor adapts the console minimum at medium and compact boundaries",function()
   for _,case in ipairs({{width=1200,header=66},{width=760,header=116}}) do
-    local threshold=case.header+60+120
+    local sample=Layout.compute(case.width,700); local threshold=case.header+sample.bottom+60+120
     local above=Layout.compute(case.width,threshold+1); local at=Layout.compute(case.width,threshold); local below=Layout.compute(case.width,threshold-1)
     eq(at.chat_functional_minimum,60); eq(at.chat_height,60); eq(at.chat_output_height,16); eq(at.console_remainder,120)
     eq(above.chat_height,61); eq(above.chat_output_height,17); eq(above.console_remainder,120)
@@ -41,7 +41,7 @@ test("functional chat chrome floor adapts the console minimum at medium and comp
 end)
 test("extreme compact height compresses header before chat or console overrun",function()
   local r=Layout.compute(760,150)
-  eq(r.header_height,89); eq(r.chat_height,60); eq(r.chat_output_height,16); eq(r.console_remainder,1)
+  eq(r.header_height,50); eq(r.chat_height,60); eq(r.chat_output_height,16); eq(r.console_remainder,1)
   eq(r.console_top<=r.window_height,true)
 end)
 test("normal layouts retain their breakpoint headers and chat geometry",function()
@@ -69,10 +69,10 @@ test("chat height follows supplied percentage while retaining reference target",
   eq(default.chat_height,240); eq(taller.chat_height>default.chat_height,true)
 end)
 test("medium screens preserve the seventeen sixty-six seventeen split",function()
-  local r=Layout.compute(1200,800); eq(r.mode,"medium"); eq(r.left,204); eq(r.right,204); eq(r.console_gutter,6); eq(r.console_left,210); eq(r.console_width,780); eq(r.header_height,66); eq(r.show_character_rail,true); eq(r.show_room_compass,true); eq(r.vitals_side,"right")
+  local r=Layout.compute(1200,800); eq(r.mode,"medium"); eq(r.left,204); eq(r.right,204); eq(r.console_gutter,6); eq(r.console_left,210); eq(r.console_width,780); eq(r.header_height,66); eq(r.show_character_rail,true); eq(r.show_room_compass,true); eq(r.vitals_side,"center")
 end)
 test("compact screens move all status out of side rails",function()
-  local r=Layout.compute(760,700); eq(r.mode,"compact"); eq(r.left,0); eq(r.right,0); eq(r.header_height,116); eq(r.bottom,0); eq(r.show_room_compass,false)
+  local r=Layout.compute(760,700); eq(r.mode,"compact"); eq(r.left,0); eq(r.right,0); eq(r.header_height,116); eq(r.bottom,r.vitals_strip_height); eq(r.bottom>0,true); eq(r.show_room_compass,false)
 end)
 test("desktop breakpoint crossings retain rails until genuinely compact widths",function()
   for _,width in ipairs({999,1000,1399,1400}) do
@@ -81,8 +81,8 @@ test("desktop breakpoint crossings retain rails until genuinely compact widths",
     eq(r.left>0,true); eq(r.right>0,true); eq(r.console_width>0,true)
   end
 end)
-test("duplicate bottom information row reserves no console space",function()
-  for _,size in ipairs({{760,700},{1200,800},{2560,1400}}) do eq(Layout.compute(size[1],size[2]).bottom,0) end
+test("center vitals strip reserves the bottom of the main console",function()
+  for _,size in ipairs({{760,700},{1200,800},{2560,1400}}) do local r=Layout.compute(size[1],size[2]); eq(r.bottom,r.vitals_strip_height); eq(r.console_remainder,r.window_height-r.console_top-r.bottom) end
 end)
 test("console gutter approximates half a percent but caps on wide displays",function()
   for _,case in ipairs({{1920,10},{2560,12},{3840,12},{7680,12}}) do
@@ -183,7 +183,7 @@ test("moving vitals out of the navigation rail increases usable mapper space",fu
   eq(geometry.show_psi,true); eq(geometry.show_web,true)
   eq(geometry.content_top,wide.lower_panel_padding)
   eq(geometry.mapper_height>=300,true)
-  eq(wide.vitals_side,"right")
+  eq(wide.vitals_side,"center")
 end)
 test("mapper toolbar reserves space above the existing usable map minimum",function()
   for _,size in ipairs({{1920,1080},{1200,800},{1200,650},{1000,650}}) do

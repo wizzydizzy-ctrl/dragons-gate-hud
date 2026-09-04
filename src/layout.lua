@@ -1,6 +1,6 @@
 local Layout={}
 function Layout.lowerPanelGeometry(layout,psiVisible,webVisible)
-  local available=math.max(0,(layout.window_height or 0)-(layout.header_height or 0)-(layout.bottom or 0))
+  local available=math.max(0,(layout.window_height or 0)-(layout.header_height or 0))
   local inset=layout.lower_panel_padding
   local compass=layout.lower_compass_cell*3
   local utility=layout.lower_utility_height*2+5
@@ -46,9 +46,10 @@ local function chatMetrics(width,height,layout,settings)
   local chat_output_minimum=16
   local chat_functional_minimum=chat_chrome_height+chat_output_minimum
   if maximum<minimum then maximum=minimum end
-  layout.header_height=math.min(layout.top,math.max(0,height-chat_functional_minimum-1))
+  local bottom=tonumber(layout.bottom) or 0
+  layout.header_height=math.min(layout.top,math.max(0,height-bottom-chat_functional_minimum-1))
   local configured_height=clamp(height*percent*(target/(1080*default_percent)),minimum,maximum)
-  local available=math.max(0,height-layout.header_height)
+  local available=math.max(0,height-layout.header_height-bottom)
   local adaptive_console_remainder=math.min(minimum_console_remainder,math.max(1,available-chat_functional_minimum))
   local available_chat=math.min(math.max(0,available-1),math.max(chat_functional_minimum,available-adaptive_console_remainder))
   layout.minimum_console_remainder=minimum_console_remainder
@@ -63,12 +64,12 @@ local function chatMetrics(width,height,layout,settings)
   layout.chat_inner_width=math.max(1,layout.chat_width-(2*layout.chat_padding)-layout.chat_scrollbar_allowance)
   layout.chat_wrap_columns=math.max(1,math.floor(layout.chat_inner_width/layout.chat_character_width))
   layout.console_top=layout.header_height+layout.chat_height
-  layout.console_remainder=math.max(0,height-layout.console_top)
+  layout.console_remainder=math.max(0,height-bottom-layout.console_top)
   layout.chat_output_height=math.max(0,layout.chat_height-chat_chrome_height)
   layout.top=layout.console_top
   return layout
 end
-local function metrics(width,height,layout,chatSettings,mapperSettings)
+local function metrics(width,height,layout,chatSettings,mapperSettings,vitals)
   layout.console_gutter=layout.mode=="compact" and 0 or math.min(12,math.floor(width*.005+.5))
   layout.console_left=layout.left+layout.console_gutter
   layout.console_right=layout.right+layout.console_gutter
@@ -100,7 +101,12 @@ local function metrics(width,height,layout,chatSettings,mapperSettings)
   layout.lower_room_min_height=math.max(layout.lower_heading_font+layout.lower_body_font+20,56)
   layout.lower_compass_font=scaled(layout.compass_font); layout.lower_compass_cell=scaled(layout.compass_cell)
   layout.lower_utility_font=scaled(layout.utility_font); layout.lower_utility_height=scaled(layout.utility_height); layout.lower_section_gap=scaled(44)
-  layout.bottom=0; layout.window_height=height
+  layout.vitals_strip_padding=6
+  layout.vitals_strip_gap=6
+  local active=2+((vitals and vitals.psi and vitals.psi.visible) and 1 or 0)+((vitals and vitals.web and vitals.web.visible) and 1 or 0)
+  layout.vitals_strip_rows=(layout.mode=="compact" and active>2) and 2 or 1
+  layout.vitals_strip_height=layout.lower_gauge_height*layout.vitals_strip_rows+layout.vitals_strip_gap*(layout.vitals_strip_rows-1)+layout.vitals_strip_padding*2
+  layout.bottom=layout.vitals_strip_height; layout.window_height=height
   chatMetrics(width,height,layout,chatSettings)
   layout.lower_mapper_gap=layout.lower_row_gap
   if layout.mode=="compact" then
@@ -120,13 +126,13 @@ local function metrics(width,height,layout,chatSettings,mapperSettings)
   end
   return layout
 end
-function Layout.compute(width,height,chatSettings,mapperSettings)
+function Layout.compute(width,height,chatSettings,mapperSettings,vitals)
   width=tonumber(width) or 1200; height=tonumber(height) or 800
   local rail=math.floor(width*.17)
   local result
-  if width>=1400 then result=metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=0,show_character_rail=true,show_room_compass=height>=700,vitals_side="right"},chatSettings,mapperSettings)
-  elseif width>=800 then result=metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="right"},chatSettings,mapperSettings)
-  else result=metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=0,show_character_rail=false,show_room_compass=false,vitals_side="compact"},chatSettings,mapperSettings) end
+  if width>=1400 then result=metrics(width,height,{mode="wide",left=rail,right=rail,top=74,bottom=0,show_character_rail=true,show_room_compass=height>=700,vitals_side="center"},chatSettings,mapperSettings,vitals)
+  elseif width>=800 then result=metrics(width,height,{mode="medium",left=rail,right=rail,top=66,bottom=0,show_character_rail=true,show_room_compass=height>=650,vitals_side="center"},chatSettings,mapperSettings,vitals)
+  else result=metrics(width,height,{mode="compact",left=0,right=0,top=116,bottom=0,show_character_rail=false,show_room_compass=false,vitals_side="center"},chatSettings,mapperSettings,vitals) end
   result.window_width=width
   result.window_height=height
   return result

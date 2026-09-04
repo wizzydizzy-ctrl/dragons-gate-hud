@@ -143,6 +143,7 @@ function View.inventoryContent(inventory,vitals,t,layout,capacity)
   local rows=View.inventoryRows(inventory.items,capacity); local lines={"<span style='color:"..t.accent.."'><b>INVENTORY</b></span>"}
   for _,item in ipairs(rows) do if item.overflow then lines[#lines+1]="<span style='color:"..t.muted.."'>"..item.label.."</span>" else lines[#lines+1]=esc(item.name).." <span style='color:"..t.muted.."'>"..esc(item.weight or "").." lb</span>" end end
   lines[#lines+1]="<span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(vitals.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(vitals.silver or 0).."sp</b></span>"
+  local carry=vitals.carry or {}; lines[#lines+1]="Carry <b>"..esc(carry.current or 0).." / "..esc(carry.maximum or 0).." / </b><span style='color:"..t.muted.."'><b>"..esc(carry.percent or 0).."%</b></span>"
   return View.withFont(table.concat(lines,"<br>"),layout.inventory_font)
 end
 local function label(name,parent,style,geyser)
@@ -265,7 +266,7 @@ function View.new(settings)
   self.right=Geyser.Container:new({name="DGHUD.RightRail",x=0,y=0,width=300,height=500},self.root)
   self.right_bg=label("DGHUD.RightBackground",self.right,"background:"..t.panel..";border-right:1px solid "..t.border..";")
   self.right_title=label("DGHUD.RightTitle",self.right,"background:transparent;color:"..t.accent..";font-size:13px;font-weight:700;padding:10px 14px;")
-  self.vitals_right=Geyser.Container:new({name="DGHUD.RightVitals",x=0,y=0,width=300,height=180},self.root)
+  self.vitals_right=Geyser.Container:new({name="DGHUD.CenterVitals",x=0,y=0,width=300,height=48},self.root)
   self.hp=gauge("DGHUD.Health",self.vitals_right,t.hp,t); self.fatigue=gauge("DGHUD.Fatigue",self.vitals_right,t.fatigue,t); self.carry=gauge("DGHUD.Carry",self.vitals_right,"#c9a359",t); self.psi=gauge("DGHUD.Psi",self.vitals_right,"#6a72c9",t); self.web=gauge("DGHUD.Web",self.vitals_right,"#9b78b5",t)
   self.room=label("DGHUD.Room",self.right,"background:#101a16;border:1px solid #385044;border-radius:6px;color:"..t.text..";padding:10px 12px;")
   self.mapper_frame=label("DGHUD.MapperFrame",self.right,"background:#101713;border:1px solid "..t.border..";border-radius:7px;")
@@ -394,7 +395,7 @@ function View:renderChatTabs(categories,activeFilter)
   end
 end
 function View:applyLayout(layout)
-  self.layout=layout; local top,bottom=layout.header_height or layout.top,layout.bottom; local t=self.settings.theme; local p=layout.panel_padding; local lp=layout.lower_panel_padding
+  self.layout=layout; local top,bottom=layout.header_height or layout.top,0; local t=self.settings.theme; local p=layout.panel_padding; local lp=layout.lower_panel_padding
   self.header:setStyleSheet("background:"..t.background..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
   self.clock_header:setStyleSheet("background:transparent;color:"..t.text..";padding:8px "..p.."px;text-align:right;")
   self.attribute_strip:setStyleSheet("background:transparent;color:"..t.text..";padding:10px 12px;font-size:"..layout.attribute_strip_font.."px;")
@@ -433,7 +434,8 @@ function View:applyLayout(layout)
   self.room:setStyleSheet("background:#101a16;border:1px solid #385044;border-radius:7px;color:"..t.text..";padding:"..lp.."px;font-size:"..layout.lower_body_font.."px;")
   self.bottom:setStyleSheet("background:#151713;border-top:1px solid "..t.border..";color:"..t.muted..";padding:9px "..p.."px;font-size:"..layout.small_font.."px;")
   self.compact:setStyleSheet("background:"..t.panel..";border-bottom:1px solid "..t.border..";color:"..t.text..";padding:10px "..p.."px;font-size:"..layout.body_font.."px;")
-  for _,g in ipairs({self.hp,self.fatigue,self.carry,self.psi,self.web}) do g.text:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.lower_small_font.."px;font-weight:700;"); if g.text.setFontSize then g.text:setFontSize(layout.lower_small_font) end end
+  for _,g in ipairs({self.hp,self.fatigue,self.psi,self.web}) do g.text:setStyleSheet("background:transparent;color:"..t.text..";font-size:"..layout.lower_small_font.."px;font-weight:700;"); if g.text.setFontSize then g.text:setFontSize(layout.lower_small_font) end end
+  self.carry:hide()
   place(self.header,0,0,"100%",top)
   local windowWidth=tonumber(layout.window_width) or 1200; local clock_x=layout.mode=="compact" and math.floor(windowWidth*.5) or windowWidth-layout.right
   local toggle_width=math.max(72,math.min(92,math.floor(windowWidth*.10))); local toggle_x=math.max(4,clock_x-toggle_width-6); local toggle_y=math.max(5,math.floor((top-layout.color_toggle_height)/2))
@@ -484,20 +486,6 @@ function View:applyLayout(layout)
     local equipment_h=(layout.equipment_font or layout.body_font)+eq_rows*(layout.equipment_line_height or layout.details_line_height)+equipment_padding*2+10
     local identity_bottom=top+layout.identity_height
     if lower_y-identity_bottom>=equipment_h+20 then place(self.equipment,p,identity_bottom+10,layout.left-p*2,equipment_h) else self.equipment:hide() end
-    local show_psi,show_web=psi_visible,web_visible
-    local function vitalsHeight()
-      local count=3+(show_psi and 1 or 0)+(show_web and 1 or 0)
-      return lp*2+count*layout.lower_gauge_height+math.max(0,count-1)*layout.lower_row_gap
-    end
-    local vitals_h=vitalsHeight()
-    local combat_estimate=top+p+(layout.combat_line_height or layout.details_line_height)*4+(layout.combat_padding or equipment_padding)*2+4
-    if combat_estimate+12>(layout.window_height or 800)-bottom-vitals_h then show_web=false; vitals_h=vitalsHeight() end
-    if combat_estimate+12>(layout.window_height or 800)-bottom-vitals_h then show_psi=false; vitals_h=vitalsHeight() end
-    place(self.vitals_right,"100%-"..layout.right,"100%-"..(bottom+vitals_h),layout.right,vitals_h)
-    local vitals_y=lp
-    for _,g in ipairs({self.hp,self.fatigue,self.carry}) do place(g,lp,vitals_y,"100%-"..(lp*2),layout.lower_gauge_height); vitals_y=vitals_y+layout.lower_gauge_height+layout.lower_row_gap end
-    if show_psi then place(self.psi,lp,vitals_y,"100%-"..(lp*2),layout.lower_gauge_height); vitals_y=vitals_y+layout.lower_gauge_height+layout.lower_row_gap else self.psi:hide() end
-    if show_web then place(self.web,lp,vitals_y,"100%-"..(lp*2),layout.lower_gauge_height) else self.web:hide() end
     local details_placement=Layout.detailsPlacement()
     layout.details_columns=2
     self.details:hide()
@@ -505,10 +493,10 @@ function View:applyLayout(layout)
     local right_details_h=(layout.combat_line_height or layout.details_line_height)*4+combat_padding*2+4
     local combat_y=top+p
     place(self.details,card_x,combat_y,card_w,right_details_h)
-    local inventory_y=combat_y+right_details_h+10; local rail_bottom=(layout.window_height or 800)-bottom-vitals_h-12
+    local inventory_y=combat_y+right_details_h+10; local rail_bottom=(layout.window_height or 800)-12
     local rows=layout.list_visible_rows or 5; local list_h=layout.list_viewport_height or layout.list_row_height*rows
     if self.list_horizontal_overflow then list_h=list_h+(layout.list_horizontal_scrollbar_height or 18) end
-    local title_h=layout.list_row_height+4; local footer_h=layout.list_row_height+4
+    local title_h=layout.list_row_height+4; local footer_h=layout.list_row_height*2+6
     local inventory_h=rp*2+title_h+list_h+footer_h+8; local runes_h=rp*2+title_h+list_h+4; local skills_h=rp*2+title_h+list_h+4
     local required=inventory_h+12+runes_h+12+skills_h
     if rail_bottom-inventory_y>=required then
@@ -529,9 +517,9 @@ function View:applyLayout(layout)
       if fallback_h>=minimum_inventory+gap+minimum_runes+gap+minimum_skills then
         local usable=fallback_h-gap*2; local inventory_h=math.floor(usable/3); local runes_h=math.floor((usable-inventory_h)/2); local skills_h=usable-inventory_h-runes_h
         local runes_y=inventory_y+inventory_h+gap; local skills_y=runes_y+runes_h+gap
-        place(self.inventory,card_x,inventory_y,card_w,inventory_h); place(self.inventory_title,list_x,inventory_y+rp,list_w,title_h); place(self.inventory_output,list_x,inventory_y+rp+title_h,list_w,math.max(layout.list_row_height,inventory_h-rp*2-title_h-footer_h-4)); place(self.inventory_footer,list_x,inventory_y+inventory_h-rp-footer_h,list_w,footer_h)
-        place(self.runes,card_x,runes_y,card_w,runes_h); place(self.runes_title,list_x,runes_y+rp,list_w,title_h); place(self.runes_output,list_x,runes_y+rp+title_h,list_w,math.max(layout.list_row_height,runes_h-rp*2-title_h-4))
-        place(self.skills,card_x,skills_y,card_w,skills_h); place(self.skills_title,list_x,skills_y+rp,list_w,title_h); place(self.skills_output,list_x,skills_y+rp+title_h,list_w,math.max(layout.list_row_height,skills_h-rp*2-title_h-4))
+        place(self.inventory,card_x,inventory_y,card_w,inventory_h); place(self.inventory_title,list_x,inventory_y+rp,list_w,title_h); place(self.inventory_output,list_x,inventory_y+rp+title_h,list_w,math.min(list_h,math.max(layout.list_row_height,inventory_h-rp*2-title_h-footer_h-4))); place(self.inventory_footer,list_x,inventory_y+inventory_h-rp-footer_h,list_w,footer_h)
+        place(self.runes,card_x,runes_y,card_w,runes_h); place(self.runes_title,list_x,runes_y+rp,list_w,title_h); place(self.runes_output,list_x,runes_y+rp+title_h,list_w,math.min(list_h,math.max(layout.list_row_height,runes_h-rp*2-title_h-4)))
+        place(self.skills,card_x,skills_y,card_w,skills_h); place(self.skills_title,list_x,skills_y+rp,list_w,title_h); place(self.skills_output,list_x,skills_y+rp+title_h,list_w,math.min(list_h,math.max(layout.list_row_height,skills_h-rp*2-title_h-4)))
       else
         self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.runes:hide(); self.runes_title:hide(); self.runes_output:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide()
       end
@@ -541,7 +529,18 @@ function View:applyLayout(layout)
     if self.skills_output.visible then self.skills_content:show() end
     View.raiseCards({self.equipment,self.inventory,self.details,self.runes,self.skills,self.inventory_title,self.inventory_output,self.inventory_content,self.inventory_footer,self.runes_title,self.runes_output,self.runes_content,self.skills_title,self.skills_output,self.skills_content})
   else
-    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.runes:hide(); self.runes_title:hide(); self.runes_output:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide(); self.vitals_right:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.map_clear_all:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
+    self.left_bg:hide(); self.identity:hide(); self.details:hide(); self.left:hide(); self.equipment:hide(); self.inventory:hide(); self.inventory_title:hide(); self.inventory_output:hide(); self.inventory_footer:hide(); self.runes:hide(); self.runes_title:hide(); self.runes_output:hide(); self.skills:hide(); self.skills_title:hide(); self.skills_output:hide(); self.mapper_frame:hide(); self.mapper:hide(); self.map_zoom_out:hide(); self.map_center:hide(); self.map_zoom_in:hide(); self.map_clear_all:hide(); self.right:hide(); self.attribute_strip:hide(); place(self.compact,0,62,"100%",top-62)
+  end
+  do
+    local vitals=self.last_state and self.last_state.vitals or {}; local bars={self.hp,self.fatigue}
+    if vitals.psi and vitals.psi.visible then bars[#bars+1]=self.psi else self.psi:hide() end
+    if vitals.web and vitals.web.visible then bars[#bars+1]=self.web else self.web:hide() end
+    local inset=layout.vitals_strip_padding or 6; local gap=layout.vitals_strip_gap or 6
+    local rows=layout.vitals_strip_rows or 1; local columns=math.ceil(#bars/rows)
+    local width=math.max(1,tonumber(layout.console_width) or 1); local usable=math.max(columns,width-inset*2-gap*(columns-1)); local barWidth=usable/columns
+    place(self.vitals_right,layout.console_left or 0,"100%-"..(layout.bottom or 0),layout.console_width or "100%",layout.bottom or layout.vitals_strip_height)
+    for index,g in ipairs(bars) do local row=math.floor((index-1)/columns); local column=(index-1)%columns; place(g,inset+column*(barWidth+gap),inset+row*(layout.lower_gauge_height+gap),barWidth,layout.lower_gauge_height) end
+    self.carry:hide(); self.vitals_right:raise()
   end
   if layout.mode~="compact" then
     place(self.right_bg,0,0,"100%","100%"); self.right_title:hide()
@@ -751,13 +750,13 @@ function View:renderNavigation(exits)
 end
 function View:renderInventory(s)
   local t=self.settings.theme; local layout=self.layout; if not layout or layout.mode=="compact" then return end
-  local inventory=s.inventory or {}; local v=s.vitals or {}; local signature={tostring(inventory.total_weight or ""),tostring(v.gold or 0),tostring(v.silver or 0)}
+  local inventory=s.inventory or {}; local v=s.vitals or {}; local carry=v.carry or {}; local signature={tostring(inventory.total_weight or ""),tostring(v.gold or 0),tostring(v.silver or 0),tostring(carry.current or ""),tostring(carry.maximum or ""),tostring(carry.percent or "")}
   for _,item in ipairs(inventory.items or {}) do signature[#signature+1]=tostring(item.name or "").."\31"..tostring(item.weight or "") end
   signature=table.concat(signature,"\30"); if signature==self.inventory_signature then return end; self.inventory_signature=signature
   self.inventory_title:echo("<b>INVENTORY</b>")
   local lines={}; for _,item in ipairs(inventory.items or {}) do lines[#lines+1]=esc(item.name or "").."  <span style='color:"..t.muted.."'>"..esc(item.weight or "").." lb</span>" end
   self.inventory_content:echo("<div style='white-space:nowrap'>"..table.concat(lines,"<br>").."</div>"); self.inventory_content:move(0,0); self.inventory_content:resize(self.inventory_content_width or self.list_content_width or 1,math.max(layout.list_row_height*5,#lines*layout.list_row_height)); self.inventory_content:show()
-  self.inventory_footer:echo("<span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(v.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(v.silver or 0).."sp</b></span>")
+  self.inventory_footer:echo("<span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(v.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(v.silver or 0).."sp</b></span><br>Carry <b>"..esc(carry.current or 0).." / "..esc(carry.maximum or 0).." / </b><span style='color:"..t.muted.."'><b>"..esc(carry.percent or 0).."%</b></span>")
 end
 function View:renderRunes(s)
   local layout=self.layout; if not layout or layout.mode=="compact" then return end
@@ -854,10 +853,12 @@ function View:update(s)
   self.header:echo(View.headerContent(layout,t,s.character.full_name)); self:updateClock(s.clock); self.attribute_strip:echo(View.attributeStripContent(s.attributes,t,layout))
   self.identity:echo(View.identityContent(s.character,t,layout))
   self.equipment:echo(View.equipmentContent(v,s.equipment.items,t,layout))
-  self.hp:setValue(v.hp.current,math.max(v.hp.maximum,1),"Health  "..v.hp.current.." / "..v.hp.maximum); self.fatigue:setValue(v.fatigue.current,math.max(v.fatigue.maximum,1),"Fatigue  "..v.fatigue.current.." / "..v.fatigue.maximum); self.carry:setValue(v.carry.current,math.max(v.carry.maximum,1),"Carry  "..v.carry.current.." / "..v.carry.maximum)
-  if v.psi.visible then self.psi:setValue(v.psi.current,v.psi.maximum,"PSI  "..v.psi.current.." / "..v.psi.maximum) end; if v.web.visible then self.web:setValue(v.web.current,v.web.maximum,"Web  "..v.web.current.." / "..v.web.maximum) end
+  local activeBars=2+(v.psi.visible and 1 or 0)+(v.web.visible and 1 or 0)
+  local shortLabels=(tonumber(layout.console_width) or 1200)/activeBars<150
+  self.hp:setValue(v.hp.current,math.max(v.hp.maximum,1),(shortLabels and "HP  " or "Health  ")..v.hp.current.." / "..v.hp.maximum); self.fatigue:setValue(v.fatigue.current,math.max(v.fatigue.maximum,1),(shortLabels and "FAT  " or "Fatigue  ")..v.fatigue.current.." / "..v.fatigue.maximum)
+  if v.psi.visible then self.psi:setValue(v.psi.current,math.max(v.psi.maximum,1),"PSI  "..v.psi.current.." / "..v.psi.maximum) end; if v.web.visible then self.web:setValue(v.web.current,math.max(v.web.maximum,1),"Web  "..v.web.current.." / "..v.web.maximum) end
   self.room:echo(View.withFont("<span style='color:"..t.accent..";font-size:"..layout.lower_heading_font.."px'><b>"..esc(s.room.name).."</b></span><br><span style='color:"..t.muted.."'>Room "..esc(s.room.num or "—").." · Area "..esc(s.room.area or "—").."</span><br><br>"..esc(s.room.environment).."<br>Players &nbsp; <b>"..#s.room.players.."</b><br>Flags &nbsp; "..esc(table.concat(s.room.flags,", ")),layout.lower_body_font))
-  self.compact:echo(View.withFont("<b>HP "..v.hp.current.."/"..v.hp.maximum.."</b> &nbsp; FAT "..v.fatigue.current.."/"..v.fatigue.maximum.." &nbsp; CARRY "..v.carry.current.."/"..v.carry.maximum.." &nbsp; WPN "..(v.weapon_readied and "✓" or "×").." &nbsp; SHD "..(v.shield_readied and "✓" or "×").."<br><span style='color:"..t.accent.."'>"..esc(s.room.name).."</span> &nbsp; EXITS "..esc(table.concat(s.room.exits,", ")),layout.body_font))
+  self.compact:echo(View.withFont("<span style='color:"..(t.gold or "#e0b84f").."'><b>"..esc(v.gold or 0).."gp</b></span> &nbsp; <span style='color:"..(t.silver or "#c0c0c0").."'><b>"..esc(v.silver or 0).."sp</b></span><br>Carry <b>"..esc(v.carry.current or 0).." / "..esc(v.carry.maximum or 0).." / "..esc(v.carry.percent or 0).."%</b><br><span style='color:"..t.accent.."'>"..esc(s.room.name).."</span> &nbsp; EXITS "..esc(table.concat(s.room.exits,", ")),layout.body_font))
   self.bottom:echo(View.withFont("EXITS &nbsp; <b>"..esc(table.concat(s.room.exits,", ")).."</b> &nbsp;&nbsp; | &nbsp;&nbsp; CARRY &nbsp; <b>"..v.carry.current.." / "..v.carry.maximum.."</b> &nbsp;&nbsp; | &nbsp;&nbsp; ROUND &nbsp; <b>"..(v.roundtime==0 and "READY" or v.roundtime).."</b>",layout.small_font))
   if self.layout then self:applyLayout(self.layout); self.details:echo(View.detailsContent(s.combat,s.attributes,t,self.layout,v)); self:renderInventory(s); self:renderRunes(s); self:renderSkills(s); self:renderNavigation(s.room.exits) end
 end

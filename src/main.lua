@@ -104,7 +104,11 @@ end
 function Main:refresh()
   local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {})
   if self.adapter.getPostureVariables then local ok,posture=pcall(self.adapter.getPostureVariables,self.adapter); if ok and type(posture)=="table" then normalized.vitals.standing=posture.standing; normalized.vitals.sitting=posture.sitting; normalized.vitals.unconscious=posture.unconscious end end
-  if self.roundtime_display~=nil then normalized.vitals.roundtime=self.roundtime_display end; normalized.clock=self:clockDisplay(); self.view:update(normalized); self.last_state=normalized; Main.syncRunesApi(normalized); if self.chat then self.chat:syncCharacter() end; return true
+  if self.roundtime_display~=nil then normalized.vitals.roundtime=self.roundtime_display end; normalized.clock=self:clockDisplay()
+  local signature=(normalized.vitals.psi.visible and "1" or "0")..(normalized.vitals.web.visible and "1" or "0")
+  self.last_state=normalized
+  if signature~=self.layout_vitals_signature then self:applyResponsiveLayout(normalized) end
+  self.view:update(normalized); Main.syncRunesApi(normalized); if self.chat then self.chat:syncCharacter() end; return true
 end
 function Main:onClockSync(value) local ok,err=self.clock:sync(value,self.adapter:epoch()); if not ok then return nil,err end; self:refreshClock(); return true end
 function Main:scheduleClockTick()
@@ -172,8 +176,10 @@ function Main:onRoundtime(value)
   value=math.max(0,math.floor(tonumber(value) or 0)); if self.roundtime_timer then self.adapter:cancelTimer(self.roundtime_timer); self.roundtime_timer=nil end
   self.roundtime_display=value; if self.walker then self.walker:onRoundtime(value) end; self:refresh(); self:scheduleRoundtimeTick(); return true
 end
-function Main:applyResponsiveLayout()
-  local width,height=self.adapter:getWindowSize(); local layout=Layout.compute(width,height,self.settings.chat,self.settings.mapper); self.current_layout=layout
+function Main:applyResponsiveLayout(state)
+  local vitals=(state or self.last_state or {}).vitals
+  local width,height=self.adapter:getWindowSize(); local layout=Layout.compute(width,height,self.settings.chat,self.settings.mapper,vitals); self.current_layout=layout
+  self.layout_vitals_signature=((vitals and vitals.psi and vitals.psi.visible) and "1" or "0")..((vitals and vitals.web and vitals.web.visible) and "1" or "0")
   self.adapter:setBorders(layout.console_left or layout.left,layout.top,layout.console_right or layout.right,layout.bottom)
   if self.view and self.view.applyLayout then self.view:applyLayout(layout) end; return layout
 end

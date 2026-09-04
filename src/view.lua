@@ -113,17 +113,22 @@ function View.skillLine(skill,nameWidth,gaps,levelWidth,useWidth)
   return string.format(skillFormat(nameWidth,gaps,levelWidth,useWidth),clipped(View.skillDisplayName(skill.name),nameWidth),tonumber(skill.level) or 0,tonumber(skill.remain) or 0)
 end
 function View.detailsContent(combat,attributes,t,layout,vitals)
-  combat=combat or {}; attributes=attributes or {}; local parts={}
+  combat=combat or {}; attributes=attributes or {}
   vitals=vitals or {}
   local roundtime=tonumber(vitals.roundtime) or 0
-  if combat.body_armor~=nil then parts[#parts+1]="Armor <b>"..esc(combat.body_armor).."%</b>" end
+  local armor="Armor <b>"..(combat.body_armor~=nil and esc(combat.body_armor).."%" or "—").."</b>"
   local stance="Stance <b>"..esc(combat.stance or "—").."</b>"; local offense=combat.or_rating~=nil and "OR <b>"..esc(combat.or_rating).."</b>" or ""
   local timing="Roundtime <b>"..(roundtime==0 and "READY" or esc(roundtime)).."</b>"; local defense=combat.dr~=nil and "DR <b>"..esc(combat.dr).."</b>" or ""
-  parts[#parts+1]="<table width='100%' cellspacing='0' cellpadding='0'><tr><td>"..stance.."</td><td align='right'>"..offense.."</td></tr><tr><td>"..timing.."</td><td align='right'>"..defense.."</td></tr></table>"
   local posture=vitals.sitting and "Sitting" or (vitals.standing and "Standing" or nil)
-  parts[#parts+1]="Position &nbsp; <b>"..esc(vitals.position or "—").."</b>"..(posture and " &nbsp; · &nbsp; <b>"..posture.."</b>" or "")
+  local position="Position <b>"..esc(vitals.position~=nil and vitals.position or "—").."</b>"
+  local function right(value) return value~="" and value or "&nbsp;" end
+  local rows="<table width='100%' cellspacing='0' cellpadding='0'>"..
+    "<tr><td>"..armor.."</td><td align='right'>&nbsp;</td></tr>"..
+    "<tr><td>"..stance.."</td><td align='right'>"..right(offense).."</td></tr>"..
+    "<tr><td>"..timing.."</td><td align='right'>"..right(defense).."</td></tr>"..
+    "<tr><td>"..position.."</td><td align='right'>"..right(posture and "<b>"..posture.."</b>" or "").."</td></tr></table>"
   local baseFont=layout.combat_font or layout.equipment_font or layout.inventory_font or layout.body_font or 12
-  return View.withFont("<span style='color:"..t.accent.."'><b>COMBAT</b></span><br>"..table.concat(parts,"<br>"),math.max(8,baseFont-2))
+  return View.withFont("<span style='color:"..t.accent.."'><b>COMBAT</b></span><br>"..rows,math.max(8,baseFont-2))
 end
 function View.attributeStripContent(attributes,t,layout)
   local parts={}; attributes=attributes or {}
@@ -490,7 +495,7 @@ function View:applyLayout(layout)
     layout.details_columns=2
     self.details:hide()
     local combat_padding=layout.combat_padding or equipment_padding
-    local right_details_h=(layout.combat_line_height or layout.details_line_height)*4+combat_padding*2+4
+    local right_details_h=(layout.combat_line_height or layout.details_line_height)*Layout.detailsCardRows(layout.details_columns)+combat_padding*2+4
     local combat_y=top+p
     place(self.details,card_x,combat_y,card_w,right_details_h)
     local inventory_y=combat_y+right_details_h+10; local rail_bottom=(layout.window_height or 800)-12

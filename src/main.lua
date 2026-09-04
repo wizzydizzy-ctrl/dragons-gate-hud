@@ -103,7 +103,9 @@ function Main:refreshClock()
 end
 function Main:refresh()
   local normalized=State.normalize(self.adapter:getGMCP(),self.collector and self.collector.snapshot or {})
-  if self.adapter.getPostureVariables then local ok,posture=pcall(self.adapter.getPostureVariables,self.adapter); if ok and type(posture)=="table" then normalized.vitals.standing=posture.standing; normalized.vitals.sitting=posture.sitting; normalized.vitals.unconscious=posture.unconscious end end
+  local posture=self.posture and self.posture:status() or nil
+  if not posture and self.adapter.getPostureVariables then local ok,value=pcall(self.adapter.getPostureVariables,self.adapter); if ok and type(value)=="table" then posture=value end end
+  if type(posture)=="table" then normalized.vitals.standing=posture.standing; normalized.vitals.sitting=posture.sitting; normalized.vitals.unconscious=posture.unconscious end
   if self.roundtime_display~=nil then normalized.vitals.roundtime=self.roundtime_display end; normalized.clock=self:clockDisplay()
   local signature=(normalized.vitals.psi.visible and "1" or "0")..(normalized.vitals.web.visible and "1" or "0")
   self.last_state=normalized

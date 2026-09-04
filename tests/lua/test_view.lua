@@ -248,14 +248,23 @@ test("color options menu closes by button outside click and resize remains bound
   for _,size in ipairs({{220,120},{420,500},{760,700},{800,650},{1200,800},{1920,1080}}) do
     local layout=require("layout").compute(size[1],size[2]); view:applyLayout(layout); view.color_toggle.click()
     eq(view.color_menu.x>=0,true); eq(view.color_menu.x+view.color_menu.width<=size[1],true)
-    local anchorRight=view.options_anchor.x+view.options_anchor.width
-    if anchorRight>=view.color_menu.width+4 then eq(math.abs((view.color_menu.x+view.color_menu.width)-anchorRight)<=1,true) end
+    eq(view.color_menu.x+view.color_menu.width,size[1])
     eq(view.color_menu.y,view.options_anchor.y+view.options_anchor.height+4)
     eq(view.color_menu.y+view.color_menu.height<=size[2],true)
     eq(view.options_scroll.visible,true); eq(view.options_scroll.x+view.options_scroll.width<=view.color_menu.width,true)
     for _,key in ipairs(view.color_option_order) do local button=view.color_option_buttons[key]; eq(button.parent,view.options_scroll); eq(button.x>=0,true); eq(button.x+button.width<=view.options_scroll.width,true); eq(button.y>=0,true); eq(button.height>=25,true) end
     view.color_menu_scrim.click(); eq(view.color_menu_visible,false); eq(view.color_menu.visible,false)
     view.color_toggle.click(); view.color_toggle.click(); eq(view.color_menu_visible,false)
+  end
+end)
+
+test("open options menu remains flush right through responsive resizing",function()
+  local view=chatView(); view:applyLayout(require("layout").compute(1200,800)); view.color_toggle.click()
+  for _,size in ipairs({{1920,1080},{800,650},{420,500},{220,120},{760,700}}) do
+    local layout=require("layout").compute(size[1],size[2]); view:applyLayout(layout)
+    eq(view.color_menu_visible,true); eq(view.color_menu.x+view.color_menu.width,size[1])
+    eq(view.color_menu.x>=0,true); eq(view.color_menu.y+view.color_menu.height<=size[2],true)
+    for _,key in ipairs(view.option_action_order) do local button=view.option_action_buttons[key]; eq(button.x>=0,true); eq(button.x+button.width<=view.options_scroll.width,true) end
   end
 end)
 

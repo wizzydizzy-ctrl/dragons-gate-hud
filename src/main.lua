@@ -40,7 +40,8 @@ function Main.installRollerApi(namespace)
   local api=type(namespace.roller)=="table" and namespace.roller or {}; namespace.roller=api
   local function active() local root=rawget(_G,"DGHUD"); local controller=root and root.controller; return controller and controller.roller end
   api.command=function(action) local roller=active(); if not roller then return nil,"autoroller is not running" end; return roller:command(action) end
-  api.status=function() local roller=active(); if not roller then return nil,"autoroller is not running" end; return {active=roller.state.active,rolls=roller.state.rolls,last=roller.state.last,best=roller.state.best,config=roller.cfg} end
+  api.configure=function(values) local roller=active(); if not roller then return nil,"autoroller is not running" end; return roller:configure(values) end
+  api.status=function() local roller=active(); if not roller then return nil,"autoroller is not running" end; local function copy(value) if type(value)~="table" then return value end; local out={}; for key,item in pairs(value) do out[key]=copy(item) end; return out end; return {active=roller.state.active,rolls=roller.state.rolls,last=copy(roller.state.last),best=copy(roller.state.best),config=copy(roller.cfg)} end
   return api
 end
 local function runeCopy(item) return item and {name=item.name,remaining=item.remaining} or nil end
@@ -471,8 +472,8 @@ function Main:start()
   self.view=self.adapter:createView(self.settings)
   self.posture=PostureTracker.new(self.adapter,function() if self.started then self:refresh() end end)
   self.roller=Autoroller.new(self.adapter,self.settings.roller,function(config)
-    self.settings.roller=config; local root=rawget(_G,"DGHUD"); if root then root.user_settings=type(root.user_settings)=="table" and root.user_settings or {}; root.user_settings.roller=config end
-    if self.adapter.saveRollerSettings then local saved,err=self.adapter:saveRollerSettings(config); if not saved and self.adapter.reportRoller then self.adapter:reportRoller("Could not save settings: "..tostring(err)) end end
+    if self.adapter.saveRollerSettings then local saved,err=self.adapter:saveRollerSettings(config); if not saved then return nil,"Could not save settings: "..tostring(err) end end
+    self.settings.roller=config; local root=rawget(_G,"DGHUD"); if root then root.user_settings=type(root.user_settings)=="table" and root.user_settings or {}; root.user_settings.roller=config end; return true
   end)
   if self.view.setColorToggleCallback then self.view:setColorToggleCallback(function(wanted) local enabled=self:setColorizerEnabled(type(wanted)=="boolean" and wanted or not self.colorizer_enabled); if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(self.colorizer:status()) end; return enabled end) end
   if self.view.setColorOptionsCallback then self.view:setColorOptionsCallback(function(name,wanted) local feature=name=="room_titles" and "room" or name; local enabled,err=self:setColorFeature(feature,wanted); if enabled==nil then return nil,err end; if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(self.colorizer:status()) end; return enabled end) end
@@ -484,6 +485,12 @@ function Main:start()
     self.view:setColorOptions(initial)
   elseif self.view.setColorEnabled then self.view:setColorEnabled(self.colorizer_enabled) end
   if self.view.setHelpCloseCallback then self.view:setHelpCloseCallback(function() return true end) end
+  if self.view.setOptionsActionCallback then self.view:setOptionsActionCallback(function(action)
+    if action=="roller_settings" then local status=self.roller and {config=self.roller.cfg}; return status and status.config end
+    local command=({roller_start="start",roller_stop="stop",roller_stats="stats",roller_last="last",roller_reset="reset",roller_help="help"})[action]
+    if not command then return nil,"unknown autoroller action" end; return self.roller:command(command)
+  end) end
+  if self.view.setRollerSettingsCallback then self.view:setRollerSettingsCallback(function(values) local ok,err=self.roller:configure(values); if not ok then return nil,err end; return true,nil,self.roller.cfg end) end
   if self.view.setMapZoomCallback then self.view:setMapZoomCallback(function(action) return self:mapToolbarAction(action) end) end
   if self.view.setMapClearAllCallback then self.view:setMapClearAllCallback(function() return self:clearAllMapsAction() end) end
   self:applyResponsiveLayout()

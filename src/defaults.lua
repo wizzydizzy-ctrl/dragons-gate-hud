@@ -1,7 +1,7 @@
 return {
   schema = 1,
   package_name = "DragonsGateHUD",
-  version = "0.2.102",
+  version = "0.2.103",
   layout = { left_width = 190, right_width = 270, min_console_width = 520 },
   chat = { enabled=true, height_percent=.21, target_height=240, min_height=160, max_height=320, visible_limit=1000, dedupe_seconds=3, timestamps=true },
   colorization = {
@@ -36,7 +36,7 @@ return {
   roller = {
     target_total=53, hard_stop=62, max_rolls=nil, reroll_delay=.1, reroll_command="n",
     auto_start_on_name=true, use_min_stats=true, require_min_stats_to_stop=true,
-    logging_enabled=true, log_folder="og_dg_roller", master_file="og_dg_rolls_master.txt",
+    show_every_roll=true, logging_enabled=true, log_folder="og_dg_roller", master_file="og_dg_rolls_master.txt",
     min_stats={STR=5,INT=5,WIS=5,DEX=5,AGI=5,CON=5,CHA=5,WIL=5,VOI=5,PER=5,APP=5},
   },
   mapper = {

@@ -6,7 +6,7 @@ local function copy(value)
   if type(value)~="table" then return value end; local out={}; for k,v in pairs(value) do out[k]=copy(v) end; return out
 end
 local function trim(value) return tostring(value or ""):match("^%s*(.-)%s*$") end
-local function limit(value) value=tonumber(value); return value and value>=1 and math.floor(value) or nil end
+local function limit(value) value=tonumber(value); return value and value>=1 and value==math.floor(value) and value or nil end
 local function statText(stats)
   local out={}; for _,name in ipairs(order) do out[#out+1]=name.." "..tostring(stats[name] or 0) end; return table.concat(out,"  ")
 end
@@ -59,13 +59,13 @@ function Roller:capture(line)
   local stats,total={},0; for i,name in ipairs(order) do stats[name]=words[i]; total=total+words[i] end
   local s=self.state; s.rolls=s.rolls+1; s.sum=s.sum+total; local roll={roll=s.rolls,total=total,stats=stats}; s.last=roll
   if not s.best or total>s.best.total then s.best=roll end; if not s.worst or total<s.worst.total then s.worst=roll end
-  s.fresh_roll=true; local text=self:rollText(roll); self:echo(text); self:log(text); return true
+  s.fresh_roll=true; local text=self:rollText(roll); if self.cfg.show_every_roll~=false then self:echo(text) end; self:log(text); return true
 end
 function Roller:reroll()
   if self.state.timer then return true end
   local delay=math.max(0,tonumber(self.cfg.reroll_delay) or 0); local called,id,err=pcall(self.adapter.schedule,self.adapter,delay,function()
     self.state.timer=nil
-    if self.state.active then local called,sent,sendErr=pcall(self.adapter.sendCommand,self.adapter,tostring(self.cfg.reroll_command or "n")); if not called or sent==false or (sent==nil and sendErr~=nil) then self:stop("Could not send reroll: "..tostring((not called and sent) or sendErr or "send failed")) end end
+    if self.state.active then local called,sent,sendErr=pcall(self.adapter.sendCommand,self.adapter,"n"); if not called or sent==false or (sent==nil and sendErr~=nil) then self:stop("Could not send reroll: "..tostring((not called and sent) or sendErr or "send failed")) end end
   end)
   if not called then err=id or "timer unavailable"; id=nil end
   if not id then self:stop("Could not schedule reroll: "..tostring(err)); return nil,err end; self.state.timer=id; return true
@@ -84,17 +84,41 @@ function Roller:onLine(line)
   return false
 end
 function Roller:set(key,value)
-  key=trim(key):upper(); value=trim(value)
-  local off=value:lower()=="off"
-  if key=="TOTAL" then local number=limit(value); if not number and not off then return nil,"total must be 1-77 or off" end; if number and number>77 then return nil,"total must be 1-77 or off" end; self.cfg.target_total=number
-  elseif key=="HARD" then local number=limit(value); if not number and not off then return nil,"hard stop must be 1-77 or off" end; if number and number>77 then return nil,"hard stop must be 1-77 or off" end; self.cfg.hard_stop=number
-  elseif key=="MAX" then local number=limit(value); if not number and not off then return nil,"max must be a positive number or off" end; self.cfg.max_rolls=number
-  elseif key=="DELAY" then local number=tonumber(value); if not number or number<0 then return nil,"delay must be zero or greater" end; self.cfg.reroll_delay=number
+  key=trim(key):upper(); value=trim(value); local values
+  if key=="TOTAL" then values={target_total=value}
+  elseif key=="HARD" then values={hard_stop=value}
+  elseif key=="MAX" then values={max_rolls=value}
+  elseif key=="DELAY" then values={reroll_delay=value}
   elseif ranks[key:lower()] then return nil,"use a stat name, not a rank"
-  else local valid=false; for _,name in ipairs(order) do if key==name then valid=true end end; if not valid then return nil,"unknown roller setting" end; local number=limit(value); if not number and not off then return nil,"stat minimum must be 1-7 or off" end; if number and number>7 then return nil,"stat minimum must be 1-7 or off" end; self.cfg.min_stats=self.cfg.min_stats or {}; self.cfg.min_stats[key]=number; self.cfg.use_min_stats=true end
-  if self.onConfig then self.onConfig(copy(self.cfg)) end
+  else
+    local valid=false; for _,name in ipairs(order) do if key==name then valid=true end end; if not valid then return nil,"unknown roller setting" end
+    local enable=true; if value:lower()=="off" then enable=false; for _,name in ipairs(order) do if name~=key and (self.cfg.min_stats or {})[name] then enable=true; break end end end
+    values={use_min_stats=enable,min_stats={[key]=value}}
+  end
+  local ok,err=self:configure(values,true); if not ok then return nil,err end
   local shown=key=="TOTAL" and self.cfg.target_total or key=="HARD" and self.cfg.hard_stop or key=="MAX" and self.cfg.max_rolls or key=="DELAY" and self.cfg.reroll_delay or (self.cfg.min_stats or {})[key]
   self:echo("Set "..key.." to "..tostring(shown or "off")); return true
+end
+function Roller:configure(values,silent)
+  values=type(values)=="table" and values or {}; local candidate=copy(self.cfg)
+  local numeric={{"target_total",1,77,true},{"hard_stop",1,77,true},{"max_rolls",1,nil,true},{"reroll_delay",0,nil,false}}
+  for _,spec in ipairs(numeric) do
+    local key,min,max,optional=spec[1],spec[2],spec[3],spec[4]; local raw=values[key]
+    if raw~=nil then
+      raw=trim(raw); local off=optional and (raw=="" or raw:lower()=="off"); local number=tonumber(raw)
+      if off then candidate[key]=nil
+      elseif not number or number~=number or number==math.huge or number==-math.huge or number<min or (max and number>max) or (key~="reroll_delay" and number~=math.floor(number)) then return nil,key.." is invalid" else candidate[key]=number end
+    end
+  end
+  if values.reroll_command~=nil then local command=trim(values.reroll_command):lower(); if command~="n" then return nil,"reroll response must remain n" end; candidate.reroll_command=command end
+  for _,key in ipairs({"auto_start_on_name","use_min_stats","require_min_stats_to_stop","show_every_roll","logging_enabled"}) do if values[key]~=nil then if type(values[key])~="boolean" then return nil,key.." must be true or false" end; candidate[key]=values[key] end end
+  for _,key in ipairs({"log_folder","master_file"}) do if values[key]~=nil then local value=trim(values[key]); if value=="" or value=="." or value==".." or not value:match("^[%w%._%-]+$") then return nil,key.." must be a safe name without a path" end; candidate[key]=value end end
+  candidate.min_stats=copy(candidate.min_stats or {})
+  for _,key in ipairs(order) do if values.min_stats and values.min_stats[key]~=nil then local raw=trim(values.min_stats[key]); local number=tonumber(raw); if raw=="" or raw:lower()=="off" then candidate.min_stats[key]=nil elseif not number or number<1 or number>7 or number~=math.floor(number) then return nil,key.." minimum must be 1-7 or off" else candidate.min_stats[key]=number end end end
+  if not candidate.target_total and not candidate.hard_stop and not candidate.max_rolls then return nil,"enable a target, hard stop, or maximum rolls" end
+  if candidate.use_min_stats then local any=false; for _,key in ipairs(order) do if candidate.min_stats[key] then any=true; break end end; if not any then return nil,"enable at least one stat minimum or turn minimums off" end end
+  if self.onConfig then local saved,err=self.onConfig(copy(candidate)); if saved==nil or saved==false then return nil,err or "could not save settings" end end
+  self.cfg=candidate; if not silent then self:echo("Settings saved.") end; return true
 end
 function Roller:command(action)
   action=trim(action); local lower=action:lower()

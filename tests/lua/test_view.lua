@@ -137,6 +137,8 @@ local function fakeGeyser(glyphWidth,scrollbarWidth,measureFails)
     function item:delete() self.deleted=true end
     function item:setClickCallback(callback) self.click=callback end
     function item:setToolTip(value) self.tooltip=value end
+    function item:print(value) self.text=tostring(value) end
+    function item:getText() return self.text or "" end
     function item:echo(value)
       if self.kind=="console" then
         self.echoes[#self.echoes+1]=value
@@ -180,6 +182,7 @@ local function fakeGeyser(glyphWidth,scrollbarWidth,measureFails)
   geyser.ScrollBox={new=function(_,cons,parent) return widget(cons,parent,"scrollbox") end}
   geyser.Label={new=function(_,cons,parent) return widget(cons,parent,"label") end}
   geyser.MiniConsole={new=function(_,cons,parent) return widget(cons,parent,"console") end}
+  geyser.CommandLine={new=function(_,cons,parent) return widget(cons,parent,"commandline") end}
   geyser.Mapper={new=function(_,cons,parent) return widget(cons,parent,"mapper") end}
   geyser.Gauge={new=function(_,cons,parent)
     local item=widget(cons,parent,"gauge"); item.front=widget({},item,"label"); item.back=widget({},item,"label"); item.text=widget({},item,"label"); return item
@@ -239,10 +242,33 @@ test("color options menu closes by button outside click and resize remains bound
     local layout=require("layout").compute(size[1],size[2]); view:applyLayout(layout); view.color_toggle.click()
     eq(view.color_menu.x>=0,true); eq(view.color_menu.x+view.color_menu.width<=size[1],true)
     eq(view.color_menu.y+view.color_menu.height<=size[2],true)
-    for _,key in ipairs(view.color_option_order) do local button=view.color_option_buttons[key]; eq(button.x>=0,true); eq(button.x+button.width<=view.color_menu.width,true); eq(button.y>=0,true); eq(button.y+button.height<=view.color_menu.height,true) end
+    eq(view.options_scroll.visible,true); eq(view.options_scroll.x+view.options_scroll.width<=view.color_menu.width,true)
+    for _,key in ipairs(view.color_option_order) do local button=view.color_option_buttons[key]; eq(button.parent,view.options_scroll); eq(button.x>=0,true); eq(button.x+button.width<=view.options_scroll.width,true); eq(button.y>=0,true); eq(button.height>=25,true) end
     view.color_menu_scrim.click(); eq(view.color_menu_visible,false); eq(view.color_menu.visible,false)
     view.color_toggle.click(); view.color_toggle.click(); eq(view.color_menu_visible,false)
   end
+end)
+
+test("options menu exposes every autoroller command and settings action",function()
+  local view=chatView(); local calls={}; view:setOptionsActionCallback(function(action) calls[#calls+1]=action; if action=="roller_settings" then return {target_total=53,hard_stop=62,reroll_delay=.1,reroll_command="n",min_stats={STR=5}} end; return true end)
+  view:applyLayout(require("layout").compute(1200,800)); view.color_toggle.click()
+  for _,key in ipairs(view.option_action_order) do eq(view.option_action_buttons[key].visible,true) end
+  view.option_action_buttons.roller_start.click(); eq(calls[#calls],"roller_start")
+  view.color_toggle.click(); view.option_action_buttons.roller_settings.click(); eq(view.roller_settings_visible,true); eq(view.roller_fields.target_total.input.text,"53")
+end)
+
+test("autoroller settings modal validates through one save callback and remains bounded",function()
+  local view=chatView(); local received; view:setRollerSettingsCallback(function(values) received=values; if values.target_total=="bad" then return nil,"bad target" end; return true end)
+  view:showRollerSettings({target_total=53,hard_stop=62,max_rolls=nil,reroll_delay=.1,reroll_command="n",auto_start_on_name=true,use_min_stats=true,require_min_stats_to_stop=true,logging_enabled=true,log_folder="rolls",master_file="master.txt",min_stats={STR=5,INT=5,WIS=5,DEX=5,AGI=5,CON=5,CHA=5,WIL=5,VOI=5,PER=5,APP=5}})
+  for _,size in ipairs({{420,280},{420,500},{760,700},{1200,800},{1920,1080}}) do local layout=require("layout").compute(size[1],size[2]); view:applyLayout(layout); eq(view.roller_panel.x>=0,true); eq(view.roller_panel.y>=0,true); eq(view.roller_panel.x+view.roller_panel.width<=size[1],true); eq(view.roller_panel.y+view.roller_panel.height<=size[2],true); eq(view.roller_content.parent,view.roller_panel); eq(view.roller_fields.STR.input.parent,view.roller_content); eq(view.roller_fields.INT.caption.y>=view.roller_fields.STR.input.y+view.roller_fields.STR.input.height,true); if layout.mode=="compact" then eq(view.roller_fields.STR.caption.x,view.roller_fields.target_total.caption.x); eq(view.roller_fields.STR.caption.y>view.roller_toggles.logging_enabled.y,true) end end
+  view.roller_fields.target_total.input.text="bad"; local ok,err=view:saveRollerSettings(); eq(ok,nil); eq(err,"bad target"); eq(view.roller_settings_visible,true)
+  view.roller_fields.target_total.input.text="60"; assert(view:saveRollerSettings()); eq(received.target_total,"60"); eq(received.min_stats.APP,"5"); eq(view.roller_settings_visible,false)
+end)
+
+test("help and autoroller settings overlays are mutually exclusive",function()
+  local view=chatView(); view:applyLayout(require("layout").compute(800,650)); view:showHelp(); eq(view.help_panel.visible,true)
+  view:showRollerSettings({target_total=53,reroll_command="n",min_stats={}}); eq(view.help_visible,false); eq(view.help_panel.visible,false); eq(view.roller_panel.visible,true)
+  view:showHelp(); eq(view.roller_settings_visible,false); eq(view.roller_panel.visible,false); eq(view.help_panel.visible,true)
 end)
 
 test("help overlay distinguishes commands descriptions and warnings",function()

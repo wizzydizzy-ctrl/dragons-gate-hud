@@ -148,6 +148,10 @@ end
 local function label(name,parent,style,geyser)
   local item=(geyser or Geyser).Label:new({name=name,x=0,y=0,width=10,height=10},parent); item:setStyleSheet(style or "background:transparent;"); return item
 end
+local function input(name,parent,geyser)
+  local api=geyser or Geyser
+  return api.CommandLine:new({name=name,x=0,y=0,width=100,height=24},parent)
+end
 local function gauge(name,parent,color,theme)
   local g=Geyser.Gauge:new({name=name,x=0,y=0,width=100,height=18},parent)
   g.front:setStyleSheet("background:"..color..";border-radius:5px;"); g.back:setStyleSheet("background:#080b0a;border:1px solid "..theme.border..";border-radius:5px;"); g.text:setStyleSheet("background:transparent;color:"..theme.text..";font-size:11px;font-weight:600;")
@@ -210,19 +214,25 @@ function View.new(settings)
   self.color_menu_scrim=label("DGHUD.Header.ColorMenuScrim",self.root,"background:transparent;")
   self.color_menu=Geyser.Container:new({name="DGHUD.Header.ColorMenu",x=0,y=0,width=220,height=164},self.root)
   self.color_menu_bg=label("DGHUD.Header.ColorMenu.Background",self.color_menu,"background:"..t.panel..";border:1px solid "..t.border..";border-radius:6px;")
+  self.options_scroll=Geyser.ScrollBox:new({name="DGHUD.Header.Options.Scroll",x=4,y=4,width=212,height=156},self.color_menu)
   self.color_option_buttons={}
   self.color_option_order={"enabled","room","exits","currency","portal","attack","damage","danger","recovery","upkeep","spell","discovery"}
   local optionLabels={enabled="ALL HIGHLIGHTS",room="ROOM TITLES",exits="EXITS / DIRECTIONS",currency="CURRENCY",portal="TRAVEL OBJECTS",attack="ATTACKS ON YOU",damage="DAMAGE TO YOU",danger="DANGER / BLOCKS",recovery="RECOVERY",upkeep="ONGOING COSTS",spell="SPELL THREATS",discovery="DISCOVERY / LOOT"}
   for _,key in ipairs(self.color_option_order) do
     local option={key,optionLabels[key]}
-    local key,text=option[1],option[2]; local button=label("DGHUD.Header.ColorMenu."..key,self.color_menu)
+    local key,text=option[1],option[2]; local button=label("DGHUD.Header.ColorMenu."..key,self.options_scroll)
     button:setClickCallback(function() return self:selectColorOption(key) end); button.option_text=text; self.color_option_buttons[key]=button
   end
+  self.option_action_order={"roller_settings","roller_start","roller_stop","roller_stats","roller_last","roller_reset","roller_help"}
+  local actionLabels={roller_settings="AUTOROLLER SETTINGS…",roller_start="ROLLER START",roller_stop="ROLLER STOP",roller_stats="ROLLER STATS",roller_last="SHOW LAST ROLL",roller_reset="RESET ROLL SESSION",roller_help="ROLLER HELP"}
+  self.option_action_buttons={}
+  for _,key in ipairs(self.option_action_order) do local button=label("DGHUD.Header.Options."..key,self.options_scroll); button.option_text=actionLabels[key]; button:setClickCallback(function() return self:selectOptionsAction(key) end); self.option_action_buttons[key]=button end
   self.color_options={}; for _,key in ipairs(self.color_option_order) do self.color_options[key]=true end; self.color_menu_visible=false
   self.color_toggle:setClickCallback(function() return self:setColorMenuVisible(not self.color_menu_visible) end)
   self.color_menu_scrim:setClickCallback(function() return self:setColorMenuVisible(false) end)
-  for _,widget in ipairs({self.color_menu_scrim,self.color_menu,self.color_menu_bg}) do widget:hide() end
+  for _,widget in ipairs({self.color_menu_scrim,self.color_menu,self.color_menu_bg,self.options_scroll}) do widget:hide() end
   for _,button in pairs(self.color_option_buttons) do button:hide() end
+  for _,button in pairs(self.option_action_buttons) do button:hide() end
   self.clock_header=label("DGHUD.Header.Clock",self.root,"background:transparent;color:"..t.text..";padding:8px 18px;")
   self.attribute_strip=label("DGHUD.AttributeStrip",self.root,"background:transparent;color:"..t.text..";padding:10px 12px;")
   self.chat_container=Geyser.Container:new({name="DGHUD.Chat",x=0,y=0,width=100,height=240},self.root)
@@ -292,6 +302,23 @@ function View.new(settings)
   self.help_output=Geyser.ScrollBox:new({name="DGHUD.Help.Output",x=12,y=54,width=576,height=434},self.help_panel)
   self.help_content=label("DGHUD.Help.Content",self.help_output,"background:transparent;color:"..t.text..";")
   self.help_close:setClickCallback(function() self:hideHelp(); if self.help_close_callback then return self.help_close_callback() end end)
+  self.roller_overlay=label("DGHUD.RollerSettings.Overlay",self.root,"background:rgba(0,0,0,0.72);")
+  self.roller_panel=Geyser.Container:new({name="DGHUD.RollerSettings.Panel",x=0,y=0,width=760,height=560},self.root)
+  self.roller_bg=label("DGHUD.RollerSettings.Background",self.roller_panel,"background:"..t.panel..";border:2px solid "..t.border..";border-radius:8px;")
+  self.roller_content=Geyser.ScrollBox:new({name="DGHUD.RollerSettings.Content",x=14,y=44,width=732,height=440},self.roller_panel)
+  self.roller_title=label("DGHUD.RollerSettings.Title",self.roller_panel,"background:transparent;color:"..t.accent..";font-weight:700;")
+  self.roller_status=label("DGHUD.RollerSettings.Status",self.roller_panel,"background:transparent;color:"..t.muted..";")
+  self.roller_save=label("DGHUD.RollerSettings.Save",self.roller_panel,"background:#193024;border:1px solid "..t.jade..";border-radius:5px;color:"..t.jade..";font-weight:700;")
+  self.roller_cancel=label("DGHUD.RollerSettings.Cancel",self.roller_panel,"background:#171b18;border:1px solid "..t.border..";border-radius:5px;color:"..t.text..";font-weight:700;")
+  self.roller_fields={}; self.roller_field_order={"target_total","hard_stop","max_rolls","reroll_delay","reroll_command","log_folder","master_file","STR","INT","WIS","DEX","AGI","CON","CHA","WIL","VOI","PER","APP"}
+  local fieldLabels={target_total="Target total (1-77/off)",hard_stop="Hard stop (1-77/off)",max_rolls="Maximum rolls (off=unlimited)",reroll_delay="Reroll delay (seconds)",reroll_command="Rejected-roll response (must be n)",log_folder="Log folder",master_file="Master log filename"}
+  for _,key in ipairs(self.roller_field_order) do local caption=label("DGHUD.RollerSettings.Caption."..key,self.roller_content,"background:transparent;color:"..t.text..";"); local edit=input("DGHUD.RollerSettings.Input."..key,self.roller_content,self.geyser); self.roller_fields[key]={caption=caption,input=edit,label=fieldLabels[key] or (key.." minimum (1-7/off)")} end
+  self.roller_toggle_order={"auto_start_on_name","use_min_stats","require_min_stats_to_stop","show_every_roll","logging_enabled"}; self.roller_toggles={}
+  local toggleLabels={auto_start_on_name="Auto-start on Name/Race",use_min_stats="Enable stat minimums",require_min_stats_to_stop="Require minimums to stop",show_every_roll="Print every roll",logging_enabled="Enable roll logging"}
+  for _,key in ipairs(self.roller_toggle_order) do local button=label("DGHUD.RollerSettings.Toggle."..key,self.roller_content); button.option_text=toggleLabels[key]; button:setClickCallback(function() self.roller_draft[key]=not self.roller_draft[key]; self:renderRollerSettings(false); return self.roller_draft[key] end); self.roller_toggles[key]=button end
+  self.roller_save:setClickCallback(function() return self:saveRollerSettings() end); self.roller_cancel:setClickCallback(function() return self:hideRollerSettings() end); self.roller_overlay:setClickCallback(function() return self:hideRollerSettings() end)
+  self.roller_settings_visible=false
+  local rollerWidgets={self.roller_overlay,self.roller_panel,self.roller_bg,self.roller_content,self.roller_title,self.roller_status,self.roller_save,self.roller_cancel}; for _,entry in pairs(self.roller_fields) do rollerWidgets[#rollerWidgets+1]=entry.caption; rollerWidgets[#rollerWidgets+1]=entry.input end; for _,button in pairs(self.roller_toggles) do rollerWidgets[#rollerWidgets+1]=button end; for _,widget in ipairs(rollerWidgets) do widget:hide() end
   if self.help_close.setToolTip then pcall(self.help_close.setToolTip,self.help_close,"Close DGHUD command guide") end
   self.help_visible=false
   for _,widget in ipairs({self.help_overlay,self.help_panel,self.help_bg,self.help_title,self.help_close,self.help_output,self.help_content}) do widget:hide() end
@@ -549,22 +576,51 @@ function View:applyLayout(layout)
   self:applyChatWrap(layout)
   self:layoutColorMenu(layout)
   self:layoutHelp(layout)
+  self:layoutRollerSettings(layout)
 end
 function View:layoutColorMenu(layout)
   if not self.color_menu_visible then
-    self.color_menu_scrim:hide(); self.color_menu:hide(); self.color_menu_bg:hide(); for _,button in pairs(self.color_option_buttons) do button:hide() end; return true
+    self.color_menu_scrim:hide(); self.color_menu:hide(); self.color_menu_bg:hide(); self.options_scroll:hide(); for _,button in pairs(self.color_option_buttons) do button:hide() end; for _,button in pairs(self.option_action_buttons or {}) do button:hide() end; return true
   end
   local width=math.max(1,tonumber(layout.window_width) or 1200); local height=math.max(1,tonumber(layout.window_height) or 800)
-  local columns=(width>=620 or height<220) and 2 or 1; local rows=math.ceil(#self.color_option_order/columns)
-  local menuWidth=math.min(columns==2 and 460 or 230,math.max(1,width-8)); local availableHeight=math.max(1,height-8); local rowHeight=math.max(1,math.min(math.max(25,(layout.color_toggle_font or 11)+14),math.floor(math.max(1,availableHeight-8)/rows))); local menuHeight=math.min(availableHeight,rowHeight*rows+8)
+  local all={}; for _,key in ipairs(self.color_option_order) do all[#all+1]={kind="color",key=key} end; for _,key in ipairs(self.option_action_order or {}) do all[#all+1]={kind="action",key=key} end
+  local columns=(width>=420 or height<300) and 2 or 1; local rows=math.ceil(#all/columns)
+  local menuWidth=math.min(columns==2 and 460 or 230,math.max(1,width-8)); local availableHeight=math.max(1,height-8); local rowHeight=math.max(25,(layout.color_toggle_font or 11)+14); local menuHeight=math.min(availableHeight,rowHeight*rows+8)
   local x=math.max(4,math.min(width-menuWidth-4,(tonumber(self.color_toggle.x) or 0)+(tonumber(self.color_toggle.width) or 0)-menuWidth))
   local y=math.min(math.max(0,height-menuHeight-4),(tonumber(self.color_toggle.y) or 0)+(tonumber(self.color_toggle.height) or 0)+4)
-  place(self.color_menu_scrim,0,0,"100%","100%"); place(self.color_menu,x,y,menuWidth,menuHeight); place(self.color_menu_bg,0,0,"100%","100%")
-  local columnWidth=(menuWidth-8)/columns
-  for index,key in ipairs(self.color_option_order) do local column=math.floor((index-1)/rows); local row=(index-1)%rows; place(self.color_option_buttons[key],4+column*columnWidth,4+row*rowHeight,columnWidth,rowHeight) end
+  place(self.color_menu_scrim,0,0,"100%","100%"); place(self.color_menu,x,y,menuWidth,menuHeight); place(self.color_menu_bg,0,0,"100%","100%"); place(self.options_scroll,4,4,menuWidth-8,math.max(1,menuHeight-8))
+  local columnWidth=(menuWidth-8)/columns; self.options_scroll.content_height=rowHeight*rows
+  for index,item in ipairs(all) do local column=math.floor((index-1)/rows); local row=(index-1)%rows; local button=item.kind=="color" and self.color_option_buttons[item.key] or self.option_action_buttons[item.key]; place(button,column*columnWidth,row*rowHeight,columnWidth,rowHeight) end
   self:renderColorOptions()
-  local raised={self.color_menu_scrim,self.color_menu,self.color_menu_bg}; for _,key in ipairs(self.color_option_order) do raised[#raised+1]=self.color_option_buttons[key] end; raised[#raised+1]=self.color_toggle; View.raiseCards(raised)
+  local raised={self.color_menu_scrim,self.color_menu,self.color_menu_bg,self.options_scroll}; for _,item in ipairs(all) do raised[#raised+1]=item.kind=="color" and self.color_option_buttons[item.key] or self.option_action_buttons[item.key] end; raised[#raised+1]=self.color_toggle; View.raiseCards(raised)
   return true
+end
+function View:layoutRollerSettings(layout)
+  local widgets={self.roller_overlay,self.roller_panel,self.roller_bg,self.roller_content,self.roller_title,self.roller_status,self.roller_save,self.roller_cancel}; for _,entry in pairs(self.roller_fields or {}) do widgets[#widgets+1]=entry.caption; widgets[#widgets+1]=entry.input end; for _,button in pairs(self.roller_toggles or {}) do widgets[#widgets+1]=button end
+  if not self.roller_settings_visible then for _,widget in ipairs(widgets) do widget:hide() end; return true end
+  local width=math.max(1,tonumber(layout.window_width) or 1200); local height=math.max(1,tonumber(layout.window_height) or 800); local margin=math.min(18,math.max(6,math.floor(math.min(width,height)*.025)))
+  local panelWidth=math.min(820,math.max(1,width-margin*2)); local panelHeight=math.min(650,math.max(1,height-margin*2)); local x=math.floor((width-panelWidth)/2); local y=math.floor((height-panelHeight)/2)
+  place(self.roller_overlay,0,0,"100%","100%"); place(self.roller_panel,x,y,panelWidth,panelHeight); place(self.roller_bg,0,0,"100%","100%")
+  local font=math.max(10,math.min(14,(layout.body_font or 14)-3)); local header=math.min(math.max(30,font+20),math.max(30,panelHeight*.28)); local buttonHeight=math.max(24,font+14); local footer=panelHeight<220 and buttonHeight+14 or math.max(76,font*4+20)
+  place(self.roller_title,14,9,panelWidth-28,header-10); self.roller_title:echo(View.withFont("<b>AUTOROLLER SETTINGS</b>",font+2))
+  local gap=10; local contentWidth=math.max(1,panelWidth-28); local columns=layout.mode~="compact" and panelWidth>=400 and 2 or 1; local columnWidth=columns==2 and (contentWidth-gap)/2 or contentWidth; local contentTop=header; local viewportHeight=math.max(1,panelHeight-header-footer); local rowHeight=42
+  place(self.roller_content,14,contentTop,contentWidth,viewportHeight)
+  local left={"target_total","hard_stop","max_rolls","reroll_delay","reroll_command","log_folder","master_file","auto_start_on_name","use_min_stats","require_min_stats_to_stop","show_every_roll","logging_enabled"}
+  local right={"STR","INT","WIS","DEX","AGI","CON","CHA","WIL","VOI","PER","APP"}
+  local function layoutColumn(items,column)
+    local cx=(column-1)*(columnWidth+gap)
+    for index,key in ipairs(items) do local ry=(index-1)*rowHeight; local field=self.roller_fields[key]
+      if field then local captionHeight=math.max(10,math.min(font+5,rowHeight*.42)); place(field.caption,cx,ry,columnWidth,captionHeight); place(field.input,cx,ry+captionHeight,columnWidth,math.max(12,rowHeight-captionHeight-2)); field.input:setStyleSheet("background:#080b0a;border:1px solid "..self.settings.theme.border..";border-radius:3px;color:"..self.settings.theme.text..";font-size:"..font.."px;")
+      else local button=self.roller_toggles[key]; place(button,cx,ry+2,columnWidth,math.max(16,rowHeight-4)) end
+    end
+  end
+  local contentRows
+  if columns==2 then layoutColumn(left,1); layoutColumn(right,2); contentRows=math.max(#left,#right)
+  else local combined={}; for _,key in ipairs(left) do combined[#combined+1]=key end; for _,key in ipairs(right) do combined[#combined+1]=key end; layoutColumn(combined,1); contentRows=#combined end
+  self.roller_content.content_height=contentRows*rowHeight
+  local statusY=panelHeight-footer+5; if panelHeight>=220 then place(self.roller_status,14,statusY,panelWidth-28,math.max(24,font*2+4)) else self.roller_status:hide() end
+  local buttonY=panelHeight-buttonHeight-8; local buttonWidth=math.min(130,(panelWidth-38)/2); place(self.roller_cancel,panelWidth-14-buttonWidth*2-10,buttonY,buttonWidth,buttonHeight); place(self.roller_save,panelWidth-14-buttonWidth,buttonY,buttonWidth,buttonHeight); self.roller_cancel:echo(View.withFont("<center><b>CANCEL</b></center>",font)); self.roller_save:echo(View.withFont("<center><b>SAVE</b></center>",font))
+  self:renderRollerSettings(false); View.raiseCards(widgets); return true
 end
 function View:layoutHelp(layout)
   if not self.help_visible then
@@ -595,7 +651,7 @@ end
 function View:setHelpCloseCallback(callback) self.help_close_callback=type(callback)=="function" and callback or nil; return true end
 function View:setHelpVisible(visible,entries)
   self.help_visible=visible==true
-  if self.help_visible then self:setColorMenuVisible(false) end
+  if self.help_visible then self:setColorMenuVisible(false); self:hideRollerSettings() end
   if entries~=nil then self.help_entries=type(entries)=="table" and entries or View.defaultHelpEntries() end
   if self.layout then return self:layoutHelp(self.layout) end
   return true
@@ -605,8 +661,17 @@ function View:hideHelp() return self:setHelpVisible(false) end
 function View:setMapCenterCallback(callback) self.map_center_callback=type(callback)=="function" and callback or nil; return true end
 function View:setColorToggleCallback(callback) self.color_toggle_callback=type(callback)=="function" and callback or nil; return true end
 function View:setColorOptionsCallback(callback) self.color_options_callback=type(callback)=="function" and callback or nil; return true end
+function View:setOptionsActionCallback(callback) self.options_action_callback=type(callback)=="function" and callback or nil; return true end
+function View:setRollerSettingsCallback(callback) self.roller_settings_callback=type(callback)=="function" and callback or nil; return true end
+function View:selectOptionsAction(action)
+  self:setColorMenuVisible(false)
+  if action=="roller_settings" then if self.options_action_callback then local config=self.options_action_callback(action); if type(config)=="table" then return self:showRollerSettings(config) end; return config end; return nil,"autoroller settings are unavailable" end
+  if self.options_action_callback then return self.options_action_callback(action) end
+  return nil,"options action is unavailable"
+end
 function View:setColorMenuVisible(visible)
   self.color_menu_visible=visible==true
+  if self.color_menu_visible and self.roller_settings_visible then self:hideRollerSettings() end
   if self.layout then return self:layoutColorMenu(self.layout) end
   return true
 end
@@ -617,7 +682,30 @@ function View:renderColorOptions()
     button:setStyleSheet("background:"..(enabled and "#17231c" or "#111512")..";border:1px solid "..(enabled and "#385044" or t.border)..";border-radius:4px;color:"..color..";font-weight:700;")
     button:echo(View.withFont("<center>"..button.option_text.." &nbsp; <b>"..(enabled and "ON" or "OFF").."</b></center>",font))
   end
+  for _,button in pairs(self.option_action_buttons or {}) do button:setStyleSheet("background:#151d18;border:1px solid "..t.border..";border-radius:4px;color:"..t.accent..";font-weight:700;"); button:echo(View.withFont("<center>"..button.option_text.."</center>",font)) end
   return true
+end
+local function viewCopy(value) if type(value)~="table" then return value end; local out={}; for key,item in pairs(value) do out[key]=viewCopy(item) end; return out end
+function View:showRollerSettings(config)
+  self:hideHelp(); self.roller_draft=viewCopy(config or {}); self.roller_draft.min_stats=viewCopy(self.roller_draft.min_stats or {}); self.roller_settings_visible=true; self:setColorMenuVisible(false); self.roller_error=nil; self:renderRollerSettings(true); if self.layout then self:layoutRollerSettings(self.layout) end; return true
+end
+function View:hideRollerSettings() self.roller_settings_visible=false; self.roller_draft=nil; self.roller_error=nil; if self.layout then self:layoutRollerSettings(self.layout) end; return true end
+function View:renderRollerSettings(populate)
+  if not self.roller_draft then return true end; local t=self.settings.theme; local font=self.layout and math.max(10,(self.layout.body_font or 14)-3) or 11
+  for _,key in ipairs(self.roller_field_order) do local field=self.roller_fields[key]; local value=key:match("^[A-Z]+$") and (self.roller_draft.min_stats or {})[key] or self.roller_draft[key]; if value==nil then value="off" end; field.caption:echo(View.withFont(field.label,font)); if populate and field.input.print then field.input:print(tostring(value)) end end
+  for _,key in ipairs(self.roller_toggle_order) do local enabled=self.roller_draft[key]==true; local button=self.roller_toggles[key]; button:setStyleSheet("background:"..(enabled and "#193024" or "#111512")..";border:1px solid "..(enabled and t.jade or t.border)..";border-radius:4px;color:"..(enabled and t.jade or t.muted)..";font-weight:700;"); button:echo(View.withFont("<center>"..button.option_text.." &nbsp; <b>"..(enabled and "ON" or "OFF").."</b></center>",font)) end
+  self.roller_status:echo(View.withFont(self.roller_error and ("<span style='color:"..t.hp.."'><b>"..safeText(self.roller_error).."</b></span>") or "Ranks: 1 Awful · 2 Poor · 3 Low · 4 Aver · 5 Fair · 6 Good · 7 Great",font))
+  return true
+end
+function View:rollerSettingsValues()
+  local values={min_stats={}}; for _,key in ipairs(self.roller_field_order) do local field=self.roller_fields[key]; local value=field.input.getText and field.input:getText() or ""; if key:match("^[A-Z]+$") then values.min_stats[key]=value else values[key]=value end end
+  for _,key in ipairs(self.roller_toggle_order) do values[key]=self.roller_draft[key]==true end; return values
+end
+function View:saveRollerSettings()
+  if not self.roller_settings_callback then self.roller_error="Save callback is unavailable"; self:renderRollerSettings(false); return nil,self.roller_error end
+  local values=self:rollerSettingsValues(); local ok,err,config=self.roller_settings_callback(values)
+  if not ok then self.roller_error=err or "Could not save settings"; self:renderRollerSettings(false); return nil,self.roller_error end
+  self:hideRollerSettings(); return true,config
 end
 function View:setColorOptions(options)
   options=type(options)=="table" and options or {}

@@ -138,11 +138,11 @@ function Adapter:closeRollerLog(log) if log.session_handle then log.session_hand
 local function rollerSettingsPath() return getMudletHomeDir().."/DragonsGateHUD/roller-settings.lua" end
 function Adapter:saveRollerSettings(config)
   local base=getMudletHomeDir().."/DragonsGateHUD"; lfs.mkdir(base); local temp=rollerSettingsPath()..".tmp"
-  local fields={"target_total","hard_stop","max_rolls","reroll_delay","reroll_command","auto_start_on_name","use_min_stats","require_min_stats_to_stop","logging_enabled","log_folder","master_file"}
+  local fields={"target_total","hard_stop","max_rolls","reroll_delay","reroll_command","auto_start_on_name","use_min_stats","require_min_stats_to_stop","show_every_roll","logging_enabled","log_folder","master_file"}
   local function literal(value) if type(value)=="string" then return string.format("%q",value) elseif value==nil then return "nil" else return tostring(value) end end
   local lines={"return {"}; for _,key in ipairs(fields) do lines[#lines+1]="  "..key.."="..literal(config[key]).."," end; lines[#lines+1]="  min_stats={"
   for _,key in ipairs({"STR","INT","WIS","DEX","AGI","CON","CHA","WIL","VOI","PER","APP"}) do lines[#lines+1]="    "..key.."="..literal((config.min_stats or {})[key]).."," end; lines[#lines+1]="  },"; lines[#lines+1]="}"
-  local file,err=io.open(temp,"wb"); if not file then return nil,err end; file:write(table.concat(lines,"\n")); file:close()
+  local file,err=io.open(temp,"wb"); if not file then return nil,err end; local wrote,writeErr=file:write(table.concat(lines,"\n")); if not wrote then file:close(); os.remove(temp); return nil,writeErr end; local closed,closeErr=file:close(); if closed==nil then os.remove(temp); return nil,closeErr end
   local destination=rollerSettingsPath(); local backup=destination..".bak"; os.remove(backup)
   local existing=io.open(destination,"rb"); if existing then existing:close(); local moved,moveErr=os.rename(destination,backup); if not moved then os.remove(temp); return nil,moveErr end end
   local ok,renameErr=os.rename(temp,destination); if not ok then os.rename(backup,destination); return nil,renameErr end; os.remove(backup); return true

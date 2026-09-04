@@ -18,6 +18,8 @@ local function fake()
     setColorOptionsCallback=function(self,callback) f.colorOptionsCallback=callback end,
     setColorOptions=function(self,options) f.viewColorOptions=options; f.viewColorEnabled=options.enabled end,
     setColorEnabled=function(self,enabled) f.viewColorEnabled=enabled end,
+    setOptionsActionCallback=function(self,callback) f.optionsActionCallback=callback end,
+    setRollerSettingsCallback=function(self,callback) f.rollerSettingsCallback=callback end,
     setMapCenterCallback=function(self,callback) f.mapCenterCallback=callback end,
     setMapZoomCallback=function(self,callback) f.mapZoomCallback=callback; f.mapZoomCallbackSets=(f.mapZoomCallbackSets or 0)+1 end,
     setMapClearAllCallback=function(self,callback) f.mapClearAllCallback=callback end,
@@ -85,6 +87,7 @@ local function fake()
   end
   function f:fireTimer() local id,fn=next(self.timers); if id then self.timers[id]=nil; fn() end end
   function f:sendCommand(command) self.sent=command; self.sentCommands=self.sentCommands or {}; self.sentCommands[#self.sentCommands+1]=command; return true end
+  function f:saveRollerSettings(config) self.savedRollerSettings=config; return true end
   function f:count(tableValue) local n=0; for _ in pairs(tableValue) do n=n+1 end; return n end
   function f:createMapAdapter()
     local map={rooms={},areas={},areaNames={},stubs={},links={},special={},current=nil,shutdowns=0,api={}}
@@ -713,6 +716,16 @@ end)
 test("help alias opens the owned responsive guide",function()
   local f=fake(); local shown=0; local view=f:createView(); function view:showHelp() shown=shown+1; return true end; function f:createView() return view end
   local hud=Main.new(f,{layout={}}); assert(hud:start()); assert(aliasCallback(f,"^dghud help$")()); eq(shown,1); hud:shutdown()
+end)
+test("autoroller options commands and atomic settings use the active roller",function()
+  local f=fake(); local hud=Main.new(f,{layout={},roller={target_total=53,hard_stop=62,reroll_delay=.1,reroll_command="n",use_min_stats=true,min_stats={STR=5}}}); assert(hud:start())
+  local config=f.optionsActionCallback("roller_settings"); eq(config.target_total,53); assert(f.optionsActionCallback("roller_start")); eq(hud.roller.state.active,true); assert(f.optionsActionCallback("roller_stop")); eq(hud.roller.state.active,false)
+  local ok,err=f.rollerSettingsCallback({target_total="60",hard_stop="62",reroll_delay="0.2",reroll_command="n",use_min_stats=true,min_stats={STR="6"}}); assert(ok,err); eq(hud.roller.cfg.target_total,60); eq(f.savedRollerSettings.target_total,60)
+  hud:shutdown()
+end)
+test("public autoroller status returns defensive configuration copies",function()
+  local f=fake(); local hud=Main.new(f,{layout={},roller={target_total=53,hard_stop=62,reroll_command="n",min_stats={STR=5}}}); assert(hud:start()); DGHUD={controller=hud}; Main.installChatApi(DGHUD)
+  local status=DGHUD.roller.status(); status.config.target_total=77; status.config.min_stats.STR=1; eq(hud.roller.cfg.target_total,53); eq(hud.roller.cfg.min_stats.STR,5); hud:shutdown(); DGHUD=nil
 end)
 test("rune API exposes sorted trigger-safe variables and copies",function()
   local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); DGHUD={controller=hud}; Main.installChatApi(DGHUD)

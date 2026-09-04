@@ -8,6 +8,8 @@ The compact `OPTIONS ▾` control immediately left of Real Time opens a responsi
 
 The HUD tracks posture from confirmed game output using the mutually exclusive global variables `standing` and `sitting`. Both begin unknown. Standing messages set `standing=true`; seated, lying, fallen, fainted, and passed-out messages set `sitting=true`. Merely being off balance, knocked back, seeing `You fall...`, or being told to stand does not change posture. The separate `unconscious` variable follows confirmed loss and recovery of consciousness. Matching is substring-safe so command echo and optional social wording do not prevent updates.
 
+The OG Dragons Gate autoroller is built into DGHUD. It scores `Awful` through `Great` as 1–7 across STR, INT, WIS, DEX, AGI, CON, CHA, WIL, VOI, PER, and APP. It starts at the Name/Race body-generation line, sends only `n` for rejected rolls, and leaves a qualifying `Y,n` prompt untouched for manual acceptance. Initial settings match the source DGC Staff roller: target 53, hard stop 62, 0.1-second rerolls, minimum rank 5 for every stat, and session plus master logs under the profile's `DragonsGateHUD/og_dg_roller` directory. Use `rr start|stop|stats|last|reset|help`; adjust persistent settings with `rr set total 60`, `rr set hard 70`, `rr set max 10000`, `rr set delay .5`, or `rr set STR 5` (use `off` to clear an optional limit).
+
 ```text
 dghud colors
 dghud colors room off

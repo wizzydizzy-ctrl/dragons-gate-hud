@@ -116,6 +116,40 @@ function Adapter:reportColorizerStatus(status)
   cecho("\n<gold>[DGHUD Options]<reset> All "..word(status.enabled).."  Room "..word(status.room).."  Exits "..word(status.exits).."  Currency "..word(status.currency).."  Travel "..word(status.portal).."  Attacks "..word(status.attack).."  Damage "..word(status.damage).."  Danger "..word(status.danger).."  Recovery "..word(status.recovery).."  Costs "..word(status.upkeep).."  Spells "..word(status.spell).."  Discovery "..word(status.discovery).."\n")
   return true
 end
+function Adapter:reportRoller(message) cecho("\n<gold>[DGHUD Roller]<reset> "..tostring(message or "").."\n"); return true end
+function Adapter:standaloneRollerPresent() return type(rawget(_G,"OGDGROLLER"))=="table" end
+function Adapter:startRollerLog(config)
+  local function component(value,fallback) value=tostring(value or ""):gsub("[^%w%._%-]","_"); if value=="" or value=="." or value==".." then return fallback end; return value end
+  local base=getMudletHomeDir().."/DragonsGateHUD"; lfs.mkdir(base)
+  local folder=base.."/"..component(config.log_folder,"og_dg_roller"); lfs.mkdir(folder)
+  local stamp=os.date("%Y-%m-%d_%H-%M-%S")
+  local log={session=folder.."/session_"..stamp..".txt",master=folder.."/"..component(config.master_file,"og_dg_rolls_master.txt")}
+  log.session_handle=io.open(log.session,"ab"); log.master_handle=io.open(log.master,"ab")
+  if not log.session_handle or not log.master_handle then if log.session_handle then log.session_handle:close() end; if log.master_handle then log.master_handle:close() end; return nil,"could not open roller logs" end
+  return log
+end
+function Adapter:appendRollerLog(log,message)
+  local line=os.date("%Y-%m-%d %H:%M:%S ")..tostring(message or "").."\n"
+  local a,ae=log.session_handle:write(line); if not a then return nil,ae end; local b,be=log.session_handle:flush(); if not b then return nil,be end
+  local c,ce=log.master_handle:write(line); if not c then return nil,ce end; local d,de=log.master_handle:flush(); if not d then return nil,de end
+  return true
+end
+function Adapter:closeRollerLog(log) if log.session_handle then log.session_handle:close(); log.session_handle=nil end; if log.master_handle then log.master_handle:close(); log.master_handle=nil end; return true end
+local function rollerSettingsPath() return getMudletHomeDir().."/DragonsGateHUD/roller-settings.lua" end
+function Adapter:saveRollerSettings(config)
+  local base=getMudletHomeDir().."/DragonsGateHUD"; lfs.mkdir(base); local temp=rollerSettingsPath()..".tmp"
+  local fields={"target_total","hard_stop","max_rolls","reroll_delay","reroll_command","auto_start_on_name","use_min_stats","require_min_stats_to_stop","logging_enabled","log_folder","master_file"}
+  local function literal(value) if type(value)=="string" then return string.format("%q",value) elseif value==nil then return "nil" else return tostring(value) end end
+  local lines={"return {"}; for _,key in ipairs(fields) do lines[#lines+1]="  "..key.."="..literal(config[key]).."," end; lines[#lines+1]="  min_stats={"
+  for _,key in ipairs({"STR","INT","WIS","DEX","AGI","CON","CHA","WIL","VOI","PER","APP"}) do lines[#lines+1]="    "..key.."="..literal((config.min_stats or {})[key]).."," end; lines[#lines+1]="  },"; lines[#lines+1]="}"
+  local file,err=io.open(temp,"wb"); if not file then return nil,err end; file:write(table.concat(lines,"\n")); file:close()
+  local destination=rollerSettingsPath(); local backup=destination..".bak"; os.remove(backup)
+  local existing=io.open(destination,"rb"); if existing then existing:close(); local moved,moveErr=os.rename(destination,backup); if not moved then os.remove(temp); return nil,moveErr end end
+  local ok,renameErr=os.rename(temp,destination); if not ok then os.rename(backup,destination); return nil,renameErr end; os.remove(backup); return true
+end
+function Adapter.loadRollerSettings()
+  local loader=loadfile(rollerSettingsPath()); if not loader then return nil end; local ok,value=pcall(loader); if ok and type(value)=="table" then return value end; return nil
+end
 function Adapter:schedule(seconds,fn) return tempTimer(seconds,fn) end
 function Adapter:cancelTimer(id) return killTimer(id) end
 function Adapter:sendCommand(command) return send(command) end

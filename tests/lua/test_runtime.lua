@@ -374,7 +374,7 @@ test("cleanup reconciliation requires a valid fresh current room after mutation"
 end)
 
 test("cleanup shutdown removes all seven owned map aliases",function()
-  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); local before=f:count(f.aliases); eq(before,#Events.aliases+10)
+  local f=fake(); local hud=Main.new(f,{layout={}}); assert(hud:start()); local before=f:count(f.aliases); eq(before,#Events.aliases+11)
   local owned={}; for id,alias in pairs(f.aliases) do if alias.pattern:match("%^dghud map ") then owned[id]=true end end; eq(f:count(owned),7)
   assert(hud:shutdown()); for id in pairs(owned) do eq(f.killed[id],true) end; eq(f:count(f.aliases),0)
 end)

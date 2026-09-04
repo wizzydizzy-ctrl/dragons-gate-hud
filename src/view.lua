@@ -161,6 +161,8 @@ local help_entries={
   {command="dghud check",description="Check GitHub for a newer HUD release."},
   {command="dghud update",description="Install the newest verified HUD release, then refresh character data."},
   {command="dghud reload",description="Reload the HUD using your saved preferences."},
+  {command="rr start|stop|stats|last|reset|help",description="Control the built-in OG Dragons Gate stat autoroller."},
+  {command="rr set total|hard|max|delay|STAT <value>",description="Adjust and persist autoroller targets without editing scripts."},
   {command="dghud config",description="Open the DGHUD settings location."},
   {command="dghud purge",description="Remove DGHUD-owned installed data.",warning=true},
   {command="dghud chatstatus",description="Show chat capture, filter, and storage status."},

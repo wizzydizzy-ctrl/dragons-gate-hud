@@ -1,5 +1,5 @@
 package.loaded["output_colorizer"]=nil
-local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local Clock=require("game_clock"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local OutputColorizer=require("output_colorizer"); local PostureTracker=require("posture_tracker"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local SpecialTransition=require("special_transition"); local MapWalker=require("map_walker"); local Cleanup=require("map_cleanup")
+local State=require("state"); local Events=require("events"); local Layout=require("layout"); local Parser=require("command_parser"); local Collector=require("command_collector"); local Clock=require("game_clock"); local ChatParser=require("chat_parser"); local ChatHistory=require("chat_history"); local ChatController=require("chat_controller"); local OutputColorizer=require("output_colorizer"); local PostureTracker=require("posture_tracker"); local Autoroller=require("autoroller"); local MapperModel=require("mapper_model"); local MapAdapter=require("map_adapter"); local Automapper=require("automapper"); local SpecialTransition=require("special_transition"); local MapWalker=require("map_walker"); local Cleanup=require("map_cleanup")
 local Main={}; Main.__index=Main
 local colorFeatures={"room","exits","currency","portal","attack","damage","danger","recovery","upkeep","spell","discovery"}
 local function colorOptions(status)
@@ -33,7 +33,15 @@ function Main.installChatApi(namespace)
     end
   Main.installColorizerApi(namespace)
   Main.installRunesApi(namespace)
+  Main.installRollerApi(namespace)
   return chat
+end
+function Main.installRollerApi(namespace)
+  local api=type(namespace.roller)=="table" and namespace.roller or {}; namespace.roller=api
+  local function active() local root=rawget(_G,"DGHUD"); local controller=root and root.controller; return controller and controller.roller end
+  api.command=function(action) local roller=active(); if not roller then return nil,"autoroller is not running" end; return roller:command(action) end
+  api.status=function() local roller=active(); if not roller then return nil,"autoroller is not running" end; return {active=roller.state.active,rolls=roller.state.rolls,last=roller.state.last,best=roller.state.best,config=roller.cfg} end
+  return api
 end
 local function runeCopy(item) return item and {name=item.name,remaining=item.remaining} or nil end
 function Main.installRunesApi(namespace)
@@ -462,6 +470,10 @@ function Main:start()
   local startupOk,startupErr=pcall(function()
   self.view=self.adapter:createView(self.settings)
   self.posture=PostureTracker.new(self.adapter,function() if self.started then self:refresh() end end)
+  self.roller=Autoroller.new(self.adapter,self.settings.roller,function(config)
+    self.settings.roller=config; local root=rawget(_G,"DGHUD"); if root then root.user_settings=type(root.user_settings)=="table" and root.user_settings or {}; root.user_settings.roller=config end
+    if self.adapter.saveRollerSettings then local saved,err=self.adapter:saveRollerSettings(config); if not saved and self.adapter.reportRoller then self.adapter:reportRoller("Could not save settings: "..tostring(err)) end end
+  end)
   if self.view.setColorToggleCallback then self.view:setColorToggleCallback(function(wanted) local enabled=self:setColorizerEnabled(type(wanted)=="boolean" and wanted or not self.colorizer_enabled); if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(self.colorizer:status()) end; return enabled end) end
   if self.view.setColorOptionsCallback then self.view:setColorOptionsCallback(function(name,wanted) local feature=name=="room_titles" and "room" or name; local enabled,err=self:setColorFeature(feature,wanted); if enabled==nil then return nil,err end; if self.adapter.reportColorizerStatus then self.adapter:reportColorizerStatus(self.colorizer:status()) end; return enabled end) end
   local colorSettings=type(self.settings.colorization)=="table" and self.settings.colorization or {}
@@ -545,10 +557,11 @@ function Main:start()
     if not self.view or not self.view.showHelp then return nil,"help panel is unavailable" end
     return self.view:showHelp()
   end)
+  self.runtime.aliases[#self.runtime.aliases+1]=self.adapter:addAlias("^rr(?:\\s+(.*))?$",function(value) return self.roller:command(aliasArgument(value) or "help") end)
   self.started=true; local data=self.adapter:getGMCP(); if self:mapperEnabled() and data and data.Room and data.Room.Info then local mapped=self.automapper:onRoom(data.Room.Info); if mapped and tonumber(data.Room.Info.num) then self.managed_rooms[tonumber(data.Room.Info.num)]=true end end; self:refresh(); self:scheduleRoundtimeTick(); self:scheduleClockTick()
   local chatStarted,chatErr=self:startChat(); if not chatStarted then error(chatErr,0) end
   self.runtime.triggers[#self.runtime.triggers+1]=self.adapter:addLineTrigger(function(line) self:callSpecialTransition("onLine",line) end)
-  self.runtime.triggers[#self.runtime.triggers+1]=self.adapter:addLineTrigger(function(line) self.posture:onLine(line) end)
+  self.runtime.triggers[#self.runtime.triggers+1]=self.adapter:addLineTrigger(function(line) self.posture:onLine(line); self.roller:onLine(line) end)
   end)
   if not startupOk then pcall(function() self:shutdown() end); return nil,startupErr end
   return true
@@ -561,6 +574,7 @@ function Main:shutdown()
   if self.roundtime_timer then self.adapter:cancelTimer(self.roundtime_timer); self.roundtime_timer=nil end
   local chat=self.chat; self.chat=nil; if chat then chat:shutdown() end
   local colorizer=self.colorizer; self.colorizer=nil; if colorizer then colorizer:shutdown() end
+  local roller=self.roller; self.roller=nil; if roller then roller:shutdown() end
   if self.collector then self.collector:shutdown(); self.collector=nil end
   if self.walker then self.walker:shutdown(); self.walker=nil end; self.generated_command=nil; self:removeMapClickHook()
   if self.special_transition then self:callSpecialTransition("shutdown"); self.special_transition=nil end
@@ -574,7 +588,7 @@ end
 function Main:reload() self:shutdown(); return self:start() end
 function Main:healthCheck()
   local chatEnabled=not (self.settings.chat and self.settings.chat.enabled==false)
-  if not self.started or not self.view or not self.collector or not self.collector.started or not self.colorizer or not self.colorizer.started or not self.colorizer.trigger or not self.automapper or not self.special_transition or (chatEnabled and (not self.chat or not self.chat.started or not self.chat.trigger)) or #self.runtime.events~=(#Events.gmcp+5) then return nil,"HUD is not healthy" end
+  if not self.started or not self.view or not self.collector or not self.collector.started or not self.colorizer or not self.colorizer.started or not self.colorizer.trigger or not self.roller or not self.automapper or not self.special_transition or (chatEnabled and (not self.chat or not self.chat.started or not self.chat.trigger)) or #self.runtime.events~=(#Events.gmcp+5) or #self.runtime.aliases~=(#Events.aliases+11) or #self.runtime.triggers~=2 then return nil,"HUD is not healthy" end
   local ok=pcall(function() self:refresh() end); if not ok then return nil,"state refresh failed" end; return true
 end
 return Main

@@ -439,7 +439,7 @@ function View:applyLayout(layout)
   local toggle_width=math.max(72,math.min(92,math.floor(windowWidth*.10))); local toggle_x=math.max(4,clock_x-toggle_width-6); local toggle_y=math.max(5,math.floor((top-layout.color_toggle_height)/2))
   local attributeWidth=math.max(1,toggle_x-(layout.console_left or layout.left)-6)
   place(self.attribute_strip,layout.console_left or layout.left,0,attributeWidth,top); self.attribute_strip:raise()
-  place(self.color_toggle,toggle_x,toggle_y,toggle_width,layout.color_toggle_height); self:setColorEnabled(self.color_enabled~=false); self.color_toggle:raise()
+  place(self.color_toggle,toggle_x,toggle_y,toggle_width,layout.color_toggle_height); self.options_anchor={x=toggle_x,y=toggle_y,width=toggle_width,height=layout.color_toggle_height}; self:setColorEnabled(self.color_enabled~=false); self.color_toggle:raise()
   if layout.mode=="compact" then place(self.clock_header,"50%",0,"50%",top) else place(self.clock_header,"100%-"..layout.right,0,layout.right,top) end
   self.clock_header:raise(); self.bottom:hide()
   place(self.chat_container,layout.chat_x or layout.left,top,layout.chat_width or layout.console_width,layout.chat_height or 240)
@@ -584,10 +584,10 @@ function View:layoutColorMenu(layout)
   end
   local width=math.max(1,tonumber(layout.window_width) or 1200); local height=math.max(1,tonumber(layout.window_height) or 800)
   local all={}; for _,key in ipairs(self.color_option_order) do all[#all+1]={kind="color",key=key} end; for _,key in ipairs(self.option_action_order or {}) do all[#all+1]={kind="action",key=key} end
+  local anchor=self.options_anchor or {}; local anchorX=tonumber(anchor.x) or width-4; local anchorY=tonumber(anchor.y) or 0; local anchorWidth=tonumber(anchor.width) or 0; local anchorHeight=tonumber(anchor.height) or 0
   local columns=(width>=420 or height<300) and 2 or 1; local rows=math.ceil(#all/columns)
-  local menuWidth=math.min(columns==2 and 460 or 230,math.max(1,width-8)); local availableHeight=math.max(1,height-8); local rowHeight=math.max(25,(layout.color_toggle_font or 11)+14); local menuHeight=math.min(availableHeight,rowHeight*rows+8)
-  local x=math.max(4,math.min(width-menuWidth-4,(tonumber(self.color_toggle.x) or 0)+(tonumber(self.color_toggle.width) or 0)-menuWidth))
-  local y=math.min(math.max(0,height-menuHeight-4),(tonumber(self.color_toggle.y) or 0)+(tonumber(self.color_toggle.height) or 0)+4)
+  local menuWidth=math.min(columns==2 and 460 or 230,math.max(1,width-8)); local rowHeight=math.max(25,(layout.color_toggle_font or 11)+14); local y=anchorY+anchorHeight+4; local availableHeight=math.max(1,height-y-4); local menuHeight=math.min(availableHeight,rowHeight*rows+8)
+  local x=math.max(4,math.min(width-menuWidth-4,anchorX+anchorWidth-menuWidth))
   place(self.color_menu_scrim,0,0,"100%","100%"); place(self.color_menu,x,y,menuWidth,menuHeight); place(self.color_menu_bg,0,0,"100%","100%"); place(self.options_scroll,4,4,menuWidth-8,math.max(1,menuHeight-8))
   local columnWidth=(menuWidth-8)/columns; self.options_scroll.content_height=rowHeight*rows
   for index,item in ipairs(all) do local column=math.floor((index-1)/rows); local row=(index-1)%rows; local button=item.kind=="color" and self.color_option_buttons[item.key] or self.option_action_buttons[item.key]; place(button,column*columnWidth,row*rowHeight,columnWidth,rowHeight) end

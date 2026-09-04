@@ -208,6 +208,12 @@ test("view has no standalone wealth widget",function()
   local view=chatView(); eq(view.wealth,nil)
 end)
 
+test("fatigue gauge uses its configured fill color without changing health",function()
+  local view=chatView()
+  eq(view.fatigue.front.style:find("background:#8bad4e",1,true)~=nil,true)
+  eq(view.hp.front.style:find("background:#ba5147",1,true)~=nil,true)
+end)
+
 test("header owns a responsive top-right color options button",function()
   local view=chatView()
   for _,size in ipairs({{760,700},{800,700},{1200,800},{1920,1080}}) do

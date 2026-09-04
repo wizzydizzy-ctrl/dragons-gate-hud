@@ -11,6 +11,10 @@ local time={"Current time is: Wed Sep  2 00:40:30 2026 EST.","It is now 3:22 am 
 test("parses inventory items without merging duplicates",function()
   local r=assert(Parser.parseInventory(inventory)); eq(#r.items,3); eq(r.items[1].name,"A wooden torch"); eq(r.items[2].weight,0.1); eq(r.total_weight,1.6)
 end)
+test("parses staff inventory and accepts the staff vitals prompt",function()
+  local lines={'Items carried:','[ 1] "An open large leather backpack" (0d0+0, +AR 0%(+0)) [66.0 lbs]','[ 2] "A massive breathtaking bluesteel war hammer" (3d12+8, +AR 0%(+0)) [7.7 lbs]','Your inventory totals 335.1 lbs.','[199] 301/301 hp, 173/173 ftg >'}
+  local r=assert(Parser.parseInventory(lines)); eq(r.items[1].name,"An open large leather backpack"); eq(r.items[2].weight,7.7); eq(Parser.isComplete("inventory",lines),true)
+end)
 test("rejects incomplete inventory",function() eq(Parser.parseInventory({"Items carried:","  A torch [1.0 lb]."}),nil) end)
 test("parses stat combat protection and readied equipment",function()
   local r=assert(Parser.parseStat(stat)); eq(r.body_armor,4); eq(r.or_rating,18); eq(r.dr,70); eq(r.move.current,6); eq(r.move.maximum,6); eq(r.damage_bonus,"Good/None"); eq(r.stance,"Aggressive"); eq(r.area_position,"center"); eq(r.novice_protected,true); eq(r.equipment[2],"A wooden shield")
@@ -31,6 +35,10 @@ test("info parses multiword Dragon stage and all attributes",function()
   local lines={"You are Deklan Marrowen, a average boned and wiry-tough bodied 21 year old Entropic Male 1st stage Dragon.  You are 7'1\" and weigh 312 lbs."," Str Int Wis Dex Agi Con Cha Wil Voi Per App","Good Good Great Good Good Good Good Good Good Great Good",">"}
   local r=assert(Parser.parseInfo(lines)); eq(r.character.race,"Dragon"); eq(r.physical.life_stage,"1st stage"); eq(r.attributes.APP,"Good")
 end)
+test("info ignores the staff-only MP column and accepts the staff prompt",function()
+  local lines={" Str Int Wis Dex Agi Con Cha Wil Voi Per App MP","Great Great Great Great Great Great Great Great Great Great Great Great"," 18 18 18 18 18 18 18 18 18 18 18 18","[199] 301/301 hp, 173/173 ftg >"}
+  local r=assert(Parser.parseInfo(lines)); eq(r.attributes.STR,"Great"); eq(r.attributes.APP,"Great"); eq(Parser.isComplete("info",lines),true)
+end)
 test("info locates a valid rank row through harmless interleaved lines",function()
   local lines={" Str Int Wis Dex Agi Con Cha Wil Voi Per App","",">","info","great GOOD fair Aver low Poor awful Good Fair Aver Great",">"}
   local r=assert(Parser.parseInfo(lines)); eq(r.attributes.STR,"Great"); eq(r.attributes.APP,"Great"); eq(Parser.isComplete("info",lines),true)
@@ -41,6 +49,10 @@ end)
 test("detects completed command responses",function() eq(Parser.isComplete("inventory",inventory),true); eq(Parser.isComplete("inventory",{"Items carried:","Your inventory totals 0 lbs."}),false); eq(Parser.isComplete("stat",stat),true); eq(Parser.isComplete("info",info),true); eq(Parser.isComplete("info",{"You are Test"}),false) end)
 test("parses info religion rank deity balance and alignment",function()
   local r=assert(Parser.parseReligion(religion)); eq(r.rank,"Novitiate"); eq(r.deity,"Unknown"); eq(r.balance,"Balanced"); eq(r.alignment,"Entropic"); eq(Parser.isComplete("info religion",religion),true)
+end)
+test("parses an undedicated staff character religion response",function()
+  local lines={"You have not yet dedicated to a deity.","You are Balanced within your Entropic alignment.","[199] 301/301 hp, 173/173 ftg >"}
+  local r=assert(Parser.parseReligion(lines)); eq(r.rank,"None"); eq(r.deity,"None"); eq(r.balance,"Balanced"); eq(Parser.isComplete("info religion",lines),true)
 end)
 test("parses both rune columns and sorts lowest remaining first",function()
   local r=assert(Parser.parseRunes(runes)); eq(#r.items,5); eq(r.items[1].name,"Healing"); eq(r.items[1].remaining,14); eq(r.items[2].name,"Holy"); eq(r.items[5].name,"Vigor"); eq(Parser.isComplete("info mag",runes),true)
@@ -55,6 +67,10 @@ test("skill parsing requires a header rows and final prompt",function()
   eq(Parser.parseSkills({"Skill Remain Level","Biting 100 1"}),nil)
   eq(Parser.parseSkills({"Biting 100 1",">"}),nil)
   eq(Parser.isComplete("skill",skills),true)
+end)
+test("staff skill output strips readiness markers and completes on vitals prompt",function()
+  local lines={"Skill Remain Level","*Psionics 0 50"," First Aid 0 50","[199] 301/301 hp, 173/173 ftg >"}
+  local r=assert(Parser.parseSkills(lines)); eq(r.items[1].name,"First Aid"); eq(r.items[2].name,"Psionics"); eq(Parser.isComplete("skill",lines),true)
 end)
 test("skill parsing ignores a stale prompt before its header",function()
   local contaminated={"You are Balanced within your Entropic alignment.",">","Skill                     Remain Level","Biting                    105    4","Clawing                   276    2"}

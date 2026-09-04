@@ -54,6 +54,11 @@ function Collector:forceRefresh()
   self.refreshed=false
   return self:refresh()
 end
+function Collector:restartRefresh()
+  self:cancelActive()
+  self.refreshed=false
+  return self:refresh()
+end
 function Collector:finish(lines)
   local active=self.active; if not active then return end
   if self.timeout then self.adapter:cancelTimer(self.timeout); self.timeout=nil end
@@ -93,7 +98,7 @@ function Collector:onLine(value)
   if not self.active then return end
   -- Lines remain owned by the timed-out command throughout recovery/drain. A
   -- complete delayed response can still succeed before the bounded drain ends.
-  if #self.active.lines==1 and self.active.lines[1]:match("^>%s*$") and not value:match("^>%s*$") then self.active.lines={} end
+  if #self.active.lines==1 and self.parser.isPrompt(self.active.lines[1]) and not self.parser.isPrompt(value) then self.active.lines={} end
   self.active.lines[#self.active.lines+1]=value
   if self.parser.isComplete(self.active.command,self.active.lines) then self:finish(self.active.lines) end
 end

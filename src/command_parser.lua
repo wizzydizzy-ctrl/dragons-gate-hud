@@ -4,12 +4,19 @@ local RANKS={awful="Awful",poor="Poor",low="Low",aver="Aver",fair="Fair",good="G
 local function clean(value)
   return tostring(value or ""):gsub("\27%[[%d;]*m",""):gsub("\27%[[%d;]*[A-Za-z]",""):gsub("%s+$","")
 end
-local function hasPrompt(lines) for _,raw in ipairs(lines or {}) do if clean(raw):match("^>%s*$") then return true end end return false end
+local function isPrompt(value)
+  local line=clean(value)
+  return line:match("^>%s*$")~=nil or line:match("^%[%d+%]%s+%d+/%d+%s+hp,%s+%d+/%d+%s+ftg%s*>%s*$")~=nil
+end
+local function hasPrompt(lines) for _,raw in ipairs(lines or {}) do if isPrompt(raw) then return true end end return false end
+Parser.isPrompt=isPrompt
 
 function Parser.parseInventory(lines)
   local result={items={}}
   for _,raw in ipairs(lines or {}) do
-    local line=clean(raw); local name,weight=line:match("^%s+(.+)%s+%[([%d%.]+)%s+lbs?%]%.$")
+    local line=clean(raw)
+    local name,weight=line:match('^%s*%[%s*%d+%]%s+"(.-)".-%[([%d%.]+)%s+lbs?%]%s*$')
+    if not name then name,weight=line:match("^%s+(.+)%s+%[([%d%.]+)%s+lbs?%]%.$") end
     if name then result.items[#result.items+1]={name=name,weight=tonumber(weight)} end
     local total=line:match("^Your inventory totals ([%d%.]+) lbs?%.$")
     if total then result.total_weight=tonumber(total); return result end
@@ -43,11 +50,11 @@ function Parser.parseInfo(lines)
       local stage,race=stageAndRace:match("^(.-)%s+(%S+)$")
       if stage and race then result.character={full_name=full,alignment=alignment,race=race}; result.physical={description=description,age=tonumber(age),sex=sex,life_stage=stage,height=height,weight=tonumber(weight)} end
     end
-    if line:match("^%s*Str%s+Int%s+Wis%s+Dex%s+Agi%s+Con%s+Cha%s+Wil%s+Voi%s+Per%s+App%s*$") then
+    if line:match("^%s*Str%s+Int%s+Wis%s+Dex%s+Agi%s+Con%s+Cha%s+Wil%s+Voi%s+Per%s+App%s+MP%s*$") or line:match("^%s*Str%s+Int%s+Wis%s+Dex%s+Agi%s+Con%s+Cha%s+Wil%s+Voi%s+Per%s+App%s*$") then
       for offset=1,8 do
         local values={}; local valid=true
         for value in clean(lines[i+offset] or ""):gmatch("[%a]+") do local rank=RANKS[value:lower()]; if not rank then valid=false; break end; values[#values+1]=rank end
-        if valid and #values==11 then for n,key in ipairs(ATTRS) do result.attributes[key]=values[n] end; break end
+        if valid and #values>=11 then for n,key in ipairs(ATTRS) do result.attributes[key]=values[n] end; break end
       end
     end
   end
@@ -62,6 +69,7 @@ function Parser.parseReligion(lines)
     local line=clean(raw)
     local rank,deity=line:match("^You are an? (.-) follower of (.-)%.$")
     if rank then result.rank=rank; result.deity=deity end
+    if line:match("^You have not yet dedicated to a deity%.$") then result.rank="None"; result.deity="None" end
     local balance,alignment=line:match("^You are (.-) within your (.-) alignment%.$")
     if balance then result.balance=balance; result.alignment=alignment end
   end
@@ -74,7 +82,7 @@ function Parser.parseRunes(lines)
   for _,raw in ipairs(lines or {}) do
     local line=clean(raw)
     if line:match("^You have the following elemental runes available to you%.%.%.$") then header=true
-    elseif header and line:match("^>%s*$") then complete=true
+    elseif header and isPrompt(line) then complete=true
     elseif header then
       local cursor=1
       while true do
@@ -97,10 +105,10 @@ function Parser.parseSkills(lines)
   for _,raw in ipairs(lines or {}) do
     local line=clean(raw)
     if line:match("^%s*Skill%s+Remain%s+Level%s*$") then header=true
-    elseif header and line:match("^>%s*$") then complete=true
+    elseif header and isPrompt(line) then complete=true
     elseif header then
       local name,remain,level=line:match("^%s*(.-)%s+(%d+)%s+(%d+)%s*$")
-      if name and name~="" then result.items[#result.items+1]={name=name,remain=tonumber(remain),level=tonumber(level)} end
+      if name and name~="" then result.items[#result.items+1]={name=name:gsub("^%*",""),remain=tonumber(remain),level=tonumber(level)} end
     end
   end
   if not complete then return nil,"incomplete skill response" end

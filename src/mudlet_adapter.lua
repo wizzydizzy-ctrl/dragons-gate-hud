@@ -160,9 +160,14 @@ end
 function Adapter:setPostureVariables(state)
   state=type(state)=="table" and state or {}; rawset(_G,"standing",state.standing); rawset(_G,"sitting",state.sitting); rawset(_G,"unconscious",state.unconscious); return true
 end
-function Adapter.characterPrompt(value) return tostring(value or ""):match("^>")~=nil end
+function Adapter.characterPrompt(value)
+  local line=tostring(value or ""):gsub("\27%[[%d;]*m",""):gsub("%s+$","")
+  return line:match("^>")~=nil or line:match("^%[%d+%]%s+%d+/%d+%s+hp,%s+%d+/%d+%s+ftg%s*>")~=nil
+end
 function Adapter:isCharacterActive()
   if Adapter.characterPrompt(getCurrentLine and getCurrentLine() or "") then return true end
+  local status=gmcp and gmcp.Char and gmcp.Char.Status
+  if type(status)=="table" and type(status.name)=="string" and status.name~="" then return true end
   local controller=DGHUD and DGHUD.controller
   return controller and controller.character_entry_started==true or false
 end
@@ -176,7 +181,12 @@ end
 function Adapter:refreshCharacterData()
   local controller=DGHUD and DGHUD.controller
   if not controller then return nil,"HUD controller is unavailable" end
-  if controller.character_entry_started then return true end
+  if controller.character_entry_started then
+    local collector=controller.collector
+    if collector and type(collector.restartRefresh)=="function" then return collector:restartRefresh() end
+    if collector and type(collector.forceRefresh)=="function" then return collector:forceRefresh() end
+    return nil,"HUD command collector is unavailable"
+  end
   if type(controller.onCharacterEntry)=="function" then return controller:onCharacterEntry() end
   return nil,"HUD startup refresh is unavailable"
 end

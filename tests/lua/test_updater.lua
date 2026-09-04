@@ -18,6 +18,8 @@ test("stable manifest downloads use a unique cache-busting URL",function()
 end)
 test("character prompt detection accepts an echoed command but rejects account menu",function()
   eq(Adapter.characterPrompt(">dghud update"),true)
+  eq(Adapter.characterPrompt("[199] 301/301 hp, 173/173 ftg >"),true)
+  eq(Adapter.characterPrompt("[199] 301/301 hp, 173/173 ftg >inventory"),true)
   eq(Adapter.characterPrompt("Your selection? dghud update"),false)
 end)
 test("update lock rejects overlapping operations",function() local u=Updater.new({},{}); eq(u:acquire("update"),true); local ok,err=u:acquire("check"); eq(ok,nil); eq(err,"update already in progress"); u:release(); eq(u:acquire("check"),true) end)
@@ -59,10 +61,10 @@ test("manifest compatibility blocks replacement on an older known Mudlet",functi
 end)
 test("post-install refresh joins the new controller startup sequence",function()
   local prior=_G.DGHUD; local entries=0; local forced=0
-  _G.DGHUD={controller={character_entry_started=false,onCharacterEntry=function(self) entries=entries+1; self.character_entry_started=true; return true end,collector={forceRefresh=function() forced=forced+1 end}}}
+  _G.DGHUD={controller={character_entry_started=false,onCharacterEntry=function(self) entries=entries+1; self.character_entry_started=true; return true end,collector={restartRefresh=function() forced=forced+1; return true end}}}
   local ok,err=pcall(function() eq(Adapter.new():refreshCharacterData(),true); eq(Adapter.new():refreshCharacterData(),true) end)
   _G.DGHUD=prior; if not ok then error(err,0) end
-  eq(entries,1); eq(forced,0)
+  eq(entries,1); eq(forced,1)
 end)
 test("Mudlet activity detection survives asynchronous non-prompt output",function()
   local oldDGHUD,oldCurrent=DGHUD,getCurrentLine; DGHUD={controller={character_entry_started=true}}; getCurrentLine=function() return "The dark hound claws at you!" end

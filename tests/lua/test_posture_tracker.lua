@@ -12,6 +12,15 @@ test("posture starts unknown and confirmed messages are mutually exclusive",func
   assert(p:onLine("You stand up.")); eq(p:status().standing,true); eq(p:status().sitting,false)
 end)
 
+test("posture preserves a previously confirmed state across HUD reload",function()
+  local f=fake(); function f:getPostureVariables() return {standing=true,sitting=false,unconscious=false} end
+  local p=Posture.new(f); eq(p:status().standing,true); eq(p:status().sitting,false); eq(p:status().unconscious,false)
+  function f:getPostureVariables() return {standing=false,sitting=true} end
+  p=Posture.new(f); eq(p:status().standing,false); eq(p:status().sitting,true)
+  function f:getPostureVariables() return {standing=true,sitting=true} end
+  p=Posture.new(f); eq(p:status().standing,nil); eq(p:status().sitting,nil)
+end)
+
 test("prone and pass-out messages intentionally map to sitting",function()
   for _,line in ipairs({"You lie down.","You stumble and fall down!","You fall back and lie down.","You pass out!","You pass out from blood loss.","You pass out from the drain!","You faint dead away.","You lose consciousness."}) do
     local f=fake(); local p=Posture.new(f); assert(p:onLine(line)); eq(p:status().sitting,true); eq(p:status().standing,false)

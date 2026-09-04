@@ -10,7 +10,16 @@ local function contains(line,patterns)
 end
 
 function Posture.new(adapter,onChange)
-  local self=setmetatable({adapter=adapter,onChange=onChange,state={standing=nil,sitting=nil,unconscious=nil}},Posture)
+  local state={standing=nil,sitting=nil,unconscious=nil}
+  if adapter.getPostureVariables then
+    local ok,existing=pcall(adapter.getPostureVariables,adapter)
+    if ok and type(existing)=="table" then
+      if existing.sitting==true and existing.standing~=true then state.sitting=true; state.standing=false
+      elseif existing.standing==true and existing.sitting~=true then state.standing=true; state.sitting=false end
+      if type(existing.unconscious)=="boolean" then state.unconscious=existing.unconscious end
+    end
+  end
+  local self=setmetatable({adapter=adapter,onChange=onChange,state=state},Posture)
   if adapter.setPostureVariables then pcall(adapter.setPostureVariables,adapter,self.state) end
   return self
 end

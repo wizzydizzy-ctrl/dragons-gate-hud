@@ -1,5 +1,7 @@
 # Dragons Gate GMCP HUD
 
+> **Historical repository:** the current DGHUD package and guides have moved. Start with the [Complete DGHUD Guide](https://github.com/wizzydizzy-ctrl/dragons-gate-player-hud/blob/main/docs/DGHUD_GUIDE.md), [current installation instructions](https://github.com/wizzydizzy-ctrl/dragons-gate-player-hud/blob/main/docs/INSTALLATION_AND_FIRST_START.md), and [v0.3.89 release notes](https://github.com/wizzydizzy-ctrl/dragons-gate-player-hud/releases/tag/v0.3.89). The older commands and installation examples below are historical reference, not instructions for the current release.
+
 An original bronze-and-jade Mudlet 5 HUD for Dragons Gate. It displays confirmed `Char.Status`, `Char.Vitals`, and `Room` GMCP values, including `weapon_readied` and `shield_readied`.
 
 The header shows the player's local computer time and a synchronized Dragons Gate clock. Game time advances at the configurable 2× default, labels 6:00 AM–5:59 PM as `Daytime` and 6:00 PM–5:59 AM as `Night`, and resynchronizes from startup or manually entered `time` output.
